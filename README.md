@@ -32,7 +32,18 @@ Settings UI.
 - The `codex` CLI available on `PATH`.
 - Run `codex login` before use, or start login from the GPT Auth card.
 
-## Install from GitHub
+## Install a prebuilt release (recommended)
+
+The release tarball already contains both bundles and needs no install-time
+build permission:
+
+```sh
+dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.1.0/dsh-codex-auth-0.1.0.tgz
+```
+
+Restart `dsh web`, open Settings, and select **GPT Auth**.
+
+## Install from GitHub source
 
 Install the repository into the profile you run:
 

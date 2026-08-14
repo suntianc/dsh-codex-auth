@@ -28,7 +28,17 @@
 - `codex` CLI 已加入 `PATH`。
 - 可提前执行 `codex login`，也可在 GPT Auth 卡片中启动登录。
 
-## 从 GitHub 安装
+## 安装预构建 Release（推荐）
+
+Release tarball 已包含 Host 与浏览器构建产物，不需要安装期构建权限：
+
+```sh
+dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.1.0/dsh-codex-auth-0.1.0.tgz
+```
+
+重启 `dsh web`，打开设置并选择 **GPT Auth**。
+
+## 从 GitHub 源码安装
 
 安装到实际运行的 profile：
 
