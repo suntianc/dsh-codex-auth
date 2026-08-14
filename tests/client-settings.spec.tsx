@@ -5,7 +5,7 @@ import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-clie
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import type { CodexImageSettings } from '../src/image.ts'
 import type { CodexSearchSettings } from '../src/search.ts'
-import type { CodexAuthRpcClient, CodexAuthStatusView } from '../src/rpc-contract.ts'
+import type { CodexAuthRpcClient, CodexAuthStatusView, CodexUsageView } from '../src/rpc-contract.ts'
 import {
   CodexCapabilitySettings, CodexImageToolView, apply, inject,
 } from '../src/client/index.ts'
@@ -75,9 +75,10 @@ function authStatus(overrides: Partial<CodexAuthStatusView>): CodexAuthStatusVie
   }
 }
 
-function rpc(status: CodexAuthStatusView): CodexAuthRpcClient {
+function rpc(status: CodexAuthStatusView, usage: CodexUsageView = {}): CodexAuthRpcClient {
   return {
     status: vi.fn(async () => ({ ok: true as const, value: { status } })),
+    usage: vi.fn(async () => ({ ok: true as const, value: { usage } })),
     login: vi.fn(async () => ({ ok: true as const, value: { started: true } })),
   }
 }
@@ -92,7 +93,10 @@ describe('Codex Capability Bundle settings', () => {
     const search = fakeScope(SEARCH)
     const image = fakeScope(IMAGE)
     render(<CodexCapabilitySettings
-      rpc={rpc(authStatus({ credentialRef: '/Users/alice/.codex/auth.json', accountId: 'acct-1', planType: 'plus' }))}
+      rpc={rpc(
+        authStatus({ credentialRef: '/Users/alice/.codex/auth.json', accountId: 'acct-1', planType: 'plus' }),
+        { weeklyRemainingPercent: 49, weeklyResetAt: '2026-08-20T12:00:00.000Z' },
+      )}
       t={t}
       subscribe={subscribe}
       searchScope={search.scope}
@@ -103,9 +107,13 @@ describe('Codex Capability Bundle settings', () => {
     expect(screen.getByRole('heading', { name: 'Login' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Web Search' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Image Creation' })).toBeTruthy()
-    expect(screen.getByText('acct-1')).toBeTruthy()
+    // The login block only surfaces plan, remaining quota, and weekly reset.
     expect(screen.getByText('Plus plan')).toBeTruthy()
-    expect(screen.getByText('/Users/alice/.codex/auth.json')).toBeTruthy()
+    expect(screen.getByText('49%')).toBeTruthy()
+    expect(screen.getByText('Remaining quota')).toBeTruthy()
+    expect(screen.getByText('Weekly limit resets')).toBeTruthy()
+    expect(screen.queryByText('acct-1')).toBeNull()
+    expect(screen.queryByText('/Users/alice/.codex/auth.json')).toBeNull()
     expect(screen.getByText(/no token value is ever sent to the Web client/i)).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText('Search mode'), { target: { value: 'cached' } })
@@ -132,7 +140,10 @@ describe('Codex Capability Bundle settings', () => {
       searchScope={fakeScope(SEARCH).scope}
       imageScope={fakeScope(IMAGE).scope}
     />)
-    expect(await screen.findByText('Entitlement checked on use')).toBeTruthy()
+    // A configured non-Free plan carries no badge on either capability card.
+    expect(await screen.findByText('Unknown plan')).toBeTruthy()
+    expect(screen.queryByText('Entitlement checked on use')).toBeNull()
+    expect(screen.queryByText('Deployment-wide provider')).toBeNull()
 
     rerender(<CodexCapabilitySettings
       rpc={rpc(authStatus({ configured: false, authFileExists: false }))}

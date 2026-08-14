@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { ChangeEvent, ReactNode } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { Button, IconRefreshOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { CodexAuthRpcClient, CodexAuthStatusView } from '../rpc-contract.ts'
+import type { CodexAuthRpcClient, CodexAuthStatusView, CodexUsageView } from '../rpc-contract.ts'
 import type { CodexAuthKey } from './locales.ts'
 import classes from './CodexCapabilitySettings.module.css'
 
@@ -43,36 +43,50 @@ export function CodexCapabilitySettings({
   imageScope,
 }: CodexCapabilitySettingsProps): ReactNode {
   const [status, setStatus] = useState<CodexAuthStatusView | null>(null)
+  const [usage, setUsage] = useState<CodexUsageView | null>(null)
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [error, setError] = useState<string | null>(null)
   const [loginBusy, setLoginBusy] = useState(false)
+  const [refreshBusy, setRefreshBusy] = useState(false)
   const [tick, setTick] = useState(0)
   const search = useScope(searchScope)
   const image = useScope(imageScope)
 
   useEffect(() => subscribe(() => { setTick(value => value + 1) }), [subscribe])
 
+  // Refreshing keeps the previous facts on screen: only the very first load
+  // renders a placeholder, so a manual refresh never flashes the login block.
   const load = useCallback(async () => {
-    setLoadState('loading')
+    setRefreshBusy(true)
     setError(null)
     try {
       const result = await rpc.status()
       if (!result.ok) {
-        setStatus(null)
-        setLoadState('error')
+        setLoadState(previous => previous === 'ready' ? previous : 'error')
         setError(result.error.message || t('statusFailed'))
         return
       }
       setStatus(result.value.status)
       setLoadState('ready')
     } catch (cause) {
-      setStatus(null)
-      setLoadState('error')
+      setLoadState(previous => previous === 'ready' ? previous : 'error')
       setError(messageOf(cause, t('statusFailed')))
+    } finally {
+      setRefreshBusy(false)
     }
   }, [rpc, t])
 
-  useEffect(() => { void load() }, [load, tick])
+  // Quota facts are best-effort: a failed probe keeps the previous snapshot.
+  const loadUsage = useCallback(async () => {
+    try {
+      const result = await rpc.usage()
+      if (result.ok) setUsage(result.value.usage)
+    } catch {
+      /* quota facts are optional */
+    }
+  }, [rpc])
+
+  useEffect(() => { void load(); void loadUsage() }, [load, loadUsage, tick])
 
   const startLogin = useCallback(async (mode: 'browser' | 'device') => {
     setLoginBusy(true)
@@ -100,7 +114,7 @@ export function CodexCapabilitySettings({
       <div className={classes.cards}>
         <article className={classes.card}>
           <CardHeading title={t('authCardTitle')} intro={t('authCardIntro')} index="01" />
-          <AuthBody status={status} loadState={loadState} t={t} />
+          <AuthBody status={status} usage={usage} loadState={loadState} t={t} />
           <div className={classes.actions}>
             <Button
               variant="primary"
@@ -120,10 +134,10 @@ export function CodexCapabilitySettings({
               variant="ghost"
               className={classes.refresh}
               icon={<IconRefreshOutline16 size={16} />}
-              disabled={loadState === 'loading'}
-              onClick={() => { void load() }}
+              disabled={refreshBusy}
+              onClick={() => { void load(); void loadUsage() }}
             >
-              {loadState === 'loading' ? t('refreshing') : t('refresh')}
+              {refreshBusy ? t('refreshing') : t('refresh')}
             </Button>
           </div>
         </article>
@@ -133,7 +147,7 @@ export function CodexCapabilitySettings({
             title={t('searchCardTitle')}
             intro={t('searchCardIntro')}
             index="02"
-            badge={status === null ? undefined : status.configured ? t('deploymentWide') : t('availableAfterLogin')}
+            badge={status !== null && !status.configured ? t('availableAfterLogin') : undefined}
             tone={status?.configured === false ? 'warning' : 'neutral'}
           />
           <SettingsState snapshot={search} t={t}>
@@ -158,7 +172,7 @@ export function CodexCapabilitySettings({
                 ? t('availableAfterLogin')
                 : status.planType?.toLowerCase() === 'free'
                   ? t('unavailableFree')
-                  : t('entitlementOnUse')}
+                  : undefined}
             tone={!status?.configured || status.planType?.toLowerCase() === 'free' ? 'warning' : 'neutral'}
           />
           <SettingsState snapshot={image} t={t}>
@@ -239,24 +253,27 @@ function StatusPill({
 
 function AuthBody({
   status,
+  usage,
   loadState,
   t,
 }: {
   status: CodexAuthStatusView | null
+  usage: CodexUsageView | null
   loadState: LoadState
   t: CodexCapabilitySettingsProps['t']
 }): ReactNode {
-  if (loadState === 'loading') return <p className={classes.loading}>{t('refreshing')}</p>
-  if (status === null) return null
+  if (status === null) return loadState === 'loading' ? <p className={classes.loading}>{t('refreshing')}</p> : null
   return (
     <dl className={classes.facts}>
-      {status.accountId === undefined ? null : <Fact label={t('accountId')} value={status.accountId} />}
       <Fact label={t('plan')} value={status.planType === undefined ? t('unknownPlan') : `${titleCase(status.planType)} plan`} />
-      {status.authMode === undefined ? null : <Fact label={t('authMode')} value={status.authMode} />}
-      {status.codexVersion === undefined ? null : <Fact label={t('codexVersion')} value={status.codexVersion} />}
-      {status.tokenExpiresAt === undefined ? null : <Fact label={t('tokenExpiresAt')} value={localDate(status.tokenExpiresAt)} />}
-      {status.lastRefreshAt === undefined ? null : <Fact label={t('lastRefreshAt')} value={localDate(status.lastRefreshAt)} />}
-      <Fact label={t('credentialRef')} value={status.credentialRef} />
+      <Fact
+        label={t('quotaRemaining')}
+        value={usage?.weeklyRemainingPercent === undefined ? '—' : `${String(usage.weeklyRemainingPercent)}%`}
+      />
+      <Fact
+        label={t('weeklyReset')}
+        value={usage?.weeklyResetAt === undefined ? '—' : localDate(usage.weeklyResetAt)}
+      />
     </dl>
   )
 }

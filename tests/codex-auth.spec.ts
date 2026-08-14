@@ -4,7 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -15,9 +15,23 @@ import {
   readAuthFile, refreshTooOld, refreshTokens, writeAuthFile, CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_URL,
 } from '../src/codex-auth.ts'
 import type { CodexAuthFile } from '../src/codex-auth.ts'
-import { resolveCodexAccessToken } from '../src/codex-auth-adapter.ts'
+import { CodexAuthAdapter, resolveCodexAccessToken } from '../src/codex-auth-adapter.ts'
 import { CodexAuthService } from '../src/codex-auth-service.ts'
 import { Config as PluginConfig, type Config as PluginConfigView } from '../src/index.ts'
+
+/** Captures the options each CodexAuthAdapter hands to the PiAiAdapter base. */
+const piAiAdapterCalls: Array<{ profiles: () => ReadonlyMap<string, unknown> }> = []
+vi.mock('@deepseek-ai/dsh-llm-pi-ai', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@deepseek-ai/dsh-llm-pi-ai')>()
+  return {
+    ...original,
+    PiAiAdapter: class {
+      constructor(options: { profiles: () => ReadonlyMap<string, unknown> }) {
+        piAiAdapterCalls.push(options)
+      }
+    },
+  }
+})
 
 /** A fake JWT payload with the locally verifiable claims this plugin reads. */
 function fakeJwt(expSeconds: number, accountId = 'acct_test', planType?: string): string {
@@ -242,6 +256,46 @@ describe('Auth / LLM row configuration', () => {
     expect(parse({})).toMatchObject({ llmEnabled: true })
     expect(parse({ llmEnabled: false })).toMatchObject({ llmEnabled: false })
   })
+
+  it('defaults the route to SSE transport with bounded transport timeouts', () => {
+    const parse = PluginConfig as unknown as (input: Partial<PluginConfigView>) => PluginConfigView
+    expect(parse({})).toMatchObject({
+      llmEnabled: true,
+      transport: 'sse',
+      websocketConnectTimeoutMs: 5_000,
+      timeoutMs: 120_000,
+    })
+    expect(parse({ transport: 'auto', websocketConnectTimeoutMs: 2_000, timeoutMs: 30_000 })).toMatchObject({
+      transport: 'auto',
+      websocketConnectTimeoutMs: 2_000,
+      timeoutMs: 30_000,
+    })
+  })
+})
+
+describe('CodexAuthAdapter route profile', () => {
+  it('passes the configured transport and timeouts into the pi-ai profile', () => {
+    const ctx = new Context()
+    const service = new CodexAuthService(ctx, {
+      authJsonPath: '/nonexistent/auth.json',
+      codexCommand: 'definitely-not-codex',
+      credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
+    })
+    new CodexAuthAdapter(ctx, {
+      auth: service,
+      authJsonPath: '/nonexistent/auth.json',
+      credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
+      refreshLeadMs: 5 * 60 * 1000,
+      fetchImpl: fetch,
+      displayName: 'OpenAI Codex (chatgpt)',
+      transport: 'auto',
+      websocketConnectTimeoutMs: 3_000,
+      timeoutMs: 60_000,
+    })
+    const options = piAiAdapterCalls.at(-1)
+    const profile = options?.profiles().get('openai-codex') as Record<string, unknown> | undefined
+    expect(profile).toMatchObject({ transport: 'auto', websocketConnectTimeoutMs: 3_000, timeoutMs: 60_000 })
+  })
 })
 
 describe('CodexAuthService authenticated operation boundary', () => {
@@ -256,12 +310,12 @@ describe('CodexAuthService authenticated operation boundary', () => {
   })
   afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
-  function service(fetchImpl: typeof fetch): CodexAuthService {
+  function service(fetchImpl: typeof fetch, refreshLeadMs = 5 * 60 * 1000): CodexAuthService {
     return new CodexAuthService(ctx, {
       authJsonPath: authPath,
       codexCommand: 'definitely-not-codex',
       credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
-      refreshLeadMs: 5 * 60 * 1000,
+      refreshLeadMs,
       fetchImpl,
     })
   }
@@ -340,7 +394,9 @@ describe('CodexAuthService authenticated operation boundary', () => {
     const fetchMock = vi.fn(async () => {
       await writeFile(authPath, JSON.stringify({
         tokens: { access_token: replacement, refresh_token: 'cli-secret', account_id: 'acct-1' },
-        last_refresh: '2026-02-01T00:00:00.000Z',
+        // A fresh CLI login: recent last_refresh keeps the background refresher
+        // from re-arming at zero delay while this test's temp dir is removed.
+        last_refresh: new Date().toISOString(),
       }), 'utf8')
       return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 })
     })
@@ -365,6 +421,250 @@ describe('CodexAuthService authenticated operation boundary', () => {
     })
 
     await expect(service(fetchMock).credential()).resolves.toBeUndefined()
+  })
+
+  it('does not merge a successful stale refresh into a changed account that is still due', async () => {
+    const expiringA = fakeJwt(Math.floor(Date.now() / 1000) + 30, 'acct-1')
+    const expiringB = fakeJwt(Math.floor(Date.now() / 1000) + 30, 'acct-2')
+    const refreshedA = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-1')
+    await writeFile(authPath, JSON.stringify({
+      tokens: { access_token: expiringA, refresh_token: 'rt-a', account_id: 'acct-1' },
+    }), 'utf8')
+    const replacement = {
+      tokens: { access_token: expiringB, refresh_token: 'rt-b', account_id: 'acct-2' },
+    }
+    const fetchMock = vi.fn(async () => {
+      await writeFile(authPath, JSON.stringify(replacement), 'utf8')
+      return new Response(JSON.stringify({
+        access_token: refreshedA,
+        refresh_token: 'rt-a-rotated',
+        account_id: 'acct-1',
+      }), { status: 200 })
+    })
+
+    await expect(service(fetchMock).credential()).resolves.toBeUndefined()
+    await expect(readAuthFile(authPath)).resolves.toEqual(replacement)
+  })
+
+  it('fails closed when an initially unknown account conflicts with the current file and refresh reply', async () => {
+    const expiringB = fakeJwt(Math.floor(Date.now() / 1000) + 30, 'acct-2')
+    const refreshedA = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-1')
+    await writeFile(authPath, JSON.stringify({
+      last_refresh: '2000-01-01T00:00:00.000Z',
+      tokens: { access_token: 'opaque-token', refresh_token: 'shared-refresh-token' },
+    }), 'utf8')
+    const replacement = {
+      tokens: { access_token: expiringB, refresh_token: 'shared-refresh-token', account_id: 'acct-2' },
+    }
+    const fetchMock = vi.fn(async () => {
+      await writeFile(authPath, JSON.stringify(replacement), 'utf8')
+      return new Response(JSON.stringify({
+        access_token: refreshedA,
+        refresh_token: 'rt-a-rotated',
+        account_id: 'acct-1',
+      }), { status: 200 })
+    })
+
+    await expect(service(fetchMock).credential()).resolves.toBeUndefined()
+    await expect(readAuthFile(authPath)).resolves.toEqual(replacement)
+  })
+
+  it('re-reads the auth file when it changes externally and serves the rotated login without refreshing', async () => {
+    const tokenA = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-1')
+    const tokenB = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-1')
+    await writeFile(authPath, JSON.stringify({
+      tokens: { access_token: tokenA, refresh_token: 'rt-1', account_id: 'acct-1' },
+    }), 'utf8')
+    const fetchMock = vi.fn()
+    const coordinator = service(fetchMock)
+
+    await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: tokenA })
+    // The Codex CLI rotates the login in the file (e.g. a fresh `codex login`).
+    await new Promise(resolve => setTimeout(resolve, 10))
+    await writeFile(authPath, JSON.stringify({
+      tokens: { access_token: tokenB, refresh_token: 'rt-2', account_id: 'acct-1' },
+    }), 'utf8')
+
+    await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: tokenB })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('invalidates a cached credential when content changes without changing mtime', async () => {
+    const tokenA = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-1')
+    const tokenB = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-2')
+    const fixedTime = new Date('2026-08-14T12:00:00.000Z')
+    await writeFile(authPath, JSON.stringify({
+      tokens: { access_token: tokenA, refresh_token: 'rt-1', account_id: 'acct-1' },
+    }), 'utf8')
+    await utimes(authPath, fixedTime, fixedTime)
+    const coordinator = service(vi.fn())
+
+    await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: tokenA, accountId: 'acct-1' })
+    await writeFile(authPath, JSON.stringify({
+      tokens: { access_token: tokenB, refresh_token: 'rt-2', account_id: 'acct-2' },
+    }), 'utf8')
+    await utimes(authPath, fixedTime, fixedTime)
+
+    await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: tokenB, accountId: 'acct-2' })
+  })
+
+  it('refuses a cached credential that has neared expiry and refreshes once', async () => {
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    const token = fakeJwt(nowSeconds + 6, 'acct-1')
+    const refreshed = fakeJwt(nowSeconds + 3600, 'acct-1')
+    await writeFile(authPath, JSON.stringify({
+      tokens: { access_token: token, refresh_token: 'rt-1', account_id: 'acct-1' },
+    }), 'utf8')
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      access_token: refreshed,
+      refresh_token: 'rt-2',
+      account_id: 'acct-1',
+    }), { status: 200 }))
+    const coordinator = service(fetchMock, 1_000)
+
+    await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: token })
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    // Wait past the 1s lead: the cached entry must be refused and refreshed once.
+    await new Promise(resolve => setTimeout(resolve, 5200))
+    await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: refreshed })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  }, 15_000)
+
+  it('pre-refreshes in the background before the access token nears expiry', async () => {
+    // Fake only the clock APIs this flow uses; setImmediate stays real so each
+    // advance step can let the file-system work of the refresh chain settle.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const nowSeconds = Math.floor(Date.now() / 1000)
+      // 420s of remaining validity: outside the 300s lead at resolve time, so
+      // the first credential is served without a refresh, while the background
+      // timer (armed at exp - lead - grace = 60s) crosses the lead on its
+      // second firing.
+      const token = fakeJwt(nowSeconds + 420, 'acct-1')
+      const refreshed = fakeJwt(nowSeconds + 3600, 'acct-1')
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: token, refresh_token: 'rt-1', account_id: 'acct-1' },
+      }), 'utf8')
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+        access_token: refreshed,
+        refresh_token: 'rt-2',
+        account_id: 'acct-1',
+      }), { status: 200 }))
+      const coordinator = service(fetchMock)
+
+      await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: token })
+      expect(fetchMock).not.toHaveBeenCalled()
+
+      // Walk the clock in one-minute steps past the armed timer and its +60s
+      // re-arms; the first firing is a no-op, the second is a no-op at the
+      // exact lead boundary, and the third crosses the lead and refreshes.
+      for (let step = 0; step < 6 && fetchMock.mock.calls.length === 0; step++) {
+        await vi.advanceTimersByTimeAsync(60 * 1000)
+        for (let settle = 0; settle < 10; settle++) {
+          await new Promise(resolve => setImmediate(resolve))
+        }
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      // The background refresh rewrites the auth file with the rotated token
+      // set. Poll the file (with real I/O settling between reads) instead of
+      // calling credential() again, which would race the refresh chain for
+      // the writer lock under the faked backoff timers. The "serve the rotated
+      // login without refreshing" half is covered by the version-bust test.
+      let persisted: CodexAuthFile | undefined
+      for (let attempt = 0; attempt < 100; attempt++) {
+        persisted = JSON.parse(await readFile(authPath, 'utf8')) as CodexAuthFile
+        if (persisted.tokens?.access_token === refreshed) break
+        await new Promise(resolve => setImmediate(resolve))
+        await new Promise(resolve => setImmediate(resolve))
+      }
+      expect(persisted?.tokens?.access_token).toBe(refreshed)
+      expect(persisted?.tokens?.refresh_token).toBe('rt-2')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reschedules background refresh when an external login expires sooner', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const nowSeconds = Math.floor(Date.now() / 1000)
+      const later = fakeJwt(nowSeconds + 3600, 'acct-1')
+      const sooner = fakeJwt(nowSeconds + 420, 'acct-1')
+      const refreshed = fakeJwt(nowSeconds + 3600, 'acct-1')
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: later, refresh_token: 'rt-later', account_id: 'acct-1' },
+      }), 'utf8')
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+        access_token: refreshed,
+        refresh_token: 'rt-refreshed',
+        account_id: 'acct-1',
+      }), { status: 200 }))
+      const coordinator = service(fetchMock)
+      await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: later })
+
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: sooner, refresh_token: 'rt-sooner', account_id: 'acct-1' },
+      }), 'utf8')
+      await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: sooner })
+
+      for (let step = 0; step < 6 && fetchMock.mock.calls.length === 0; step++) {
+        await vi.advanceTimersByTimeAsync(60 * 1000)
+        for (let settle = 0; settle < 10; settle++) await new Promise(resolve => setImmediate(resolve))
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries proactive refresh after rejecting a stale success for a changed due login', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const nowSeconds = Math.floor(Date.now() / 1000)
+      const tokenA = fakeJwt(nowSeconds + 420, 'acct-1')
+      const tokenB = fakeJwt(nowSeconds + 420, 'acct-2')
+      const refreshedA = fakeJwt(nowSeconds + 3600, 'acct-1')
+      const refreshedB = fakeJwt(nowSeconds + 3600, 'acct-2')
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: tokenA, refresh_token: 'rt-a', account_id: 'acct-1' },
+      }), 'utf8')
+      const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        const refreshToken = (JSON.parse(String(init?.body)) as { refresh_token: string }).refresh_token
+        if (refreshToken === 'rt-a') {
+          await writeFile(authPath, JSON.stringify({
+            tokens: { access_token: tokenB, refresh_token: 'rt-b', account_id: 'acct-2' },
+          }), 'utf8')
+          return new Response(JSON.stringify({
+            access_token: refreshedA,
+            refresh_token: 'rt-a-rotated',
+            account_id: 'acct-1',
+          }), { status: 200 })
+        }
+        return new Response(JSON.stringify({
+          access_token: refreshedB,
+          refresh_token: 'rt-b-rotated',
+          account_id: 'acct-2',
+        }), { status: 200 })
+      })
+      const coordinator = service(fetchMock)
+      await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: tokenA })
+
+      for (let step = 0; step < 6 && fetchMock.mock.calls.length === 0; step++) {
+        await vi.advanceTimersByTimeAsync(60 * 1000)
+        for (let settle = 0; settle < 10; settle++) await new Promise(resolve => setImmediate(resolve))
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      for (let step = 0; step < 12 && fetchMock.mock.calls.length < 2; step++) {
+        await vi.advanceTimersByTimeAsync(60 * 1000)
+        for (let settle = 0; settle < 20; settle++) await new Promise(resolve => setImmediate(resolve))
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

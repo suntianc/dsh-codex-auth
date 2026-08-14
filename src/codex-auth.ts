@@ -15,7 +15,7 @@
 
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { readFile } from 'node:fs/promises'
+import { open, readFile, stat } from 'node:fs/promises'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
 /** The OAuth client id the official Codex CLI registers against auth.openai.com. */
@@ -44,6 +44,21 @@ export interface CodexAuthFile {
   OPENAI_API_KEY?: string
   tokens?: CodexTokenSet
   last_refresh?: string
+}
+
+/** Stable identity/freshness facts for the exact auth-file inode that was read. */
+export interface CodexAuthFileVersion {
+  dev: bigint
+  ino: bigint
+  size: bigint
+  mtimeNs: bigint
+  ctimeNs: bigint
+}
+
+/** Parsed auth state bound to the exact file version its bytes came from. */
+export interface CodexAuthSnapshot {
+  file: CodexAuthFile
+  version: CodexAuthFileVersion
 }
 
 /** The refresh endpoint's reply; fields the codex CLI records are carried over. */
@@ -114,14 +129,84 @@ export async function readAuthFile(path: string): Promise<CodexAuthFile | undefi
   try {
     text = await readFile(path, 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return undefined
+    if (isNotFound(error)) return undefined
     throw error
   }
+  return parseAuthFile(path, text)
+}
+
+/**
+ * Read auth bytes and version facts from one open file descriptor. Atomic
+ * replacement after the open leaves this snapshot bound to the old inode, so
+ * a later path stat reliably invalidates it instead of pairing old bytes with
+ * a new file's timestamp.
+ */
+export async function readAuthSnapshot(path: string): Promise<CodexAuthSnapshot | undefined> {
+  let handle
+  try {
+    handle = await open(path, 'r')
+  } catch (error) {
+    if (isNotFound(error)) return undefined
+    throw error
+  }
+  try {
+    const before = versionFromStat(await handle.stat({ bigint: true }))
+    const text = await handle.readFile('utf8')
+    const after = versionFromStat(await handle.stat({ bigint: true }))
+    if (!sameAuthFileVersion(before, after)) {
+      throw new Error(`codex-auth: ${path} changed while it was being read`)
+    }
+    return { file: parseAuthFile(path, text), version: after }
+  } finally {
+    await handle.close()
+  }
+}
+
+/** Read only the current path version for a cheap credential-cache check. */
+export async function readAuthFileVersion(path: string): Promise<CodexAuthFileVersion | undefined> {
+  try {
+    return versionFromStat(await stat(path, { bigint: true }))
+  } catch (error) {
+    if (isNotFound(error)) return undefined
+    throw error
+  }
+}
+
+/** Exact equality for the inode and freshness fields used by the auth cache. */
+export function sameAuthFileVersion(left: CodexAuthFileVersion, right: CodexAuthFileVersion): boolean {
+  return left.dev === right.dev
+    && left.ino === right.ino
+    && left.size === right.size
+    && left.mtimeNs === right.mtimeNs
+    && left.ctimeNs === right.ctimeNs
+}
+
+function versionFromStat(value: {
+  dev: bigint
+  ino: bigint
+  size: bigint
+  mtimeNs: bigint
+  ctimeNs: bigint
+}): CodexAuthFileVersion {
+  return {
+    dev: value.dev,
+    ino: value.ino,
+    size: value.size,
+    mtimeNs: value.mtimeNs,
+    ctimeNs: value.ctimeNs,
+  }
+}
+
+function parseAuthFile(path: string, text: string): CodexAuthFile {
   const parsed: unknown = JSON.parse(text)
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new TypeError(`codex-auth: ${path} must be a JSON object`)
   }
   return parsed
+}
+
+function isNotFound(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
 }
 
 /** The current access-token facts of one auth file. */

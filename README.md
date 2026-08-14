@@ -24,15 +24,17 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 ### Shared Codex Login State
 
 - Uses one Host-only auth coordinator for LLM, Search, and Image operations.
-- Reads credentials only at authenticated operation boundaries and refreshes
-  through the official OAuth token endpoint before expiry.
-- Coalesces concurrent refreshes in-process and uses a cross-process file lock
-  with a locked re-read before refresh.
-- Adopts externally rotated Codex CLI credentials only when the locally decoded
-  account identity still matches.
+- Resolves credentials through version-bound auth-file snapshots, a short-lived
+  in-memory cache, and proactive refresh before expiry.
+- Coalesces concurrent refreshes in-process and uses short cross-process lock
+  sections before and after OAuth network I/O; a reply is persisted only while
+  the account and refresh-token lineage still match.
 - Starts the official `codex login` browser or device-code flow.
-- Exposes only value-free status over a plugin-owned, loopback-only
-  `/codex-auth` Connection RPC channel.
+- Shows connection state plus best-effort weekly remaining balance/reset time.
+  The fixed `/backend-api/wham/usage` probe has a ten-second Host deadline and
+  identifies the seven-day window by duration rather than response position.
+- Sends no token value over the plugin-owned, loopback-only `/codex-auth`
+  Connection RPC channel.
 
 ### Web Search
 
@@ -197,6 +199,9 @@ Login State coordinator available to Search/Image without owning an LLM route:
 | `refreshLeadMs` | `300000` | Refresh lead time in milliseconds |
 | `codexCommand` | `codex` | CLI command used for login and version probing |
 | `displayName` | `OpenAI Codex (chatgpt)` | Provider label in model selectors |
+| `transport` | `sse` | Streaming transport: `sse`, `websocket`, or `auto` (WebSocket first with SSE fallback). SSE is the default: the WebSocket upgrade is unreliable through common HTTP proxies, and every new conversation pays the connect timeout before `auto` falls back |
+| `websocketConnectTimeoutMs` | `5000` | WebSocket connect timeout in milliseconds (used only when `transport` is not `sse`; `0` disables it) |
+| `timeoutMs` | `120000` | Request timeout in milliseconds (SSE response-header phase; also the WebSocket message idle interval; `0` disables it) |
 
 Do not also add an `openai-codex` entry under `llm-pi-ai.providers` or install
 `dsh-codex`; duplicate route ownership is rejected with an explicit diagnostic.

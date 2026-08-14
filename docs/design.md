@@ -50,24 +50,26 @@ The Codex login is an external, CLI-owned state rather than a Harness-managed se
 
 The auth file is `~/.codex/auth.json`, or `$CODEX_HOME/auth.json`. Tokens never enter Harness settings, logs, tool metadata, session events, or browser RPC.
 
-Every authenticated operation follows one coordinator:
+Every authenticated operation uses one Host coordinator:
 
-1. Acquire the in-process singleflight for the auth path.
-2. Acquire the plugin's cross-process lock for DSH consumers.
-3. Re-read the auth file after locking; a pre-lock read is only a hint.
-4. Reuse a sufficiently fresh access token.
-5. When refresh is required, call `https://auth.openai.com/oauth/token` with the Codex OAuth client and current refresh token.
-6. Merge successful rotated tokens into the latest document, preserve unknown fields, and atomically write at owner-only permissions.
-7. If the authority reports an exhausted/reused token, re-read the file. If Codex CLI or another process has written a newer matching-account login, adopt it instead of forcing a new login.
-8. If no usable state can be recovered, return an unconfigured/auth-required error without logging token material.
+1. A credential cached for at most ten minutes may take a one-stat fast path only while its token remains outside the refresh lead and the path still has the exact inode/size/mtime/ctime version whose bytes produced that credential. A missing or untrusted version is never cached.
+2. Cache misses acquire the in-process singleflight for the auth path, then briefly acquire the plugin's cross-process lock for DSH consumers.
+3. The locked decision reads the document and file version from one open file descriptor; a pre-lock read is only a diagnostic hint.
+4. A sufficiently fresh token is returned and schedules proactive refresh. Every newly resolved snapshot replaces the previous schedule, including an external login with an earlier expiry.
+5. When refresh is required, the lock is released before calling `https://auth.openai.com/oauth/token`, so network latency cannot exhaust the writer lock's contention deadline.
+6. After the OAuth reply, the coordinator locks and re-reads again. A fresh newer document wins; otherwise the reply is merged only when the current account and refresh-token lineage still match the decision snapshot. The atomic write preserves unknown fields at owner-only permissions.
+7. If refresh fails, a newer fresh matching-account login may be adopted. A different account, changed refresh lineage, unreadable snapshot, or unusable state fails closed without logging token material.
+8. A lifecycle-owned, unref'd timer performs the same two-phase refresh ahead of expiry and retries transient failures without keeping the process alive.
 
-Atomic replacement prevents torn files; it does **not** prove refresh-token concurrency safety. The official Codex process does not participate in the plugin's lock, so cross-client coordination is best-effort and recovery-oriented rather than an absolute guarantee.
+Atomic replacement prevents torn files; version-bound snapshots prevent old bytes from being paired with a newer file's metadata. The official Codex process does not participate in the plugin's lock, so cross-client coordination remains recovery-oriented rather than an absolute serialization guarantee.
 
 Login buttons continue to spawn the official `codex login` browser or device-code flow. Status RPC remains value-free and loopback-only.
 
 ## LLM route
 
 With its default `llmEnabled: true`, the package owns exactly one `openai-codex` adapter route. An installer can set `llmEnabled: false` while retaining the shared Login State coordinator for Search and Image. `PiAiAdapter` continues to handle conversation streaming, ordinary function tools, reasoning replay, usage, cancellation, compaction, and input attachment conversion.
+
+The route defaults to SSE and exposes `sse`, `websocket`, and `auto` transport selection. `websocketConnectTimeoutMs` bounds the WebSocket handshake, while `timeoutMs` bounds the SSE response-header phase or the WebSocket message-idle interval; neither setting is presented as a whole-stream deadline, and `0` explicitly disables the corresponding timeout.
 
 Installed pi-ai `0.82.1` does not model Codex standalone search, Responses `web_search`, or image-generation result items. Search and image creation therefore do not modify or inject payloads into `PiAiAdapter`; they use dedicated capability plugins and the official Codex standalone endpoints.
 
@@ -179,18 +181,18 @@ A single save proposes `generated-images/<date>-<short-handle>.png` and permits 
 
 The independently navigable section keeps the name **GPT Auth** and the stock icon fallback. It contains three cards:
 
-1. **Login** — CLI availability, login state, expiry/refresh facts, and browser/device login actions;
-2. **Web Search** — enabled state, global provider state, mode, context size, fallback model, and output budget;
+1. **Login** — connection state, locally decoded plan, weekly remaining balance/reset time, and browser/device login actions when disconnected;
+2. **Web Search** — enabled state, mode, context size, fallback model, and output budget;
 3. **Image Creation** — enabled state, plan eligibility, model-scope note, and default count/size/quality/background.
 
-Search and Image register live settings under the plugin's DSH settings namespace. Both default enabled after installation. Disabling one immediately removes its model capability for current and future Agents without restarting. Logged-out cards are unavailable rather than silently probing the backend.
+Search and Image register live settings under the plugin's DSH settings namespace. Both default enabled after installation. Disabling one immediately removes its model capability for current and future Agents without restarting. Logged-out cards are unavailable rather than probing capability endpoints.
 
-The UI displays only locally verifiable status. It performs no test search or test generation. Compatibility and private-endpoint disclosures live in repository documentation, not in the settings cards.
+The Login card combines locally verified connection state with a best-effort, value-free account-usage view. When a usable login exists, the Host requests the fixed `/backend-api/wham/usage` endpoint with a ten-second Host deadline, identifies the seven-day window by `limit_window_seconds`, and sends only plan/balance/reset facts to the browser. Cancellation, auth failure, malformed data, a missing weekly window, or upstream failure degrades to unknown values. The UI performs no test search or test generation. Compatibility and private-endpoint disclosures live in repository documentation, not in the settings cards.
 
 ## Security and privacy
 
 - Browser RPC and settings never carry bearer, refresh, or ID token values.
-- Remote capability endpoints are fixed to `https://chatgpt.com/backend-api/codex`; configuration cannot redirect credentials to another origin.
+- Remote capability endpoints are fixed under `https://chatgpt.com/backend-api/codex`, and the read-only account-usage probe is fixed to `https://chatgpt.com/backend-api/wham/usage`; configuration cannot redirect credentials to another origin.
 - Requests use a plugin-owned originator rather than impersonating the official CLI.
 - Account identity is resolved from the latest auth document with token-claim fallback; no identity value is accepted from the model.
 - Search queries, image prompts, selected handles, and non-secret options are ordinary durable tool inputs. Raw base64 image responses are not logged; durable bytes live in the attachment store.

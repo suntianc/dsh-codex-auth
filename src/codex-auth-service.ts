@@ -4,21 +4,33 @@
  * and login only spawns the official codex CLI, which owns the whole flow —
  * browser PKCE by default, device-code on request.
  *
+ * Authenticated operations resolve credentials through an in-memory cache
+ * that is validated per call with a single stat: a fresh token with an
+ * untouched auth file is served without any file read or cross-process lock.
+ * Refresh happens proactively in the background (ahead of expiry and of the
+ * codex CLI's 8-day refresh age), so the request path only refreshes
+ * synchronously when a token is genuinely needed — after long process-down
+ * idle, or when a refresh failed and the token is still required.
+ *
  * @module dsh-codex-auth/codex-auth-service
  */
 
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
 import { Service } from '@deepseek-ai/cordis'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import {
   authState, decodeAccessToken, DEFAULT_REFRESH_LEAD_MS, MAX_REFRESH_AGE_MS, mergeRefreshed,
-  needsRefresh, readAuthFile, refreshTokens, refreshTooOld, writeAuthFile,
+  needsRefresh, readAuthFile, readAuthFileVersion, readAuthSnapshot, refreshTokens, refreshTooOld,
+  sameAuthFileVersion, writeAuthFile,
 } from './codex-auth.ts'
-import type { CodexAuthFile } from './codex-auth.ts'
-import type { CodexAuthLoginMode, CodexAuthStatusView } from './rpc-contract.ts'
-export type { CodexAuthLoginMode, CodexAuthStatusView } from './rpc-contract.ts'
+import type {
+  CodexAuthFile, CodexAuthFileVersion, CodexAuthSnapshot, CodexRefreshReply,
+} from './codex-auth.ts'
+import { readBoundedResponseText } from './bounded-response.ts'
+import type { CodexAuthLoginMode, CodexAuthStatusView, CodexUsageView } from './rpc-contract.ts'
+export type { CodexAuthLoginMode, CodexAuthStatusView, CodexUsageView } from './rpc-contract.ts'
 
 /** Options one service instance is constructed with. */
 export interface CodexAuthServiceOptions {
@@ -32,6 +44,8 @@ export interface CodexAuthServiceOptions {
   refreshLeadMs?: number
   /** Injectable refresh transport; defaults to the Host's fetch. */
   fetchImpl?: typeof fetch
+  /** Host-owned deadline for the best-effort usage probe; primarily injectable for tests. */
+  usageTimeoutMs?: number
 }
 
 /** Host-only credential facts returned at an authenticated operation boundary. */
@@ -45,6 +59,50 @@ export interface CodexCredential {
 /** One refresh/read operation shared by every in-process consumer of an auth path. */
 const credentialFlights = new Map<string, Promise<CodexCredential | undefined>>()
 
+/** How long a resolved credential may be served from memory without re-reading the auth file. */
+const CREDENTIAL_CACHE_MAX_AGE_MS = 10 * 60 * 1000
+
+/** How long a computed status may be served without re-reading the auth file. */
+const STATUS_CACHE_TTL_MS = 2_000
+
+/** Lead before a refresh threshold at which the background refresh timer fires. */
+const REFRESH_GRACE_MS = 60 * 1000
+
+/** Retry interval after a failed background refresh. */
+const BACKGROUND_REFRESH_RETRY_MS = 5 * 60 * 1000
+
+/** Floor for a background refresh that is not yet due; avoids a zero-delay re-arm loop. */
+const BACKGROUND_REFRESH_MIN_DELAY_MS = 60 * 1000
+
+/** Ceiling for one setTimeout delay (Node's 32-bit signed millisecond cap). */
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1
+
+/** Codex CLI version probe timeout. */
+const PROBE_TIMEOUT_MS = 5_000
+
+/** Read-only ChatGPT backend endpoint answering the account's usage windows. */
+const CODEX_USAGE_ENDPOINT = 'https://chatgpt.com/backend-api/wham/usage'
+
+/** Hard cap for the usage envelope; the real payload is a few hundred bytes. */
+const CODEX_USAGE_MAX_BYTES = 64 * 1024
+
+/** Host-owned deadline so a stalled private endpoint cannot pin the RPC forever. */
+const CODEX_USAGE_TIMEOUT_MS = 10_000
+
+/** Codex's subscription window is identified by duration, not primary/secondary position. */
+const WEEKLY_USAGE_WINDOW_SECONDS = 7 * 24 * 60 * 60
+
+/** One resolved credential plus the facts that decide whether it may be served again. */
+interface CachedCredential {
+  credential: CodexCredential
+  /** The access token's expiry in epoch milliseconds, when decodable. */
+  accessTokenExpiresAt: number | undefined
+  /** When this entry was resolved. */
+  cachedAt: number
+  /** Exact version of the auth-file inode whose bytes produced this credential. */
+  fileVersion: CodexAuthFileVersion
+}
+
 /**
  * The codexAuth service. Constructing it registers it as `codexAuth`; this
  * package's dedicated Connection RPC channel is its only browser transport.
@@ -53,10 +111,14 @@ export class CodexAuthService extends Service {
   private codexVersion: string | undefined
   private lastStatus: CodexAuthStatusView | undefined
   private readonly statusListeners = new Set<() => void>()
+  private cachedCredential: CachedCredential | undefined
+  private refreshTimer: NodeJS.Timeout | undefined
+  private statusReadAt = 0
 
   constructor(ctx: Context, private readonly options: CodexAuthServiceOptions) {
     super(ctx, 'codexAuth')
     this.probeCodex()
+    this.ctx.effect(() => () => { this.clearRefreshTimer() })
   }
 
   /** Whether the codex CLI resolved at startup. */
@@ -76,12 +138,16 @@ export class CodexAuthService extends Service {
   }
 
   /**
-   * Resolve credentials for one authenticated operation. Every consumer shares
-   * one in-process flight, then re-reads under the cross-process writer lock
-   * before deciding whether to refresh.
+   * Resolve credentials for one authenticated operation. A fresh cached
+   * credential with an untouched auth file is served directly (one stat, no
+   * read, no lock); everything else shares one in-process flight, which
+   * re-reads under the cross-process writer lock before deciding whether to
+   * refresh.
    */
-  credential(signal?: AbortSignal): Promise<CodexCredential | undefined> {
+  async credential(signal?: AbortSignal): Promise<CodexCredential | undefined> {
     throwIfAborted(signal)
+    const cached = this.cachedCredential
+    if (cached !== undefined && await this.cachedCredentialFresh(cached)) return cached.credential
     const path = this.options.authJsonPath
     let flight = credentialFlights.get(path)
     if (flight === undefined) {
@@ -93,15 +159,80 @@ export class CodexAuthService extends Service {
     return waitForCredential(flight, signal)
   }
 
+  /**
+   * Whether a cached credential may still be served: the token must remain
+   * comfortably valid, the entry must be younger than the cache ceiling, and
+   * the auth file must not have changed under it (a `codex login` re-run or
+   * another process's refresh). The file check is one stat — no read, no lock.
+   */
+  private async cachedCredentialFresh(cached: CachedCredential): Promise<boolean> {
+    const leadMs = this.options.refreshLeadMs ?? DEFAULT_REFRESH_LEAD_MS
+    if (cached.accessTokenExpiresAt !== undefined && cached.accessTokenExpiresAt - Date.now() < leadMs) {
+      return false
+    }
+    if (Date.now() - cached.cachedAt >= CREDENTIAL_CACHE_MAX_AGE_MS) return false
+    try {
+      const current = await readAuthFileVersion(this.options.authJsonPath)
+      return current !== undefined && sameAuthFileVersion(current, cached.fileVersion)
+    } catch {
+      return false
+    }
+  }
+
   /** Describe the current login state without exposing any token material. */
   async status(): Promise<CodexAuthStatusView> {
+    if (this.lastStatus !== undefined && Date.now() - this.statusReadAt < STATUS_CACHE_TTL_MS) {
+      return this.lastStatus
+    }
     let file: CodexAuthFile | undefined
     try {
       file = await readAuthFile(this.options.authJsonPath)
     } catch (error) {
       this.warnCredentialFailure('status could not read the Codex Login State', error)
     }
-    return this.publishStatus(statusFromFile(file, this.available, this.codexVersion, this.options.credentialRef))
+    const status = this.publishStatus(statusFromFile(file, this.available, this.codexVersion, this.options.credentialRef))
+    this.statusReadAt = Date.now()
+    return status
+  }
+
+  /**
+   * Read-only weekly usage snapshot for the settings login block. The ChatGPT
+   * backend's `/wham/usage` endpoint answers multiple account windows; the
+   * seven-day window is selected by duration rather than field position. The
+   * probe never throws: a failure answers an empty view, which the settings
+   * card renders as dashes instead of erroring the whole login block.
+   */
+  async usage(signal?: AbortSignal): Promise<CodexUsageView> {
+    const bounded = boundedSignal(signal, this.options.usageTimeoutMs ?? CODEX_USAGE_TIMEOUT_MS)
+    try {
+      throwIfAborted(bounded.signal)
+      const credential = await this.credential(bounded.signal)
+      if (credential === undefined) return {}
+      const response = await (this.options.fetchImpl ?? fetch)(CODEX_USAGE_ENDPOINT, {
+        headers: {
+          authorization: `Bearer ${credential.accessToken}`,
+          ...credential.accountId === undefined ? {} : { 'chatgpt-account-id': credential.accountId },
+          'content-type': 'application/json',
+          'user-agent': 'dsh-codex-auth/0.1.0',
+        },
+        signal: bounded.signal,
+      })
+      if (!response.ok) {
+        try { await response.body?.cancel() } catch { /* best effort */ }
+        return {}
+      }
+      const text = await readBoundedResponseText(response, CODEX_USAGE_MAX_BYTES, bounded.signal, {
+        tooLarge: () => new Error('usage response exceeded the encoded size limit'),
+        cancelled: () => new Error('usage probe was cancelled'),
+      })
+      return usageFromPayload(JSON.parse(text) as unknown)
+    } catch {
+      // Best-effort probe: login problems, network failures, malformed
+      // envelopes, and cancellation all degrade to an empty view.
+      return {}
+    } finally {
+      bounded.cleanup()
+    }
   }
 
   /** Start the official codex login flow in the background. */
@@ -136,49 +267,239 @@ export class CodexAuthService extends Service {
     }
 
     try {
-      return await withFileLock(this.options.authJsonPath, async () => {
-        const file = await readAuthFile(this.options.authJsonPath)
-        const state = authState(file)
-        if (file === undefined || state.accessToken === undefined) {
-          this.publishStatus(statusFromFile(file, this.available, this.codexVersion, this.options.credentialRef))
-          return undefined
-        }
+      // Phase 1 — decide under the writer lock whether a refresh is due. The
+      // OAuth round trip happens OUTSIDE the lock (phase 2), so a slow token
+      // endpoint never blocks other credential readers or the background
+      // refresher behind the lock's 2-second contention deadline.
+      const decision = await withFileLock(this.options.authJsonPath, () => this.decideRefreshLocked())
+      if (decision.mode === 'absent') return undefined
+      if (decision.mode === 'ready') {
+        this.recordResolved(decision.snapshot)
+        return credentialFromFile(decision.snapshot.file)
+      }
+      try {
+        const reply = await refreshTokens(decision.refreshToken, this.options.fetchImpl ?? fetch)
+        const adopted = await withFileLock(
+          this.options.authJsonPath,
+          () => this.adoptRefreshedLocked(decision.snapshot.file, reply),
+        )
+        if (adopted === undefined) return undefined
+        this.publishStatus(statusFromFile(adopted.file, this.available, this.codexVersion, this.options.credentialRef))
+        this.recordResolved(adopted)
+        return credentialFromFile(adopted.file)
+      } catch (error) {
+        // The Codex CLI does not share this lock. If it rotated the same login
+        // while our refresh was in flight, recover from its newer state.
+        const replacement = await readAuthSnapshot(this.options.authJsonPath)
         const leadMs = this.options.refreshLeadMs ?? DEFAULT_REFRESH_LEAD_MS
-        if (!needsRefresh(state, leadMs) && !refreshTooOld(file, MAX_REFRESH_AGE_MS)) {
-          this.publishStatus(statusFromFile(file, this.available, this.codexVersion, this.options.credentialRef))
-          return credentialFromFile(file)
+        if (canAdoptReplacement(decision.snapshot.file, replacement?.file, leadMs)) {
+          this.publishStatus(statusFromFile(replacement.file, this.available, this.codexVersion, this.options.credentialRef))
+          this.recordResolved(replacement)
+          return credentialFromFile(replacement.file)
         }
-
-        const refreshToken = file.tokens?.refresh_token
-        if (typeof refreshToken !== 'string' || refreshToken.length === 0) return undefined
-        try {
-          const reply = await refreshTokens(refreshToken, this.options.fetchImpl ?? fetch)
-          // Merge into the document re-read while locked, preserving unknown fields.
-          const refreshed = mergeRefreshed(file, reply)
-          await writeAuthFile(this.options.authJsonPath, refreshed)
-          this.publishStatus(statusFromFile(refreshed, this.available, this.codexVersion, this.options.credentialRef))
-          return credentialFromFile(refreshed)
-        } catch (error) {
-          // The Codex CLI does not share this lock. If it rotated the same login
-          // while our refresh was in flight, recover from its newer state.
-          const replacement = await readAuthFile(this.options.authJsonPath)
-          if (canAdoptReplacement(file, replacement, leadMs)) {
-            this.publishStatus(statusFromFile(replacement, this.available, this.codexVersion, this.options.credentialRef))
-            return credentialFromFile(replacement)
-          }
-          this.warnCredentialFailure(
-            'token refresh failed; run `codex login` to restore the Codex Login State',
-            error,
-            file,
-          )
-          this.publishStatus(statusFromFile(replacement, this.available, this.codexVersion, this.options.credentialRef))
-          return undefined
-        }
-      })
+        this.warnCredentialFailure(
+          'token refresh failed; run `codex login` to restore the Codex Login State',
+          error,
+          decision.snapshot.file,
+        )
+        this.publishStatus(statusFromFile(replacement?.file, this.available, this.codexVersion, this.options.credentialRef))
+        return undefined
+      }
     } catch (error) {
       this.warnCredentialFailure('could not coordinate the Codex Login State', error, observed)
       return undefined
     }
+  }
+
+  /**
+   * Under the writer lock: read the auth file and decide whether a refresh is
+   * due. `ready` documents are published and returned for the caller to cache;
+   * `refresh` carries the refresh token for the (unlocked) OAuth round trip.
+   */
+  private async decideRefreshLocked(): Promise<
+    | { mode: 'absent' }
+    | { mode: 'ready'; snapshot: CodexAuthSnapshot }
+    | { mode: 'refresh'; snapshot: CodexAuthSnapshot; refreshToken: string }
+  > {
+    const snapshot = await readAuthSnapshot(this.options.authJsonPath)
+    if (snapshot === undefined) {
+      this.publishStatus(statusFromFile(undefined, this.available, this.codexVersion, this.options.credentialRef))
+      return { mode: 'absent' }
+    }
+    const file = snapshot.file
+    const state = authState(file)
+    if (state.accessToken === undefined) {
+      this.publishStatus(statusFromFile(file, this.available, this.codexVersion, this.options.credentialRef))
+      return { mode: 'absent' }
+    }
+    const leadMs = this.options.refreshLeadMs ?? DEFAULT_REFRESH_LEAD_MS
+    if (!needsRefresh(state, leadMs) && !refreshTooOld(file, MAX_REFRESH_AGE_MS)) {
+      this.publishStatus(statusFromFile(file, this.available, this.codexVersion, this.options.credentialRef))
+      return { mode: 'ready', snapshot }
+    }
+    const refreshToken = file.tokens?.refresh_token
+    if (typeof refreshToken !== 'string' || refreshToken.length === 0) return { mode: 'absent' }
+    return { mode: 'refresh', snapshot, refreshToken }
+  }
+
+  /**
+   * Under the writer lock: fold a refresh reply into the current document,
+   * preserving unknown fields — unless another writer already refreshed while
+   * the OAuth round trip was in flight, in which case its newer document wins.
+   * Returns the document to serve, or `undefined` when the login is gone.
+   */
+  private async adoptRefreshedLocked(
+    previous: CodexAuthFile,
+    reply: CodexRefreshReply,
+  ): Promise<CodexAuthSnapshot | undefined> {
+    const current = await readAuthSnapshot(this.options.authJsonPath)
+    if (current === undefined) return undefined
+    const leadMs = this.options.refreshLeadMs ?? DEFAULT_REFRESH_LEAD_MS
+    if (!needsRefresh(authState(current.file), leadMs) && !refreshTooOld(current.file, MAX_REFRESH_AGE_MS)) {
+      return current
+    }
+    if (!sameRefreshLineage(previous, current.file, reply)) {
+      this.publishStatus(statusFromFile(current.file, this.available, this.codexVersion, this.options.credentialRef))
+      return undefined
+    }
+    await writeAuthFile(this.options.authJsonPath, mergeRefreshed(current.file, reply))
+    const persisted = await readAuthSnapshot(this.options.authJsonPath)
+    if (persisted === undefined
+      || needsRefresh(authState(persisted.file), leadMs)
+      || refreshTooOld(persisted.file, MAX_REFRESH_AGE_MS)) return undefined
+    return persisted
+  }
+
+  /**
+   * Populate the in-memory credential cache from a version-bound snapshot and
+   * arm the next background refresh. A snapshot failure never produces a cache
+   * entry, so filesystem uncertainty fails closed.
+   */
+  private recordResolved(snapshot: CodexAuthSnapshot): void {
+    const credential = credentialFromFile(snapshot.file)
+    if (credential === undefined) {
+      this.cachedCredential = undefined
+      return
+    }
+    this.cachedCredential = {
+      credential,
+      accessTokenExpiresAt: authState(snapshot.file).accessTokenExpiresAt,
+      cachedAt: Date.now(),
+      fileVersion: snapshot.version,
+    }
+    this.scheduleBackgroundRefresh(snapshot.file)
+  }
+
+  /**
+   * Arm one background refresh at the earlier of (access-token expiry minus
+   * the refresh lead) and (the codex 8-day refresh age), each with a grace
+   * lead, and never closer than the minimum delay unless a refresh is already
+   * due (then it fires immediately). The timer is unref'd so it never keeps
+   * the process alive, and is cleared on dispose.
+   */
+  private scheduleBackgroundRefresh(file: CodexAuthFile): void {
+    // Every resolved snapshot supersedes the previous schedule. This matters
+    // when the Codex CLI writes a login whose token expires sooner.
+    this.clearRefreshTimer()
+    const refreshToken = file.tokens?.refresh_token
+    if (typeof refreshToken !== 'string' || refreshToken.length === 0) return
+    const now = Date.now()
+    const leadMs = this.options.refreshLeadMs ?? DEFAULT_REFRESH_LEAD_MS
+    const state = authState(file)
+    let delayMs = Number.POSITIVE_INFINITY
+    if (state.accessTokenExpiresAt !== undefined) {
+      delayMs = Math.min(delayMs, state.accessTokenExpiresAt - now - leadMs - REFRESH_GRACE_MS)
+    }
+    const lastRefreshAt = typeof file.last_refresh === 'string' && file.last_refresh.length > 0
+      ? Date.parse(file.last_refresh)
+      : Number.NaN
+    if (Number.isFinite(lastRefreshAt)) {
+      delayMs = Math.min(delayMs, lastRefreshAt + MAX_REFRESH_AGE_MS - now - REFRESH_GRACE_MS)
+    }
+    if (!Number.isFinite(delayMs)) return
+    const due = needsRefresh(state, leadMs) || refreshTooOld(file, MAX_REFRESH_AGE_MS)
+    const delay = due
+      ? 0
+      : Math.max(BACKGROUND_REFRESH_MIN_DELAY_MS, Math.min(delayMs, MAX_TIMER_DELAY_MS))
+    const timer = setTimeout(() => {
+      this.refreshTimer = undefined
+      // The returned promise lets fake-timer test harnesses await the refresh.
+      this.refreshInBackground()
+    }, delay)
+    timer.unref?.()
+    this.refreshTimer = timer
+  }
+  /**
+   * Refresh the token set ahead of the request path when the auth file says it
+   * is due. The request path still refreshes synchronously when a token is
+   * genuinely needed, but this pre-arms it while the process is alive, so the
+   * common case never waits on the OAuth round trip. Like the request path,
+   * the OAuth round trip happens outside the writer lock (short critical
+   * sections only), so a slow token endpoint never blocks other readers;
+   * failures are logged and retried later.
+   */
+  private async refreshInBackground(): Promise<void> {
+    let retry = false
+    try {
+      const decision = await withFileLock(this.options.authJsonPath, () => this.decideRefreshLocked())
+      if (decision.mode === 'absent') return
+      if (decision.mode === 'ready') {
+        // Already fresh — a request-path refresh won the race, or the login
+        // changed under us. Re-arm from the current document.
+        this.recordResolved(decision.snapshot)
+        return
+      }
+      try {
+        const reply = await refreshTokens(decision.refreshToken, this.options.fetchImpl ?? fetch)
+        const adopted = await withFileLock(
+          this.options.authJsonPath,
+          () => this.adoptRefreshedLocked(decision.snapshot.file, reply),
+        )
+        if (adopted === undefined) {
+          // A successful reply can still be unusable when the CLI changed the
+          // account or refresh-token lineage in flight. Retry from that newer
+          // state instead of silently losing proactive refresh.
+          retry = true
+        } else {
+          this.publishStatus(statusFromFile(adopted.file, this.available, this.codexVersion, this.options.credentialRef))
+          this.recordResolved(adopted)
+        }
+      } catch (error) {
+        // The Codex CLI does not share this lock. If it rotated the same
+        // login while our refresh was in flight, adopt its newer state.
+        const replacement = await readAuthSnapshot(this.options.authJsonPath)
+        const leadMs = this.options.refreshLeadMs ?? DEFAULT_REFRESH_LEAD_MS
+        if (canAdoptReplacement(decision.snapshot.file, replacement?.file, leadMs)) {
+          this.publishStatus(statusFromFile(replacement.file, this.available, this.codexVersion, this.options.credentialRef))
+          this.recordResolved(replacement)
+          return
+        }
+        this.warnCredentialFailure('background token refresh failed; will retry later', error, decision.snapshot.file)
+        retry = true
+      }
+    } catch (error) {
+      this.warnCredentialFailure('background token refresh could not coordinate; will retry later', error)
+      retry = true
+    }
+    if (retry) this.scheduleBackgroundRetry()
+  }
+
+  private clearRefreshTimer(): void {
+    if (this.refreshTimer === undefined) return
+    clearTimeout(this.refreshTimer)
+    this.refreshTimer = undefined
+  }
+
+  /** Re-arm the background refresh after a failure. */
+  private scheduleBackgroundRetry(): void {
+    if (this.refreshTimer !== undefined) return
+    const timer = setTimeout(() => {
+      this.refreshTimer = undefined
+      // The returned promise lets fake-timer test harnesses await the refresh.
+      this.refreshInBackground()
+    }, BACKGROUND_REFRESH_RETRY_MS)
+    timer.unref?.()
+    this.refreshTimer = timer
   }
 
   private publishStatus(status: CodexAuthStatusView): CodexAuthStatusView {
@@ -194,16 +515,36 @@ export class CodexAuthService extends Service {
     this.ctx.logger.warn('codex-auth: %s (%s)', message, safeDiagnostic(error, file))
   }
 
-  /** Probe the codex CLI once at startup; failures leave the service unavailable. */
+  /**
+   * Probe the codex CLI once at startup without blocking the event loop;
+   * failures (missing binary, timeout, non-zero exit) leave the service
+   * unavailable.
+   */
   private probeCodex(): void {
+    let child: ReturnType<typeof spawn> | undefined
+    let settled = false
+    const finish = (version: string | undefined): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      this.codexVersion = version
+    }
+    const timer = setTimeout(() => {
+      child?.kill()
+      finish(undefined)
+    }, PROBE_TIMEOUT_MS)
     try {
-      const result = spawnSync(this.options.codexCommand, ['--version'], { encoding: 'utf8', timeout: 5000 })
-      if (result.error !== undefined) return
-      if (result.status !== 0) return
-      const line = result.stdout.trim().split('\n')[0]
-      if (typeof line === 'string' && line.length > 0) this.codexVersion = line
+      child = spawn(this.options.codexCommand, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+      let output = ''
+      child.stdout?.on('data', (chunk) => { output += String(chunk) })
+      child.stderr?.on('data', (chunk) => { output += String(chunk) })
+      child.on('error', () => finish(undefined))
+      child.on('close', (code) => {
+        const line = code === 0 ? output.trim().split('\n')[0] : undefined
+        finish(typeof line === 'string' && line.length > 0 ? line : undefined)
+      })
     } catch {
-      this.codexVersion = undefined
+      finish(undefined)
     }
   }
 }
@@ -248,6 +589,23 @@ function statusFromFile(
   }
 }
 
+function sameRefreshLineage(
+  previous: CodexAuthFile,
+  current: CodexAuthFile,
+  reply: CodexRefreshReply,
+): boolean {
+  const previousRefreshToken = nonBlank(previous.tokens?.refresh_token)
+  const currentRefreshToken = nonBlank(current.tokens?.refresh_token)
+  if (previousRefreshToken === undefined || currentRefreshToken !== previousRefreshToken) return false
+
+  const knownAccountIds = [
+    credentialFromFile(previous)?.accountId,
+    credentialFromFile(current)?.accountId,
+    nonBlank(reply.account_id),
+  ].filter((accountId): accountId is string => accountId !== undefined)
+  return knownAccountIds.every(accountId => accountId === knownAccountIds[0])
+}
+
 function canAdoptReplacement(
   previous: CodexAuthFile,
   replacement: CodexAuthFile | undefined,
@@ -264,6 +622,36 @@ function canAdoptReplacement(
 
 function nonBlank(value: string | undefined): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+/** Extract the settings-relevant facts from a `/wham/usage` payload, or none. */
+export function usageFromPayload(value: unknown): CodexUsageView {
+  if (!isRecord(value)) return {}
+  const planType = nonBlank(typeof value.plan_type === 'string' ? value.plan_type : undefined)
+  const rateLimit = isRecord(value.rate_limit) ? value.rate_limit : undefined
+  const weekly = rateLimit === undefined
+    ? undefined
+    : [rateLimit.primary_window, rateLimit.secondary_window].find(candidate => (
+        isRecord(candidate) && candidate.limit_window_seconds === WEEKLY_USAGE_WINDOW_SECONDS
+      ))
+  let weeklyRemainingPercent: number | undefined
+  let weeklyResetAt: string | undefined
+  if (isRecord(weekly) && typeof weekly.used_percent === 'number' && Number.isFinite(weekly.used_percent)) {
+    weeklyRemainingPercent = Math.min(100, Math.max(0, Math.round(100 - weekly.used_percent)))
+  }
+  if (isRecord(weekly) && Number.isSafeInteger(weekly.reset_at) && (weekly.reset_at as number) > 0) {
+    const reset = new Date((weekly.reset_at as number) * 1000)
+    if (Number.isFinite(reset.getTime())) weeklyResetAt = reset.toISOString()
+  }
+  return {
+    ...planType === undefined ? {} : { planType },
+    ...weeklyRemainingPercent === undefined ? {} : { weeklyRemainingPercent },
+    ...weeklyResetAt === undefined ? {} : { weeklyResetAt },
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function safeDiagnostic(error: unknown, _file?: CodexAuthFile): string {
@@ -288,6 +676,28 @@ function sameStatus(left: CodexAuthStatusView | undefined, right: CodexAuthStatu
     && left.planType === right.planType
     && left.credentialRef === right.credentialRef
     && left.authFileExists === right.authFileExists
+}
+
+function boundedSignal(parent: AbortSignal | undefined, timeoutMs: number): {
+  signal: AbortSignal
+  cleanup: () => void
+} {
+  const controller = new AbortController()
+  const onParentAbort = (): void => { controller.abort(parent?.reason) }
+  if (parent?.aborted === true) onParentAbort()
+  else parent?.addEventListener('abort', onParentAbort, { once: true })
+  const timer = setTimeout(
+    () => controller.abort(new Error(`usage probe timed out after ${String(timeoutMs)}ms`)),
+    Math.max(1, timeoutMs),
+  )
+  timer.unref?.()
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timer)
+      parent?.removeEventListener('abort', onParentAbort)
+    },
+  }
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {

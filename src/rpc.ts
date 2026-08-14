@@ -7,14 +7,23 @@ export { CODEX_AUTH_RPC_CHANNEL } from './rpc-contract.ts'
 
 /** Dispatch a decoded Host request without ever exposing token material. */
 export async function handleCodexAuthRpc(
-  service: Pick<CodexAuthService, 'status' | 'login'>,
+  service: Pick<CodexAuthService, 'status' | 'usage' | 'login'>,
   endpoint: string,
   payload: unknown,
+  signal?: AbortSignal,
 ): Promise<RpcResult<unknown>> {
   if (endpoint === 'status') {
     if (!isRecord(payload) || Object.keys(payload).length !== 0) return badRequest('status expects an empty payload')
     try {
       return { ok: true, value: { status: await service.status() } }
+    } catch (error) {
+      return internalError(error)
+    }
+  }
+  if (endpoint === 'usage') {
+    if (!isRecord(payload) || Object.keys(payload).length !== 0) return badRequest('usage expects an empty payload')
+    try {
+      return { ok: true, value: { usage: await service.usage(signal) } }
     } catch (error) {
       return internalError(error)
     }

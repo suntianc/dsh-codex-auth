@@ -24,10 +24,22 @@ export interface CodexAuthStatusView {
   authFileExists: boolean
 }
 
+/** Value-free weekly quota snapshot for the settings login block. */
+export interface CodexUsageView {
+  /** Backend-reported plan claim for the account; absent when unknown. */
+  planType?: string
+  /** Remaining percentage (0-100) of the seven-day usage window; absent when unknown. */
+  weeklyRemainingPercent?: number
+  /** ISO timestamp of the seven-day usage window's next reset; absent when unknown. */
+  weeklyResetAt?: string
+}
+
 /** Browser-safe face consumed by the settings card. */
 export interface CodexAuthRpcClient {
   /** Read the value-free codex login state. */
   status(signal?: AbortSignal): Promise<RpcResult<{ status: CodexAuthStatusView }>>
+  /** Read the value-free weekly quota snapshot from the ChatGPT backend. */
+  usage(signal?: AbortSignal): Promise<RpcResult<{ usage: CodexUsageView }>>
   /** Start one official codex CLI login flow. */
   login(mode: CodexAuthLoginMode, signal?: AbortSignal): Promise<RpcResult<{ started: boolean }>>
 }
@@ -50,6 +62,12 @@ export function createCodexAuthRpcClient(rpc: CodexAuthConnectionRpc): CodexAuth
       if (!result.ok) return result
       const status = parseStatusResult(result.value)
       return status === undefined ? invalidResponse('status') : { ok: true, value: { status } }
+    },
+    usage: async (signal) => {
+      const result = await rpc.call(CODEX_AUTH_RPC_CHANNEL, 'usage', {}, signal)
+      if (!result.ok) return result
+      const usage = parseUsageResult(result.value)
+      return usage === undefined ? invalidResponse('usage') : { ok: true, value: { usage } }
     },
     login: async (mode, signal) => {
       const result = await rpc.call(CODEX_AUTH_RPC_CHANNEL, 'login', { mode }, signal)
@@ -84,6 +102,24 @@ function parseStatusResult(value: unknown): CodexAuthStatusView | undefined {
     ...typeof status.planType === 'string' ? { planType: status.planType } : {},
     credentialRef: status.credentialRef,
     authFileExists: status.authFileExists,
+  }
+}
+
+function parseUsageResult(value: unknown): CodexUsageView | undefined {
+  if (!isRecord(value) || !isRecord(value.usage)) return undefined
+  const usage = value.usage
+  if (usage.planType !== undefined && typeof usage.planType !== 'string') return undefined
+  if (usage.weeklyResetAt !== undefined && typeof usage.weeklyResetAt !== 'string') return undefined
+  if (
+    usage.weeklyRemainingPercent !== undefined
+    && (!Number.isSafeInteger(usage.weeklyRemainingPercent)
+      || (usage.weeklyRemainingPercent as number) < 0
+      || (usage.weeklyRemainingPercent as number) > 100)
+  ) return undefined
+  return {
+    ...typeof usage.planType === 'string' ? { planType: usage.planType } : {},
+    ...typeof usage.weeklyRemainingPercent === 'number' ? { weeklyRemainingPercent: usage.weeklyRemainingPercent } : {},
+    ...typeof usage.weeklyResetAt === 'string' ? { weeklyResetAt: usage.weeklyResetAt } : {},
   }
 }
 

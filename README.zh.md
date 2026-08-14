@@ -22,11 +22,13 @@
 ### 共享 Codex 登录态
 
 - LLM、搜索与图片操作共用一个仅运行于 Host 的认证协调器。
-- 只在认证操作边界读取凭证，并在到期前通过官方 OAuth token 端点刷新。
-- 进程内合并并发刷新；跨进程使用文件锁，并在锁内重新读取再决定是否刷新。
-- 只有本地解码出的账户身份仍一致时，才接纳外部 Codex CLI 轮换后的凭证。
+- 通过绑定文件版本的认证快照、短时内存缓存解析凭证，并在到期前主动刷新。
+- 进程内合并并发刷新；OAuth 网络请求前后各使用一段短跨进程锁，且只有账户与
+  refresh token 谱系仍和决策快照一致时才写入响应。
 - 可启动官方 `codex login` 浏览器登录或设备码登录流程。
-- 通过插件自有、仅允许 loopback 的 `/codex-auth` Connection RPC 暴露不含凭证值的状态。
+- 设置页显示连接状态，以及尽力获取的周剩余额度和重置时间。固定的
+  `/backend-api/wham/usage` 探测有 10 秒 Host 截止时间，并按窗口时长识别七天窗口。
+- 插件自有、仅允许 loopback 的 `/codex-auth` Connection RPC 不会向浏览器发送任何 token 值。
 
 ### 网页搜索
 
@@ -177,6 +179,9 @@ dsh plugin --profile web add ./dsh-codex-auth-0.1.0.tgz
 | `refreshLeadMs` | `300000` | token 到期前的刷新提前量（毫秒） |
 | `codexCommand` | `codex` | 登录和版本探测使用的 CLI 命令 |
 | `displayName` | `OpenAI Codex (chatgpt)` | 模型选择器中的 provider 名称 |
+| `transport` | `sse` | 流式传输方式：`sse`、`websocket` 或 `auto`（优先 WebSocket、失败回退 SSE）。默认 SSE：WebSocket 升级在常见 HTTP 代理下不稳定，且 `auto` 模式下每个新对话都要先付出连接超时才会回退 |
+| `websocketConnectTimeoutMs` | `5000` | WebSocket 连接超时（毫秒，仅当 `transport` 不是 `sse` 时生效；`0` 表示禁用） |
+| `timeoutMs` | `120000` | 请求超时（毫秒，SSE 响应头阶段；同时作为 WebSocket 消息空闲间隔；`0` 表示禁用） |
 
 不要再在 `llm-pi-ai.providers` 下添加 `openai-codex`，也不要同时安装 `dsh-codex`；
 重复路由所有权会得到明确诊断并被拒绝。

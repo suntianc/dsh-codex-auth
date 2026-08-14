@@ -8,6 +8,10 @@ This context describes the language used when a Codex-managed ChatGPT login give
 The ChatGPT account authorization maintained by the official Codex CLI and reused by this project.
 _Avoid_: Codex capability, Auth capability
 
+**Codex Account Usage**:
+The best-effort weekly remaining balance and reset time associated with the current Codex Login State; it describes account limits, not whether the login is valid.
+_Avoid_: local quota, authentication status
+
 **Capability Tool**:
 A structured operation an agent may choose automatically or a user may invoke explicitly.
 _Avoid_: Auth feature, hidden backend action

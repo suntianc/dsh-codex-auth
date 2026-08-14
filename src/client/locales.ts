@@ -3,8 +3,8 @@
 /** English strings (the key-set source of truth for this pair). */
 export const en = {
   nav: 'GPT Auth',
-  title: 'GPT Auth via codex',
-  intro: 'One local Codex Login State powers the openai-codex LLM route, Web Search, and Image Creation.',
+  title: 'GPT Auth',
+  intro: 'Sign in with GPT Auth to unlock Codex LLM, image generation, and web search capabilities.',
   authCardTitle: 'Login',
   authCardIntro: 'Shared ChatGPT login and the openai-codex model route.',
   searchCardTitle: 'Web Search',
@@ -57,8 +57,8 @@ export const en = {
   transparent: 'Transparent',
   unavailableFree: 'Unavailable on Free plan',
   availableAfterLogin: 'Available after login',
-  deploymentWide: 'Deployment-wide provider',
-  entitlementOnUse: 'Entitlement checked on use',
+  quotaRemaining: 'Remaining quota',
+  weeklyReset: 'Weekly limit resets',
   toolCreating: 'Creating images…',
   toolFailed: 'Image Creation failed',
   toolCancelled: 'Cancelled locally. The backend does not expose server-side cancellation.',
@@ -94,8 +94,8 @@ export type CodexAuthKey = keyof typeof en
 /** Chinese strings (key-complete mirror of `en`). */
 export const zh: Record<CodexAuthKey, string> = {
   nav: 'GPT Auth',
-  title: '通过 codex 使用 GPT 能力',
-  intro: '同一份本地 Codex 登录态同时支持 openai-codex LLM 路由、网页搜索与图片创作。',
+  title: 'GPT Auth',
+  intro: '使用 GPT Auth 登录接入 Codex 的 LLM、文生图、Websearch 能力。',
   authCardTitle: '登录',
   authCardIntro: '共享 ChatGPT 登录态与 openai-codex 模型路由。',
   searchCardTitle: '网页搜索',
@@ -148,8 +148,8 @@ export const zh: Record<CodexAuthKey, string> = {
   transparent: '透明',
   unavailableFree: 'Free 套餐不可用',
   availableAfterLogin: '登录后可用',
-  deploymentWide: '全局部署提供方',
-  entitlementOnUse: '使用时由后端确认权益',
+  quotaRemaining: '额度剩余',
+  weeklyReset: '周限刷新时间',
   toolCreating: '正在创作图片…',
   toolFailed: '图片创作失败',
   toolCancelled: '已在本地取消；后端未提供服务端取消能力。',
