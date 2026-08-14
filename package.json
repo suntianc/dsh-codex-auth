@@ -61,7 +61,7 @@
     "check": "pnpm run lint && pnpm run typecheck && pnpm test && pnpm run build && pnpm run publint",
     "lint": "oxlint src tests build scripts tsdown.config.ts vitest.config.ts",
     "prepare": "tsdown",
-    "prepack": "node scripts/clean.mjs && tsc -p tsconfig.build.host.json && tsc -p tsconfig.build.client.json",
+    "prepack": "pnpm run build",
     "publint": "publint",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.client.json --noEmit"
