@@ -28,7 +28,17 @@
 - `codex` CLI 已加入 `PATH`。
 - 可提前执行 `codex login`，也可在 GPT Auth 卡片中启动登录。
 
-## 安装预构建 Release（推荐）
+## 从 npm 安装（推荐）
+
+npm 包已包含预构建的 Host 与浏览器 bundle，不需要安装期构建权限：
+
+```sh
+dsh plugin --profile web add dsh-codex-auth
+```
+
+重启 `dsh web`，打开设置并选择 **GPT Auth**。
+
+## 安装预构建 Release
 
 Release tarball 已包含 Host 与浏览器构建产物，不需要安装期构建权限：
 
@@ -69,12 +79,6 @@ cd dsh-codex-auth
 pnpm install
 pnpm pack
 dsh plugin --profile web add ./dsh-codex-auth-0.1.0.tgz
-```
-
-以后发布到 npm 后，可直接执行：
-
-```sh
-dsh plugin --profile web add dsh-codex-auth
 ```
 
 ## 配置
