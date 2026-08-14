@@ -1,5 +1,7 @@
 # dsh-codex-auth
 
+[![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
+
 English | [中文](README.zh.md)
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
