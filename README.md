@@ -138,7 +138,8 @@ The standalone build preset in `build/client-bundle.ts` deliberately carries the
 small Web-loader and CSS contract needed by this dual-face plugin; it does not
 import files from a DeepSeek Harness checkout.
 
-See [`docs/design.md`](docs/design.md) for the design record and glossary.
+See [`docs/design.md`](docs/design.md) for the design record and
+[`CONTEXT.md`](CONTEXT.md) for the project language.
 
 ## Friendship links
 

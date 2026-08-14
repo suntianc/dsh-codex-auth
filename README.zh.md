@@ -127,7 +127,8 @@ pnpm run check
 `build/client-bundle.ts` 内置本双面插件所需的最小 Web Loader 与 CSS 构建契约，
 不依赖旁边存在 DeepSeek Harness 源码 checkout。
 
-设计记录与术语见 [`docs/design.md`](docs/design.md)。
+设计记录见 [`docs/design.md`](docs/design.md)，项目术语见
+[`CONTEXT.md`](CONTEXT.md)。
 
 ## 友情链接
 
