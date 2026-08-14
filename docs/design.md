@@ -1,14 +1,14 @@
 # dsh-codex-auth — design record
 
-Status: **target architecture accepted; Auth/LLM route implemented, Search and Image Creation planned**.
+Status: **implemented for DSH rc6; Workspace Export remains disabled pending a policy-aware binary workspace-write API**.
 
-The canonical project language lives in [`CONTEXT.md`](../CONTEXT.md). This document records implementation boundaries and the agreed target design.
+The canonical project language lives in [`CONTEXT.md`](../CONTEXT.md). This document records implementation boundaries and the accepted design.
 
 ## Purpose
 
 `dsh-codex-auth` is a local, single-user DeepSeek Harness capability bundle. It reuses the ChatGPT login maintained by the official Codex CLI, so Codex remains the login authority and the user does not maintain a second OAuth state.
 
-The bundle will provide three independently enabled runtime capabilities from one npm installation:
+The bundle provides three independently enabled runtime capabilities from one npm installation:
 
 1. Codex login-state access and the `openai-codex` LLM route;
 2. a Codex-backed provider for DSH's stock `web_search` tool;
@@ -67,7 +67,7 @@ Login buttons continue to spawn the official `codex login` browser or device-cod
 
 ## LLM route
 
-The package owns exactly one `openai-codex` adapter route. `PiAiAdapter` continues to handle conversation streaming, ordinary function tools, reasoning replay, usage, cancellation, compaction, and input attachment conversion.
+With its default `llmEnabled: true`, the package owns exactly one `openai-codex` adapter route. An installer can set `llmEnabled: false` while retaining the shared Login State coordinator for Search and Image. `PiAiAdapter` continues to handle conversation streaming, ordinary function tools, reasoning replay, usage, cancellation, compaction, and input attachment conversion.
 
 Installed pi-ai `0.82.1` does not model Codex standalone search, Responses `web_search`, or image-generation result items. Search and image creation therefore do not modify or inject payloads into `PiAiAdapter`; they use dedicated capability plugins and the official Codex standalone endpoints.
 
@@ -172,6 +172,8 @@ The generated-image card provides:
 - **Save all** for a multi-image result.
 
 A single save proposes `generated-images/<date>-<short-handle>.png` and permits editing. Save-all chooses a destination directory. Existing paths are not overwritten; numeric suffixes are added. All writes occur Host-side through DSH filesystem and permission boundaries. Conversation attachments remain the primary copy.
+
+**Current DSH rc6 constraint:** `ctx.fs` has no binary write operation. This package therefore keeps the durable conversation copy and renders workspace-save controls disabled with an explicit explanation. It does not evade DSH policy with direct `node:fs` writes. Enabling the target export flow requires a policy-aware binary write API in DSH core.
 
 ## Settings UI
 

@@ -16,6 +16,10 @@ export interface CodexAuthStatusView {
   codexVersion?: string
   tokenExpiresAt?: string
   lastRefreshAt?: string
+  /** Locally decoded ChatGPT account claim; never a credential. */
+  accountId?: string
+  /** Locally decoded ChatGPT plan claim, when present; never remotely probed. */
+  planType?: string
   credentialRef: string
   authFileExists: boolean
 }
@@ -66,7 +70,7 @@ function parseStatusResult(value: unknown): CodexAuthStatusView | undefined {
     || typeof status.credentialRef !== 'string'
     || typeof status.authFileExists !== 'boolean'
   ) return undefined
-  for (const key of ['authMode', 'codexVersion', 'tokenExpiresAt', 'lastRefreshAt'] as const) {
+  for (const key of ['authMode', 'codexVersion', 'tokenExpiresAt', 'lastRefreshAt', 'accountId', 'planType'] as const) {
     if (status[key] !== undefined && typeof status[key] !== 'string') return undefined
   }
   return {
@@ -76,6 +80,8 @@ function parseStatusResult(value: unknown): CodexAuthStatusView | undefined {
     ...typeof status.codexVersion === 'string' ? { codexVersion: status.codexVersion } : {},
     ...typeof status.tokenExpiresAt === 'string' ? { tokenExpiresAt: status.tokenExpiresAt } : {},
     ...typeof status.lastRefreshAt === 'string' ? { lastRefreshAt: status.lastRefreshAt } : {},
+    ...typeof status.accountId === 'string' ? { accountId: status.accountId } : {},
+    ...typeof status.planType === 'string' ? { planType: status.planType } : {},
     credentialRef: status.credentialRef,
     authFileExists: status.authFileExists,
   }

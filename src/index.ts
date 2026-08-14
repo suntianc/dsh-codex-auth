@@ -32,6 +32,8 @@ export const inject = ['llm']
 
 /** Plugin configuration; every field has a default, so a bare row mounts the plugin. */
 export interface Config {
+  /** Whether this row owns the openai-codex LLM route; auth coordination remains available when false. */
+  llmEnabled: boolean
   /** Codex auth file path; empty (default) resolves `$CODEX_HOME` or `~/.codex/auth.json`. */
   authJsonPath: string
   /** Credential reference advertised by the status card. */
@@ -45,6 +47,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  llmEnabled: z.boolean().default(true),
   authJsonPath: z.string().default(''),
   credentialRef: z.string().default('CODEX_CHATGPT_TOKEN'),
   refreshLeadMs: z.number().min(0).default(DEFAULT_REFRESH_LEAD_MS),
@@ -59,24 +62,37 @@ export function apply(ctx: Context, config: Config): void {
   installEnvHttpProxy((message) => { ctx.logger.warn(String(message)) })
   const credentialReference: CredentialRef = credentialRef(config.credentialRef)
   const authJsonPath = config.authJsonPath.length > 0 ? config.authJsonPath : defaultAuthJsonPath()
-  ctx.llm.registerAdapter([CODEX_ROUTE], new CodexAuthAdapter(ctx, {
-    authJsonPath,
-    credentialRef: credentialReference,
-    refreshLeadMs: config.refreshLeadMs,
-    fetchImpl: fetch,
-    displayName: config.displayName,
-  }))
   const service = new CodexAuthService(ctx, {
     authJsonPath,
     codexCommand: config.codexCommand,
     credentialRef: credentialReference,
+    refreshLeadMs: config.refreshLeadMs,
+    fetchImpl: fetch,
   })
-  ctx.inject(['connection'], (connectionCtx) => {
-    connectionCtx.connection.rpc.handle(
-      CODEX_AUTH_RPC_CHANNEL,
-      (endpoint, payload) => handleCodexAuthRpc(service, endpoint, payload),
-      { authority: 'loopback' },
-    )
-  })
-  ctx.logger.info('llm-codex-auth: route %s serving ChatGPT login from %s', CODEX_ROUTE, authJsonPath)
+  if (config.llmEnabled) {
+    if (ctx.llm.listProviders().some(provider => provider.id === CODEX_ROUTE)) {
+      throw new Error(
+        'dsh-codex-auth cannot own the "openai-codex" route because another plugin already registered it; '
+        + 'dsh-codex-auth and dsh-codex are mutually exclusive, so uninstall or disable one bundle',
+      )
+    }
+    ctx.llm.registerAdapter([CODEX_ROUTE], new CodexAuthAdapter(ctx, {
+      auth: service,
+      authJsonPath,
+      credentialRef: credentialReference,
+      refreshLeadMs: config.refreshLeadMs,
+      fetchImpl: fetch,
+      displayName: config.displayName,
+    }))
+  }
+  ctx.inject(['connection'], connectionCtx => connectionCtx.connection.rpc.handle(
+    CODEX_AUTH_RPC_CHANNEL,
+    (endpoint, payload) => handleCodexAuthRpc(service, endpoint, payload),
+    { authority: 'loopback' },
+  ))
+  if (config.llmEnabled) {
+    ctx.logger.info('llm-codex-auth: route %s serving ChatGPT login from %s', CODEX_ROUTE, authJsonPath)
+  } else {
+    ctx.logger.info('llm-codex-auth: shared Login State active at %s; LLM route disabled', authJsonPath)
+  }
 }

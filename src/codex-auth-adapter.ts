@@ -26,6 +26,7 @@ import {
   refreshTokens, writeAuthFile,
 } from './codex-auth.ts'
 import type { CodexAuthFile } from './codex-auth.ts'
+import type { CodexAuthService } from './codex-auth-service.ts'
 
 /** The provider route this adapter registers. */
 export const CODEX_ROUTE = 'openai-codex'
@@ -35,7 +36,9 @@ const STREAM_IDLE_TIMEOUT_MS = 300_000
 
 /** Options one adapter instance is constructed with. */
 export interface CodexAuthAdapterOptions {
-  /** The codex auth file path (`~/.codex/auth.json` by default). */
+  /** Shared Host-only coordinator used by every authenticated operation. */
+  auth: Pick<CodexAuthService, 'credential'>
+  /** The codex auth file path (`~/.codex/auth.json` by default); retained for the legacy resolver fixture. */
   authJsonPath: string
   /** The credential reference the status card advertises. */
   credentialRef: CredentialRef
@@ -110,18 +113,15 @@ export class CodexAuthAdapter extends PiAiAdapter {
       // degradation instead of letting pi-ai's ambient OAuth discovery run
       // with nothing to discover.
       resolveApiKey: async () => {
-        const token = await resolveCodexAccessToken(
-          options,
-          (message) => { ctx.logger.warn('llm-codex-auth: %s', message) },
-        )
-        if (token === undefined) {
+        const credential = await options.auth.credential()
+        if (credential === undefined) {
           throw new LlmError(
             `llm-codex-auth: no usable ChatGPT login for "${CODEX_ROUTE}"; run "codex login" (or use the`
             + ` "${options.credentialRef}" card on the Settings page) to sign in`,
             'MISSING_CREDENTIAL',
           )
         }
-        return token
+        return credential.accessToken
       },
       resolveAttachments: () => ctx.get('attachments'),
     })

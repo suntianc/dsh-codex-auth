@@ -10,6 +10,8 @@ const STATUS: CodexAuthStatusView = {
   configured: true,
   authMode: 'chatgpt',
   codexVersion: 'codex-cli 0.147.0',
+  accountId: 'acct-1',
+  planType: 'plus',
   credentialRef: 'CODEX_CHATGPT_TOKEN',
   authFileExists: true,
 }

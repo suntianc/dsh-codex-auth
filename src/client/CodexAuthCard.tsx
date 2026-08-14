@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Button, IconRefreshOutline16, IconWarningOutline16, StateDot,
+  Button, IconRefreshOutline16, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CodexAuthRpcClient, CodexAuthStatusView } from '../rpc-contract.ts'
@@ -129,10 +129,6 @@ export function CodexAuthCard({ rpc, t, subscribe }: CodexAuthCardInjected): Rea
 
       {error === null ? null : <p className={classes.error} role="alert">{error}</p>}
       {status?.available === true && !status.configured ? <p className={classes.hint}>{t('loginHint')}</p> : null}
-      <p className={classes.risk}>
-        <IconWarningOutline16 className={classes.riskIcon} size={14} />
-        <span>{t('riskNotice')}</span>
-      </p>
       <p className={classes.privacy}>{t('privacyNotice')}</p>
     </section>
   )
@@ -149,8 +145,9 @@ function Fact({ label, value }: { label: string; value: string }): ReactNode {
 
 function stateOf(loadState: LoadState, status: CodexAuthStatusView | null): StateDotState {
   if (loadState === 'loading') return 'ongoing'
-  if (loadState === 'error' || status === null || !status.available) return 'error'
-  return status.configured ? 'done' : 'warning'
+  if (loadState === 'error' || status === null) return 'error'
+  if (status.configured) return 'done'
+  return status.available ? 'warning' : 'error'
 }
 
 function stateText(
@@ -160,9 +157,9 @@ function stateText(
 ): string {
   if (loadState === 'loading') return t('refreshing')
   if (loadState === 'error' || status === null) return t('statusFailed')
+  if (status.configured) return t('loggedIn')
   if (!status.available) return t('notAvailable')
-  if (!status.authFileExists) return t('authFileMissing')
-  return status.configured ? t('loggedIn') : t('loggedOut')
+  return status.authFileExists ? t('loggedOut') : t('authFileMissing')
 }
 
 function localDate(value: string): string {

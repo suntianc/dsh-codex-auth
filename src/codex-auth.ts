@@ -74,18 +74,29 @@ export function defaultAuthJsonPath(env: NodeJS.ProcessEnv = process.env): strin
  * chatgpt_account_id claim is the one pi-ai's codex provider extracts to set
  * the `chatgpt-account-id` request header.
  */
-export function decodeAccessToken(token: string): { expSeconds?: number; chatgptAccountId?: string } {
+export function decodeAccessToken(token: string): {
+  expSeconds?: number
+  chatgptAccountId?: string
+  chatgptPlanType?: string
+} {
   try {
     const parts = token.split('.')
     if (parts.length !== 3) return {}
     const payload = JSON.parse(Buffer.from(parts[1] ?? '', 'base64url').toString('utf8')) as {
       exp?: unknown
-      'https://api.openai.com/auth'?: { chatgpt_account_id?: unknown }
+      'https://api.openai.com/auth'?: {
+        chatgpt_account_id?: unknown
+        chatgpt_plan_type?: unknown
+      }
     }
+    const auth = payload['https://api.openai.com/auth']
     return {
       ...typeof payload.exp === 'number' && Number.isFinite(payload.exp) ? { expSeconds: payload.exp } : {},
-      ...typeof payload['https://api.openai.com/auth']?.chatgpt_account_id === 'string'
-        ? { chatgptAccountId: payload['https://api.openai.com/auth'].chatgpt_account_id }
+      ...typeof auth?.chatgpt_account_id === 'string'
+        ? { chatgptAccountId: auth.chatgpt_account_id }
+        : {},
+      ...typeof auth?.chatgpt_plan_type === 'string'
+        ? { chatgptPlanType: auth.chatgpt_plan_type }
         : {},
     }
   } catch {

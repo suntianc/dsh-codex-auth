@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import {
   authState, decodeAccessToken, defaultAuthJsonPath, MAX_REFRESH_AGE_MS, mergeRefreshed, needsRefresh,
   readAuthFile, refreshTooOld, refreshTokens, writeAuthFile, CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_URL,
@@ -16,13 +17,17 @@ import {
 import type { CodexAuthFile } from '../src/codex-auth.ts'
 import { resolveCodexAccessToken } from '../src/codex-auth-adapter.ts'
 import { CodexAuthService } from '../src/codex-auth-service.ts'
+import { Config as PluginConfig, type Config as PluginConfigView } from '../src/index.ts'
 
-/** A fake JWT payload with the claims this plugin reads. */
-function fakeJwt(expSeconds: number): string {
+/** A fake JWT payload with the locally verifiable claims this plugin reads. */
+function fakeJwt(expSeconds: number, accountId = 'acct_test', planType?: string): string {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
   const payload = Buffer.from(JSON.stringify({
     exp: expSeconds,
-    'https://api.openai.com/auth': { chatgpt_account_id: 'acct_test' },
+    'https://api.openai.com/auth': {
+      chatgpt_account_id: accountId,
+      ...(planType === undefined ? {} : { chatgpt_plan_type: planType }),
+    },
   })).toString('base64url')
   return `${header}.${payload}.signature`
 }
@@ -231,6 +236,138 @@ describe('resolveCodexAccessToken', () => {
   })
 })
 
+describe('Auth / LLM row configuration', () => {
+  it('keeps the route enabled by default and permits coordinator-only composition', () => {
+    const parse = PluginConfig as unknown as (input: Partial<PluginConfigView>) => PluginConfigView
+    expect(parse({})).toMatchObject({ llmEnabled: true })
+    expect(parse({ llmEnabled: false })).toMatchObject({ llmEnabled: false })
+  })
+})
+
+describe('CodexAuthService authenticated operation boundary', () => {
+  let dir: string
+  let authPath: string
+  let ctx: Context
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'codex-auth-coordinator-'))
+    authPath = join(dir, 'auth.json')
+    ctx = new Context()
+  })
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
+
+  function service(fetchImpl: typeof fetch): CodexAuthService {
+    return new CodexAuthService(ctx, {
+      authJsonPath: authPath,
+      codexCommand: 'definitely-not-codex',
+      credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
+      refreshLeadMs: 5 * 60 * 1000,
+      fetchImpl,
+    })
+  }
+
+  it('coalesces concurrent refreshes and returns account-scoped credentials', async () => {
+    const expiring = fakeJwt(Math.floor(Date.now() / 1000) + 30, 'acct-1')
+    const refreshed = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-1', 'plus')
+    await writeFile(authPath, JSON.stringify({
+      auth_mode: 'chatgpt',
+      tokens: { access_token: expiring, refresh_token: 'refresh-secret', account_id: 'acct-1' },
+    }), 'utf8')
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      access_token: refreshed,
+      refresh_token: 'rotated-secret',
+      account_id: 'acct-1',
+    }), { status: 200 }))
+    const coordinator = service(fetchMock)
+
+    const credentials = await Promise.all(Array.from({ length: 8 }, () => coordinator.credential()))
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(credentials).toEqual(Array.from({ length: 8 }, () => ({
+      accessToken: refreshed,
+      accountId: 'acct-1',
+      planType: 'plus',
+    })))
+  })
+
+  it('treats a missing pre-lock read only as a hint and adopts the locked document', async () => {
+    const fresh = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-1')
+    const fetchMock = vi.fn()
+    const coordinator = service(fetchMock)
+    let pending: Promise<Awaited<ReturnType<CodexAuthService['credential']>>> | undefined
+
+    await withFileLock(authPath, async () => {
+      pending = coordinator.credential()
+      await new Promise(resolve => setTimeout(resolve, 20))
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: fresh, refresh_token: 'other-secret', account_id: 'acct-1' },
+      }), 'utf8')
+    })
+
+    await expect(pending).resolves.toMatchObject({ accessToken: fresh, accountId: 'acct-1' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('re-reads under the cross-process lock before deciding to refresh', async () => {
+    const expiring = fakeJwt(Math.floor(Date.now() / 1000) + 30, 'acct-1')
+    const fresh = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-1')
+    await writeFile(authPath, JSON.stringify({
+      tokens: { access_token: expiring, refresh_token: 'refresh-secret', account_id: 'acct-1' },
+    }), 'utf8')
+    const fetchMock = vi.fn()
+    const coordinator = service(fetchMock)
+    let pending: Promise<Awaited<ReturnType<CodexAuthService['credential']>>> | undefined
+
+    await withFileLock(authPath, async () => {
+      pending = coordinator.credential()
+      await new Promise(resolve => setTimeout(resolve, 20))
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: fresh, refresh_token: 'other-secret', account_id: 'acct-1' },
+      }), 'utf8')
+    })
+
+    await expect(pending).resolves.toMatchObject({ accessToken: fresh, accountId: 'acct-1' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('adopts a newer matching-account login after refresh-token reuse', async () => {
+    const expiring = fakeJwt(Math.floor(Date.now() / 1000) + 30, 'acct-1')
+    const replacement = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-1')
+    await writeFile(authPath, JSON.stringify({
+      tokens: { access_token: expiring, refresh_token: 'consumed-secret', account_id: 'acct-1' },
+      last_refresh: '2026-01-01T00:00:00.000Z',
+    }), 'utf8')
+    const fetchMock = vi.fn(async () => {
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: replacement, refresh_token: 'cli-secret', account_id: 'acct-1' },
+        last_refresh: '2026-02-01T00:00:00.000Z',
+      }), 'utf8')
+      return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 })
+    })
+
+    await expect(service(fetchMock).credential()).resolves.toMatchObject({
+      accessToken: replacement,
+      accountId: 'acct-1',
+    })
+  })
+
+  it('refuses to adopt a replacement login for a different account', async () => {
+    const expiring = fakeJwt(Math.floor(Date.now() / 1000) + 30, 'acct-1')
+    const replacement = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-2')
+    await writeFile(authPath, JSON.stringify({
+      tokens: { access_token: expiring, refresh_token: 'consumed-secret', account_id: 'acct-1' },
+    }), 'utf8')
+    const fetchMock = vi.fn(async () => {
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: replacement, refresh_token: 'other-secret', account_id: 'acct-2' },
+      }), 'utf8')
+      return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 })
+    })
+
+    await expect(service(fetchMock).credential()).resolves.toBeUndefined()
+  })
+})
+
 describe('CodexAuthService', () => {
   let dir: string
   let ctx: Context
@@ -238,9 +375,9 @@ describe('CodexAuthService', () => {
   beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'codex-auth-service-')); ctx = new Context() })
   afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
-  it('reports availability, configuration, and timestamps without token material', async () => {
+  it('reports availability, account, plan, and timestamps without token material', async () => {
     const authPath = join(dir, 'auth.json')
-    const token = fakeJwt(Math.floor(Date.now() / 1000) + 3600)
+    const token = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct_test', 'plus')
     await mkdir(dir, { recursive: true })
     await writeFile(authPath, JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: token }, last_refresh: '2026-08-10T00:00:00.000Z' }), 'utf8')
     const service = new CodexAuthService(ctx, { authJsonPath: authPath, codexCommand: 'definitely-not-codex', credentialRef: credentialRef('CODEX_CHATGPT_TOKEN') })
@@ -251,6 +388,8 @@ describe('CodexAuthService', () => {
     expect(status.authMode).toBe('chatgpt')
     expect(status.lastRefreshAt).toBe('2026-08-10T00:00:00.000Z')
     expect(status.tokenExpiresAt).toBeTruthy()
+    expect(status.accountId).toBe('acct_test')
+    expect(status.planType).toBe('plus')
     expect(status.credentialRef).toBe('CODEX_CHATGPT_TOKEN')
     expect(JSON.stringify(status)).not.toContain(token)
   })
