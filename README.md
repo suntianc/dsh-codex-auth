@@ -139,3 +139,7 @@ small Web-loader and CSS contract needed by this dual-face plugin; it does not
 import files from a DeepSeek Harness checkout.
 
 See [`docs/design.md`](docs/design.md) for the design record and glossary.
+
+## Friendship links
+
+- [L 站](https://linux.do/)

@@ -128,3 +128,7 @@ pnpm run check
 不依赖旁边存在 DeepSeek Harness 源码 checkout。
 
 设计记录与术语见 [`docs/design.md`](docs/design.md)。
+
+## 友情链接
+
+- [L 站](https://linux.do/)
