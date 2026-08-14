@@ -1,0 +1,4 @@
+# Installable profile layer: one host/browser dual-face plugin row.
+- insert:
+    - id: llm-codex-auth
+      name: 'dsh-codex-auth'
