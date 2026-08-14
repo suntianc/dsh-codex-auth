@@ -32,7 +32,18 @@ Settings UI.
 - The `codex` CLI available on `PATH`.
 - Run `codex login` before use, or start login from the GPT Auth card.
 
-## Install a prebuilt release (recommended)
+## Install from npm (recommended)
+
+The npm package includes prebuilt Host and browser bundles, so no install-time
+build permission is required:
+
+```sh
+dsh plugin --profile web add dsh-codex-auth
+```
+
+Restart `dsh web`, open Settings, and select **GPT Auth**.
+
+## Install a prebuilt release
 
 The release tarball already contains both bundles and needs no install-time
 build permission:
@@ -76,12 +87,6 @@ cd dsh-codex-auth
 pnpm install
 pnpm pack
 dsh plugin --profile web add ./dsh-codex-auth-0.1.0.tgz
-```
-
-After an npm release, the equivalent command is:
-
-```sh
-dsh plugin --profile web add dsh-codex-auth
 ```
 
 ## Configuration
