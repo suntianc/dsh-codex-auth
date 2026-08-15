@@ -1,8 +1,11 @@
 # dsh-codex-auth
 
+[![npm version](https://img.shields.io/npm/v/dsh-codex-auth.svg)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 [English](README.md) | 中文
+
+当前版本：**v0.2.0**
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -10,7 +13,8 @@
 
 - `openai-codex` LLM 路由；
 - 接入 DSH 内置 `web_search` 工具的全局 Codex 搜索提供方；
-- 面向支持图片模型的持久化 `generate_image` 与 `list_images` 工具；
+- 通过 `generate_image` 实现持久图片生成与编辑，并提供供模型使用的 `list_images` 目录；
+- 稳健的 Codex 周用量状态；
 - 一个原生 **GPT Auth** 设置分区，内含「登录」「网页搜索」「图片创作」三张卡片。
 
 > **⚠️ 非官方通道——仅限个人开发。** 私有、受账户权限控制的
@@ -159,27 +163,16 @@ pnpm pack
 dsh plugin --profile web add ./dsh-codex-auth-0.2.0.tgz
 ```
 
-## 验证 v0.2.0
+## 升级
 
-先停止正在运行的 `dsh web`，明确安装已发布版本，并确认 Profile 解析到了正确版本：
+先停止正在运行的 `dsh web`，再将 Web Profile 更新到当前版本：
 
 ```sh
 dsh plugin --profile web add dsh-codex-auth@0.2.0
 dsh plugin --profile web list
 ```
 
-列表中必须出现 `dsh-codex-auth@0.2.0`。重新启动 `dsh web`、刷新 Web 页面，并创建一个
-新会话后再执行以下检查：
-
-| 能力 | 示例提示词 | 预期结果 |
-|---|---|---|
-| 图片生成 | `生成一张横版插画：雨夜霓虹城市里的一辆黄色出租车，不要添加文字。` | `generate_image` 成功，结果只展示图片画廊；点击可查看原图，刷新页面后持久图片仍可读取。 |
-| 图片目录 | `调用 list_images，告诉我当前会话有多少张可用图片。` | 模型能够读取目录并回答，但 `list_images` 不展示面向用户的结果卡片；执行记录仍可在轨迹中查看。 |
-| 图片编辑 | `把上一张图改成清晨场景，保留黄色出租车。` | 模型能够解析当前会话中的旧图片，并返回一张新的持久图片。 |
-| 网页搜索 | `使用 web_search 搜索 DeepSeek Harness 的最新信息，并附上来源链接。` | 返回搜索内容与 HTTP(S) 来源，不出现 Provider 歧义或登录错误。 |
-
-如果仍看到旧版图片卡片，请重新检查安装版本，停止所有旧 Web 进程，只启动一个
-`dsh web` 实例，然后再次刷新浏览器。DSH `0.1.0-rc.6` 下不会提供工作区导出功能。
+列表显示 `dsh-codex-auth@0.2.0` 后，重新启动 `dsh web` 并刷新浏览器。
 
 ## Host 配置
 
