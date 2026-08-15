@@ -146,7 +146,7 @@ Restart `dsh web`, open Settings, and select **GPT Auth**.
 ## Install a prebuilt release
 
 ```sh
-dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.1.0/dsh-codex-auth-0.1.0.tgz
+dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.2.0/dsh-codex-auth-0.2.0.tgz
 ```
 
 Restart `dsh web`, open Settings, and select **GPT Auth**.
@@ -166,7 +166,7 @@ again. Only grant this permission after reviewing the source.
 For a reproducible install, pin a release tag or commit:
 
 ```sh
-dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.1.0
+dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.2.0
 ```
 
 ## Install a tarball
@@ -176,7 +176,7 @@ git clone https://github.com/suntianc/dsh-codex-auth.git
 cd dsh-codex-auth
 pnpm install
 pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.1.0.tgz
+dsh plugin --profile web add ./dsh-codex-auth-0.2.0.tgz
 ```
 
 ## Host configuration

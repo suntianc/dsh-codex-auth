@@ -127,7 +127,7 @@ dsh plugin --profile web add dsh-codex-auth
 ## 安装预构建 Release
 
 ```sh
-dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.1.0/dsh-codex-auth-0.1.0.tgz
+dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.2.0/dsh-codex-auth-0.2.0.tgz
 ```
 
 重启 `dsh web`，打开设置并选择 **GPT Auth**。
@@ -146,7 +146,7 @@ Git 依赖会通过包内 `prepare` 脚本从源码构建。pnpm 10+ 默认阻�
 需要可复现安装时，固定 release tag 或 commit：
 
 ```sh
-dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.1.0
+dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.2.0
 ```
 
 ## 从 tarball 安装
@@ -156,7 +156,7 @@ git clone https://github.com/suntianc/dsh-codex-auth.git
 cd dsh-codex-auth
 pnpm install
 pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.1.0.tgz
+dsh plugin --profile web add ./dsh-codex-auth-0.2.0.tgz
 ```
 
 ## Host 配置

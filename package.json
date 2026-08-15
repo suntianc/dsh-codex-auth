@@ -1,7 +1,7 @@
 {
   "name": "dsh-codex-auth",
   "description": "One DeepSeek Harness Codex capability bundle for ChatGPT login, LLM access, Web Search, and durable Image Creation",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -59,6 +59,7 @@
     "lib/types/**/*.d.ts",
     "lib/types/**/*.d.ts.map",
     "cordis.patch.yml",
+    "CHANGELOG.md",
     "README.md",
     "README.zh.md",
     "LICENSE"
