@@ -1,8 +1,11 @@
 # dsh-codex-auth
 
+[![npm version](https://img.shields.io/npm/v/dsh-codex-auth.svg)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 [English](README.md) | 中文
+
+当前版本：**v0.2.0**
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -10,7 +13,8 @@
 
 - `openai-codex` LLM 路由；
 - 接入 DSH 内置 `web_search` 工具的全局 Codex 搜索提供方；
-- 面向支持图片模型的持久化 `generate_image` 与 `list_images` 工具；
+- 通过 `generate_image` 实现持久图片生成与编辑，并提供供模型使用的 `list_images` 目录；
+- 稳健的 Codex 周用量状态；
 - 一个原生 **GPT Auth** 设置分区，内含「登录」「网页搜索」「图片创作」三张卡片。
 
 > **⚠️ 非官方通道——仅限个人开发。** 私有、受账户权限控制的
@@ -158,6 +162,17 @@ pnpm install
 pnpm pack
 dsh plugin --profile web add ./dsh-codex-auth-0.2.0.tgz
 ```
+
+## 升级
+
+先停止正在运行的 `dsh web`，再将 Web Profile 更新到当前版本：
+
+```sh
+dsh plugin --profile web add dsh-codex-auth@0.2.0
+dsh plugin --profile web list
+```
+
+列表显示 `dsh-codex-auth@0.2.0` 后，重新启动 `dsh web` 并刷新浏览器。
 
 ## Host 配置
 

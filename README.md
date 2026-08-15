@@ -1,8 +1,11 @@
 # dsh-codex-auth
 
+[![npm version](https://img.shields.io/npm/v/dsh-codex-auth.svg)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 English | [中文](README.zh.md)
+
+Current release: **v0.2.0**
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -10,7 +13,9 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 
 - the `openai-codex` LLM route;
 - a Global Codex Search Provider behind DSH's stock `web_search` tool;
-- durable `generate_image` and `list_images` tools for image-capable Codex models;
+- durable image generation and editing through `generate_image`, plus the
+  model-facing `list_images` catalog;
+- resilient weekly Codex usage status;
 - one native **GPT Auth** Settings section with Login, Web Search, and Image
   Creation cards.
 
@@ -178,6 +183,19 @@ pnpm install
 pnpm pack
 dsh plugin --profile web add ./dsh-codex-auth-0.2.0.tgz
 ```
+
+## Upgrade
+
+Stop the running `dsh web` process and update the Web profile to the current
+release:
+
+```sh
+dsh plugin --profile web add dsh-codex-auth@0.2.0
+dsh plugin --profile web list
+```
+
+After the list reports `dsh-codex-auth@0.2.0`, restart `dsh web` and refresh the
+browser.
 
 ## Host configuration
 
