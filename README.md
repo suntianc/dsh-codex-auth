@@ -179,6 +179,30 @@ pnpm pack
 dsh plugin --profile web add ./dsh-codex-auth-0.2.0.tgz
 ```
 
+## Verify v0.2.0
+
+Stop the running `dsh web` process, install the published package explicitly,
+and confirm the profile resolved the expected version:
+
+```sh
+dsh plugin --profile web add dsh-codex-auth@0.2.0
+dsh plugin --profile web list
+```
+
+The list must contain `dsh-codex-auth@0.2.0`. Restart `dsh web`, refresh the Web
+page, and create a new conversation before running these checks:
+
+| Capability | Example prompt | Expected result |
+|---|---|---|
+| Image generation | `Generate a widescreen illustration of a yellow taxi in a rainy neon city. Do not add text.` | `generate_image` succeeds and the result displays only the image gallery. Clicking opens the original; refreshing the page keeps the durable image available. |
+| Image catalog | `Call list_images and tell me how many images are available in this session.` | The model can inspect the catalog and answer, but `list_images` renders no user-facing result card. Its execution remains available in the trajectory. |
+| Image editing | `Turn the previous image into a dawn scene while keeping the yellow taxi.` | The model resolves the prior session image and returns a new durable image. |
+| Web Search | `Use web_search to find the latest DeepSeek Harness information and include source links.` | The response includes search output and HTTP(S) sources without provider-ambiguity or login errors. |
+
+If the old image card still appears, recheck the installed version, stop every
+old Web process, restart one `dsh web` instance, and refresh the browser again.
+Workspace export is intentionally absent on DSH `0.1.0-rc.6`.
+
 ## Host configuration
 
 The bundle patch activates three independent Host rows in dependency order:
