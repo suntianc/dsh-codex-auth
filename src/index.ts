@@ -22,7 +22,11 @@ import type {} from '@deepseek-ai/dsh-client-connection'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { DEFAULT_REFRESH_LEAD_MS, defaultAuthJsonPath } from './codex-auth.ts'
-import { CODEX_ROUTE, CodexAuthAdapter } from './codex-auth-adapter.ts'
+import {
+  CODEX_ROUTE, CodexAuthAdapter, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_TRANSPORT,
+  DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS,
+} from './codex-auth-adapter.ts'
+import type { CodexAuthTransport } from './codex-auth-adapter.ts'
 import { CodexAuthService } from './codex-auth-service.ts'
 import { installEnvHttpProxy } from './env-proxy.ts'
 import { CODEX_AUTH_RPC_CHANNEL, handleCodexAuthRpc } from './rpc.ts'
@@ -32,6 +36,8 @@ export const inject = ['llm']
 
 /** Plugin configuration; every field has a default, so a bare row mounts the plugin. */
 export interface Config {
+  /** Whether this row owns the openai-codex LLM route; auth coordination remains available when false. */
+  llmEnabled: boolean
   /** Codex auth file path; empty (default) resolves `$CODEX_HOME` or `~/.codex/auth.json`. */
   authJsonPath: string
   /** Credential reference advertised by the status card. */
@@ -42,14 +48,24 @@ export interface Config {
   codexCommand: string
   /** Selector label for the provider route. */
   displayName: string
+  /** Streaming transport for the route; SSE by default because the WebSocket upgrade is unreliable through common HTTP proxies. */
+  transport: CodexAuthTransport
+  /** WebSocket connect timeout in milliseconds; only used when `transport` is not `sse`; zero disables it. */
+  websocketConnectTimeoutMs: number
+  /** Request timeout in milliseconds (SSE response-header phase and WebSocket message idle); zero disables it. */
+  timeoutMs: number
 }
 
 export const Config: z<Config> = z.object({
+  llmEnabled: z.boolean().default(true),
   authJsonPath: z.string().default(''),
   credentialRef: z.string().default('CODEX_CHATGPT_TOKEN'),
   refreshLeadMs: z.number().min(0).default(DEFAULT_REFRESH_LEAD_MS),
   codexCommand: z.string().default('codex'),
   displayName: z.string().default('OpenAI Codex (chatgpt)'),
+  transport: z.union([z.const('auto'), z.const('sse'), z.const('websocket')]).default(DEFAULT_TRANSPORT),
+  websocketConnectTimeoutMs: z.natural().default(DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS),
+  timeoutMs: z.natural().default(DEFAULT_REQUEST_TIMEOUT_MS),
 })
 
 /** Mount the codex-auth adapter and service. */
@@ -59,24 +75,43 @@ export function apply(ctx: Context, config: Config): void {
   installEnvHttpProxy((message) => { ctx.logger.warn(String(message)) })
   const credentialReference: CredentialRef = credentialRef(config.credentialRef)
   const authJsonPath = config.authJsonPath.length > 0 ? config.authJsonPath : defaultAuthJsonPath()
-  ctx.llm.registerAdapter([CODEX_ROUTE], new CodexAuthAdapter(ctx, {
-    authJsonPath,
-    credentialRef: credentialReference,
-    refreshLeadMs: config.refreshLeadMs,
-    fetchImpl: fetch,
-    displayName: config.displayName,
-  }))
   const service = new CodexAuthService(ctx, {
     authJsonPath,
     codexCommand: config.codexCommand,
     credentialRef: credentialReference,
+    refreshLeadMs: config.refreshLeadMs,
+    fetchImpl: fetch,
   })
-  ctx.inject(['connection'], (connectionCtx) => {
-    connectionCtx.connection.rpc.handle(
-      CODEX_AUTH_RPC_CHANNEL,
-      (endpoint, payload) => handleCodexAuthRpc(service, endpoint, payload),
-      { authority: 'loopback' },
+  if (config.llmEnabled) {
+    if (ctx.llm.listProviders().some(provider => provider.id === CODEX_ROUTE)) {
+      throw new Error(
+        'dsh-codex-auth cannot own the "openai-codex" route because another plugin already registered it; '
+        + 'dsh-codex-auth and dsh-codex are mutually exclusive, so uninstall or disable one bundle',
+      )
+    }
+    ctx.llm.registerAdapter([CODEX_ROUTE], new CodexAuthAdapter(ctx, {
+      auth: service,
+      authJsonPath,
+      credentialRef: credentialReference,
+      refreshLeadMs: config.refreshLeadMs,
+      fetchImpl: fetch,
+      displayName: config.displayName,
+      transport: config.transport,
+      websocketConnectTimeoutMs: config.websocketConnectTimeoutMs,
+      timeoutMs: config.timeoutMs,
+    }))
+  }
+  ctx.inject(['connection'], connectionCtx => connectionCtx.connection.rpc.handle(
+    CODEX_AUTH_RPC_CHANNEL,
+    (endpoint, payload, signal) => handleCodexAuthRpc(service, endpoint, payload, signal),
+    { authority: 'loopback' },
+  ))
+  if (config.llmEnabled) {
+    ctx.logger.info(
+      'llm-codex-auth: route %s serving ChatGPT login from %s (transport %s, ws-connect %sms, request timeout %sms)',
+      CODEX_ROUTE, authJsonPath, config.transport, config.websocketConnectTimeoutMs, config.timeoutMs,
     )
-  })
-  ctx.logger.info('llm-codex-auth: route %s serving ChatGPT login from %s', CODEX_ROUTE, authJsonPath)
+  } else {
+    ctx.logger.info('llm-codex-auth: shared Login State active at %s; LLM route disabled', authJsonPath)
+  }
 }

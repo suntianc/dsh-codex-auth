@@ -7,6 +7,8 @@
     "src/**/*.ts",
     "tests/codex-auth.spec.ts",
     "tests/rpc.spec.ts",
+    "tests/search.spec.ts",
+    "tests/image.spec.ts",
     "build/**/*.ts",
     "tsdown.config.ts",
     "vitest.config.ts"

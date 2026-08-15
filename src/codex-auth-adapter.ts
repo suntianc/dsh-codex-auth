@@ -11,6 +11,15 @@
  * installed pi-ai `openai-codex` provider, wrapped by the harness's own
  * `PiAiAdapter`; this package only supplies the credential and the route.
  *
+ * The route streams over SSE by default: pi-ai prefers a WebSocket connection
+ * (`wss://chatgpt.com/backend-api/codex/responses`) with a 15-second connect
+ * timeout and a per-session SSE fallback, but the WebSocket upgrade is
+ * unreliable through common HTTP proxies, and every new conversation pays the
+ * connect timeout again before the fallback engages. Pinning SSE removes that
+ * cliff (prompt caching via the `session-id`/`prompt_cache_key` still applies);
+ * `auto` and `websocket` remain selectable for networks where the WebSocket
+ * works.
+ *
  * @module dsh-codex-auth/codex-auth-adapter
  */
 
@@ -26,16 +35,36 @@ import {
   refreshTokens, writeAuthFile,
 } from './codex-auth.ts'
 import type { CodexAuthFile } from './codex-auth.ts'
+import type { CodexAuthService } from './codex-auth-service.ts'
 
 /** The provider route this adapter registers. */
 export const CODEX_ROUTE = 'openai-codex'
+
+/** Streaming transports pi-ai's codex provider accepts; `sse` is the default here. */
+export type CodexAuthTransport = 'auto' | 'sse' | 'websocket'
+
+/**
+ * Default streaming transport. SSE is reliable through HTTP proxies; `auto`
+ * first tries a WebSocket with a 15-second connect timeout and falls back per
+ * conversation, which makes every new conversation's first request slow on
+ * networks where the WebSocket upgrade fails.
+ */
+export const DEFAULT_TRANSPORT: CodexAuthTransport = 'sse'
+
+/** Default WebSocket connect timeout when a non-SSE transport is selected. */
+export const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS = 5_000
+
+/** Default request timeout: the SSE response-header phase, and the WebSocket message idle interval. */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 
 /** Provider-idle ceiling for one outstanding stream read, mirroring llm-pi-ai's default. */
 const STREAM_IDLE_TIMEOUT_MS = 300_000
 
 /** Options one adapter instance is constructed with. */
 export interface CodexAuthAdapterOptions {
-  /** The codex auth file path (`~/.codex/auth.json` by default). */
+  /** Shared Host-only coordinator used by every authenticated operation. */
+  auth: Pick<CodexAuthService, 'credential'>
+  /** The codex auth file path (`~/.codex/auth.json` by default); retained for the legacy resolver fixture. */
   authJsonPath: string
   /** The credential reference the status card advertises. */
   credentialRef: CredentialRef
@@ -45,6 +74,12 @@ export interface CodexAuthAdapterOptions {
   fetchImpl: typeof fetch
   /** Selector label for the route. */
   displayName: string
+  /** Streaming transport preference (`sse` by default). */
+  transport: CodexAuthTransport
+  /** WebSocket connect timeout in milliseconds; only used when `transport` is not `sse`. */
+  websocketConnectTimeoutMs: number
+  /** Request timeout in milliseconds (SSE response-header phase and WebSocket message idle). */
+  timeoutMs: number
 }
 
 /**
@@ -101,6 +136,9 @@ export class CodexAuthAdapter extends PiAiAdapter {
       retryPolicy: resolveRetryPolicy(undefined, `llm-codex-auth: provider "${CODEX_ROUTE}" retryPolicy`),
       piProvider: codexProvider(options.displayName),
       configuredMaxTokens: new Map(),
+      transport: options.transport,
+      websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
+      timeoutMs: options.timeoutMs,
     }
     const profiles: ReadonlyMap<string, ResolvedPiAiProviderProfile> = new Map([[CODEX_ROUTE, profile]])
     super({
@@ -110,18 +148,15 @@ export class CodexAuthAdapter extends PiAiAdapter {
       // degradation instead of letting pi-ai's ambient OAuth discovery run
       // with nothing to discover.
       resolveApiKey: async () => {
-        const token = await resolveCodexAccessToken(
-          options,
-          (message) => { ctx.logger.warn('llm-codex-auth: %s', message) },
-        )
-        if (token === undefined) {
+        const credential = await options.auth.credential()
+        if (credential === undefined) {
           throw new LlmError(
             `llm-codex-auth: no usable ChatGPT login for "${CODEX_ROUTE}"; run "codex login" (or use the`
             + ` "${options.credentialRef}" card on the Settings page) to sign in`,
             'MISSING_CREDENTIAL',
           )
         }
-        return token
+        return credential.accessToken
       },
       resolveAttachments: () => ctx.get('attachments'),
     })
