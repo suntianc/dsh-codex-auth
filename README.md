@@ -116,13 +116,14 @@ Live Image settings:
 | Quality | `auto` | `auto`, `low`, `medium`, `high` |
 | Background | `auto` | `auto`, `opaque`, `transparent` |
 
-The keyed tool result cards use DSH's standard image gallery. A bounded
-plugin-owned Blob URL cache reads only through the public session-authorized
-attachment API and revokes its URLs on reset, eviction, and plugin teardown.
-Generated images remain durable conversation attachments.
+A successful `generate_image` result displays only DSH's standard image gallery;
+`list_images` is model-facing catalog state and has no user-facing result view. A
+bounded plugin-owned Blob URL cache reads only through the public
+session-authorized attachment API and revokes its URLs on reset, eviction, and
+plugin teardown. Generated images remain durable conversation attachments.
 DeepSeek Harness `0.1.0-rc.6` does not expose a binary workspace-write API, so
-**Save to workspace** is visibly disabled rather than bypassing DSH filesystem
-policy with direct Node filesystem access.
+no workspace-export action is offered and the plugin never bypasses DSH policy
+with direct Node filesystem access.
 
 ## Requirements
 

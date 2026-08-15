@@ -101,10 +101,11 @@ cursor 和来源筛选，同时返回稳定 Image Handle 与真实 ImageBlock，
 | 质量 | `auto` | `auto`、`low`、`medium`、`high` |
 | 背景 | `auto` | `auto`、`opaque`、`transparent` |
 
-专用工具结果卡复用 DSH 标准图片画廊。插件通过公开的会话授权附件 API 读取图片，使用有界
-Blob URL 缓存，并在连接重置、淘汰和插件卸载时回收自身 URL。生成图会作为对话附件持久保存。
-DeepSeek Harness `0.1.0-rc.6` 尚未提供二进制工作区写入 API，因此
-**保存到工作区** 会明确显示为禁用；插件不会通过 Node 文件系统绕过 DSH 的文件策略。
+成功的 `generate_image` 结果只展示 DSH 标准图片画廊；`list_images` 是供模型使用的目录状态，
+不提供面向用户的结果视图。插件通过公开的会话授权附件 API 读取图片，使用有界 Blob URL 缓存，
+并在连接重置、淘汰和插件卸载时回收自身 URL。生成图会作为对话附件持久保存。
+DeepSeek Harness `0.1.0-rc.6` 尚未提供二进制工作区写入 API，因此界面不提供工作区导出操作；
+插件也不会通过 Node 文件系统绕过 DSH 的文件策略。
 
 ## 环境要求
 

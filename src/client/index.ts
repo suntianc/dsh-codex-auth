@@ -81,11 +81,15 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
     name: 'tool.call.toolview',
     key: 'list_images',
-    locale: NS,
-  }, ToolView))
+  }, ListImagesToolView))
 }
 
 type LocalizedToolViewProps = ToolCallViewProps & PropsLocale<typeof NS>
+
+/** list_images is model-facing catalog state and deliberately has no user-facing card. */
+function ListImagesToolView(): null {
+  return null
+}
 
 function imageToolView(imageUrls: SessionImageUrls): (props: LocalizedToolViewProps) => ReactElement {
   return function RegisteredCodexImageToolView(props: LocalizedToolViewProps): ReactElement {

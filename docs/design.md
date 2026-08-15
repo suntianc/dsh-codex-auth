@@ -166,16 +166,11 @@ Image requests are not automatically retried after dispatch because the server m
 
 The tool's canonical JSON value carries attachment-reference fields. Its pure output renderer reconstructs standard ImageBlocks, allowing image-capable models to receive the result and the session log to retain authorized attachment references.
 
-The generic DSH tool row currently renders non-text blocks as JSON, so the client plugin registers a keyed `tool.call.toolview` for `generate_image` and `list_images`. The renderer reads attachments through the public session-authorized API, creates bounded Blob URLs, revokes them on lifecycle cleanup, and uses the stock image/gallery components.
+The generic DSH tool row currently renders non-text blocks as JSON, so the client plugin registers keyed `tool.call.toolview` ownership for both image tools. A successful `generate_image` call renders only the stock image gallery: no result card, title, persistence badge, Image Handle, warning copy, or workspace controls. Loading and failure states retain only the feedback needed to explain their state. `list_images` is model-facing catalog state and deliberately renders no user-facing view.
 
-The generated-image card provides:
+The image loader reads attachments through the public session-authorized API, creates bounded plugin-owned Blob URLs, and revokes them on connection reset, cache eviction, and plugin teardown.
 
-- per-image **Save to workspace**;
-- **Save all** for a multi-image result.
-
-A single save proposes `generated-images/<date>-<short-handle>.png` and permits editing. Save-all chooses a destination directory. Existing paths are not overwritten; numeric suffixes are added. All writes occur Host-side through DSH filesystem and permission boundaries. Conversation attachments remain the primary copy.
-
-**Current DSH rc6 constraint:** `ctx.fs` has no binary write operation. This package therefore keeps the durable conversation copy and renders workspace-save controls disabled with an explicit explanation. It does not evade DSH policy with direct `node:fs` writes. Enabling the target export flow requires a policy-aware binary write API in DSH core.
+**Current DSH rc6 constraint:** `ctx.fs` has no binary write operation. Workspace export is therefore not offered in the result UI. Conversation attachments remain the durable copy, and the plugin does not evade DSH policy with direct `node:fs` writes. Adding export later requires a policy-aware binary write API in DSH core.
 
 ## Settings UI
 

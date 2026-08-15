@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ComponentType } from 'react'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
@@ -159,7 +160,7 @@ describe('Codex Capability Bundle settings', () => {
 })
 
 describe('Codex Image Creation tool view', () => {
-  it('renders durable generated images, handles, warnings, and honest export availability', async () => {
+  it('renders only generated images after a successful call', async () => {
     const attachment: ImageAttachmentRef = {
       attachmentId: 'att-1' as ImageAttachmentRef['attachmentId'],
       mediaType: 'image/png',
@@ -189,13 +190,12 @@ describe('Codex Image Creation tool view', () => {
     }
     const loadImage = vi.fn(async () => 'data:image/png;base64,iVBORw0KGgo=')
 
-    render(<CodexImageToolView block={block} loadImage={loadImage} />)
+    const { container } = render(<CodexImageToolView block={block} loadImage={loadImage} />)
 
     expect(await screen.findByRole('img', { name: 'generated.png' })).toBeTruthy()
-    expect(screen.getByText('image:att-1')).toBeTruthy()
-    expect(screen.getByText(/IMAGE_MEDIA_INVALID · item 2 · The response item was not a supported raster image/)).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Save to workspace' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByText(/binary workspace writes are not available/i)).toBeTruthy()
+    expect(container.textContent).toBe('')
+    expect(screen.queryByText('image:att-1')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save to workspace' })).toBeNull()
   })
 
   it('shows a stable in-progress state before a tool result lands', () => {
@@ -251,5 +251,27 @@ describe('client plugin registration', () => {
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'list_images' }),
     ]))
+
+    const ListImagesView = registered.find(item => item.key === 'list_images')?.component as ComponentType<{
+      block: ToolCallBlock
+      sessionId: string
+      t: typeof t
+    }>
+    const listBlock: ToolCallBlock = {
+      kind: 'tool-result',
+      seq: 4,
+      time: 40,
+      callId: 'call-list',
+      call: { name: 'list_images', argsRaw: '{}' },
+      callTime: 30,
+      content: [],
+      isError: false,
+      meta: { operation: 'list', items: [], nextCursor: null },
+      callView: null,
+      resultView: null,
+      subCalls: [],
+    }
+    const listResult = render(<ListImagesView block={listBlock} sessionId="session-a" t={t} />)
+    expect(listResult.container.firstElementChild).toBeNull()
   })
 })
