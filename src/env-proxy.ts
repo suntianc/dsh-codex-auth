@@ -27,11 +27,13 @@ export function installEnvHttpProxy(log: (message: unknown) => void): void {
   installed = true
   const proxy = process.env.HTTPS_PROXY ?? process.env.https_proxy
     ?? process.env.HTTP_PROXY ?? process.env.http_proxy
+    ?? process.env.ALL_PROXY ?? process.env.all_proxy
   if (proxy === undefined || proxy.length === 0) return
   try {
-    // EnvHttpProxyAgent reads the proxy and NO_PROXY variables per request,
-    // so a change takes effect without re-installing.
-    setGlobalDispatcher(new EnvHttpProxyAgent())
+    // undici's EnvHttpProxyAgent only reads http_proxy/HTTPS_PROXY (never
+    // all_proxy), so the resolved URL is passed explicitly; NO_PROXY keeps
+    // working from the environment.
+    setGlobalDispatcher(new EnvHttpProxyAgent({ httpProxy: proxy, httpsProxy: proxy }))
     log('llm-codex-auth: routing outbound requests through the environment HTTP proxy')
   } catch (error) {
     log(error)

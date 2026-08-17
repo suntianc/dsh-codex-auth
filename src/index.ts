@@ -21,6 +21,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { RetryPolicySchema, type RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { DEFAULT_REFRESH_LEAD_MS, defaultAuthJsonPath } from './codex-auth.ts'
 import {
   CODEX_ROUTE, CodexAuthAdapter, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_TRANSPORT,
@@ -54,6 +55,8 @@ export interface Config {
   websocketConnectTimeoutMs: number
   /** Request timeout in milliseconds (SSE response-header phase and WebSocket message idle); zero disables it. */
   timeoutMs: number
+  /** Optional provider-owned request retry policy; omitted uses the harness normal policy (two retries on transient codes). */
+  retryPolicy?: RetryPolicyConfig
 }
 
 export const Config: z<Config> = z.object({
@@ -66,6 +69,7 @@ export const Config: z<Config> = z.object({
   transport: z.union([z.const('auto'), z.const('sse'), z.const('websocket')]).default(DEFAULT_TRANSPORT),
   websocketConnectTimeoutMs: z.natural().default(DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS),
   timeoutMs: z.natural().default(DEFAULT_REQUEST_TIMEOUT_MS),
+  retryPolicy: RetryPolicySchema,
 })
 
 /** Mount the codex-auth adapter and service. */
@@ -99,6 +103,7 @@ export function apply(ctx: Context, config: Config): void {
       transport: config.transport,
       websocketConnectTimeoutMs: config.websocketConnectTimeoutMs,
       timeoutMs: config.timeoutMs,
+      ...(config.retryPolicy === undefined ? {} : { retryPolicy: config.retryPolicy }),
     }))
   }
   ctx.inject(['connection'], connectionCtx => connectionCtx.connection.rpc.handle(

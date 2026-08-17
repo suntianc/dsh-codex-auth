@@ -198,6 +198,7 @@ dsh plugin --profile web list
 | `transport` | `sse` | 流式传输方式：`sse`、`websocket` 或 `auto`（优先 WebSocket、失败回退 SSE）。默认 SSE：WebSocket 升级在常见 HTTP 代理下不稳定，且 `auto` 模式下每个新对话都要先付出连接超时才会回退 |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket 连接超时（毫秒，仅当 `transport` 不是 `sse` 时生效；`0` 表示禁用） |
 | `timeoutMs` | `120000` | 请求超时（毫秒，SSE 响应头阶段；同时作为 WebSocket 消息空闲间隔；`0` 表示禁用） |
+| `retryPolicy` | Harness 默认（重试 2 次） | 可选请求重试策略：`{ mode: 'normal', maxRetries: N }` 或 `{ mode: 'always' }`，可带 `backoff`（`initialDelayMs`、`maxDelayMs`、`jitterRatio`）；省略时用 Harness 默认策略 |
 
 不要再在 `llm-pi-ai.providers` 下添加 `openai-codex`，也不要同时安装 `dsh-codex`；
 重复路由所有权会得到明确诊断并被拒绝。

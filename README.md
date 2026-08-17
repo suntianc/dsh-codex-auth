@@ -221,6 +221,7 @@ Login State coordinator available to Search/Image without owning an LLM route:
 | `transport` | `sse` | Streaming transport: `sse`, `websocket`, or `auto` (WebSocket first with SSE fallback). SSE is the default: the WebSocket upgrade is unreliable through common HTTP proxies, and every new conversation pays the connect timeout before `auto` falls back |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket connect timeout in milliseconds (used only when `transport` is not `sse`; `0` disables it) |
 | `timeoutMs` | `120000` | Request timeout in milliseconds (SSE response-header phase; also the WebSocket message idle interval; `0` disables it) |
+| `retryPolicy` | harness normal (2 retries) | Optional request retry policy: `{ mode: 'normal', maxRetries: N }` or `{ mode: 'always' }`, plus optional `backoff` (`initialDelayMs`, `maxDelayMs`, `jitterRatio`); omitted uses the harness normal policy |
 
 Do not also add an `openai-codex` entry under `llm-pi-ai.providers` or install
 `dsh-codex`; duplicate route ownership is rejected with an explicit diagnostic.
