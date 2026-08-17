@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- The `openai-codex` LLM route now accepts a configurable `retryPolicy` (`{ mode: 'normal', maxRetries }` with optional `backoff`, or `{ mode: 'always' }`); the default remains the harness normal policy (two retries on transient codes).
+- `installEnvHttpProxy` now also honours `ALL_PROXY`/`all_proxy` and passes the resolved proxy URL explicitly to undici, so networks that only set `all_proxy` (e.g. Clash) no longer time out against `chatgpt.com`.
+
 ## [0.2.0] - 2026-08-14
 
 ### Added

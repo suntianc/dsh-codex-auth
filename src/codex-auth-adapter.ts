@@ -27,7 +27,7 @@ import { builtinProviders } from '@earendil-works/pi-ai/providers/all'
 import type { ApiKeyAuth, Provider } from '@earendil-works/pi-ai'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { LlmError, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import { LlmError, resolveRetryPolicy, type RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import {
@@ -80,6 +80,8 @@ export interface CodexAuthAdapterOptions {
   websocketConnectTimeoutMs: number
   /** Request timeout in milliseconds (SSE response-header phase and WebSocket message idle). */
   timeoutMs: number
+  /** Optional provider-owned request retry policy; omitted uses the harness normal policy (two retries on transient codes). */
+  retryPolicy?: RetryPolicyConfig
 }
 
 /**
@@ -133,7 +135,7 @@ export class CodexAuthAdapter extends PiAiAdapter {
       provider: CODEX_ROUTE,
       displayName: options.displayName,
       streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
-      retryPolicy: resolveRetryPolicy(undefined, `llm-codex-auth: provider "${CODEX_ROUTE}" retryPolicy`),
+      retryPolicy: resolveRetryPolicy(options.retryPolicy, `llm-codex-auth: provider "${CODEX_ROUTE}" retryPolicy`),
       piProvider: codexProvider(options.displayName),
       configuredMaxTokens: new Map(),
       transport: options.transport,
