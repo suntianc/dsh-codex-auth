@@ -44,6 +44,7 @@ export function CodexCapabilitySettings({
 }: CodexCapabilitySettingsProps): ReactNode {
   const [status, setStatus] = useState<CodexAuthStatusView | null>(null)
   const [usage, setUsage] = useState<CodexUsageView | null>(null)
+  const [usageBusy, setUsageBusy] = useState(true)
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [error, setError] = useState<string | null>(null)
   const [loginBusy, setLoginBusy] = useState(false)
@@ -54,13 +55,12 @@ export function CodexCapabilitySettings({
 
   useEffect(() => subscribe(() => { setTick(value => value + 1) }), [subscribe])
 
-  // Refreshing keeps the previous facts on screen: only the very first load
-  // renders a placeholder, so a manual refresh never flashes the login block.
   const load = useCallback(async () => {
     setRefreshBusy(true)
     setError(null)
+    const minDelay = new Promise(resolve => setTimeout(resolve, 500))
     try {
-      const result = await rpc.status()
+      const [result] = await Promise.all([rpc.status(), minDelay])
       if (!result.ok) {
         setLoadState(previous => previous === 'ready' ? previous : 'error')
         setError(result.error.message || t('statusFailed'))
@@ -76,13 +76,15 @@ export function CodexCapabilitySettings({
     }
   }, [rpc, t])
 
-  // Quota facts are best-effort: a failed probe keeps the previous snapshot.
   const loadUsage = useCallback(async () => {
+    setUsageBusy(true)
     try {
       const result = await rpc.usage()
       if (result.ok) setUsage(result.value.usage)
     } catch {
       /* quota facts are optional */
+    } finally {
+      setUsageBusy(false)
     }
   }, [rpc])
 
@@ -101,20 +103,26 @@ export function CodexCapabilitySettings({
     }
   }, [rpc, t])
 
+  const searchUnavailable = status?.configured !== true
+  const imageUnavailable = status?.configured !== true || status.planType?.toLowerCase() === 'free'
+
   return (
     <section className={classes.bundle}>
       <header className={classes.bundleHeader}>
         <div>
-          <h1 className={classes.bundleTitle}>{t('title')}</h1>
+          <div className={classes.bundleTitleLine}>
+            <h1 className={classes.bundleTitle}>{t('title')}</h1>
+            <StatusDot loadState={loadState} status={status} t={t} />
+          </div>
           <p className={classes.bundleIntro}>{t('intro')}</p>
         </div>
-        <StatusPill loadState={loadState} status={status} t={t} />
       </header>
 
       <div className={classes.cards}>
+        {/* Auth / Login Card */}
         <article className={classes.card}>
-          <CardHeading title={t('authCardTitle')} intro={t('authCardIntro')} index="01" />
-          <AuthBody status={status} usage={usage} loadState={loadState} t={t} />
+          <CardHeading title={t('authCardTitle')} intro={t('authCardIntro')} />
+          <AuthBody status={status} usage={usage} usageBusy={usageBusy} loadState={loadState} t={t} />
           <div className={classes.actions}>
             <Button
               variant="primary"
@@ -133,39 +141,54 @@ export function CodexCapabilitySettings({
             <Button
               variant="ghost"
               className={classes.refresh}
-              icon={<IconRefreshOutline16 size={16} />}
+              icon={(
+                <span className={refreshBusy ? classes.spinIcon : classes.staticIcon}>
+                  <IconRefreshOutline16 size={16} />
+                </span>
+              )}
               disabled={refreshBusy}
               onClick={() => { void load(); void loadUsage() }}
             >
               {refreshBusy ? t('refreshing') : t('refresh')}
             </Button>
           </div>
+          <p className={classes.privacyNotice}>{t('privacyNotice')}</p>
         </article>
 
+        {/* Web Search Card */}
         <article className={classes.card}>
           <CardHeading
             title={t('searchCardTitle')}
             intro={t('searchCardIntro')}
-            index="02"
             badge={status !== null && !status.configured ? t('availableAfterLogin') : undefined}
             tone={status?.configured === false ? 'warning' : 'neutral'}
+            action={search.value === undefined ? null : (
+              <Switch
+                label={t('enableSearch')}
+                checked={search.value.enabled}
+                disabled={!search.writable || searchUnavailable}
+                onChange={next => { void writer(searchScope, setError, t)('enabled', next) }}
+              />
+            )}
           />
           <SettingsState snapshot={search} t={t}>
-            {search.value === undefined ? null : <SearchControls
-              scope={searchScope}
-              snapshot={search}
-              t={t}
-              unavailable={status?.configured !== true}
-              onError={setError}
-            />}
+            {search.value === undefined ? null : (
+              <SearchControls
+                scope={searchScope}
+                snapshot={search}
+                t={t}
+                unavailable={searchUnavailable}
+                onError={setError}
+              />
+            )}
           </SettingsState>
         </article>
 
+        {/* Image Creation Card */}
         <article className={classes.card}>
           <CardHeading
             title={t('imageCardTitle')}
             intro={t('imageCardIntro')}
-            index="03"
             badge={status === null
               ? undefined
               : !status.configured
@@ -174,24 +197,31 @@ export function CodexCapabilitySettings({
                   ? t('unavailableFree')
                   : undefined}
             tone={!status?.configured || status.planType?.toLowerCase() === 'free' ? 'warning' : 'neutral'}
+            action={image.value === undefined ? null : (
+              <Switch
+                label={t('enableImage')}
+                checked={image.value.enabled}
+                disabled={!image.writable || imageUnavailable}
+                onChange={next => { void writer(imageScope, setError, t)('enabled', next) }}
+              />
+            )}
           />
           <SettingsState snapshot={image} t={t}>
-            {image.value === undefined ? null : <ImageControls
-              scope={imageScope}
-              snapshot={image}
-              t={t}
-              unavailable={status?.configured !== true || status.planType?.toLowerCase() === 'free'}
-              onError={setError}
-            />}
+            {image.value === undefined ? null : (
+              <ImageControls
+                scope={imageScope}
+                snapshot={image}
+                t={t}
+                unavailable={imageUnavailable}
+                onError={setError}
+              />
+            )}
           </SettingsState>
         </article>
       </div>
 
       {error === null ? null : <p className={classes.error} role="alert">{error}</p>}
       {status?.available === true && !status.configured ? <p className={classes.hint}>{t('loginHint')}</p> : null}
-      <div className={classes.notice}>
-        <p>{t('privacyNotice')}</p>
-      </div>
     </section>
   )
 }
@@ -199,19 +229,18 @@ export function CodexCapabilitySettings({
 function CardHeading({
   title,
   intro,
-  index,
   badge,
+  action,
   tone = 'neutral',
 }: {
   title: string
   intro: string
-  index: string
   badge?: string | undefined
+  action?: ReactNode
   tone?: 'neutral' | 'warning'
 }): ReactNode {
   return (
     <header className={classes.cardHeader}>
-      <span className={classes.cardIndex}>{index}</span>
       <div className={classes.cardIdentity}>
         <div className={classes.cardTitleLine}>
           <h2 className={classes.cardTitle}>{title}</h2>
@@ -219,11 +248,12 @@ function CardHeading({
         </div>
         <p className={classes.cardIntro}>{intro}</p>
       </div>
+      {action !== undefined ? <div className={classes.cardAction}>{action}</div> : null}
     </header>
   )
 }
 
-function StatusPill({
+function StatusDot({
   loadState,
   status,
   t,
@@ -248,38 +278,113 @@ function StatusPill({
       : status?.available === false
         ? t('notAvailable')
         : t('loggedOut')
-  return <span className={classes.statusPill}><StateDot state={state} /><span>{label}</span></span>
+  return (
+    <span className={classes.titleDot} title={label} aria-label={label} role="status">
+      <StateDot state={state} />
+      <span className={classes.srOnly}>{label}</span>
+    </span>
+  )
 }
 
 function AuthBody({
   status,
   usage,
+  usageBusy,
   loadState,
   t,
 }: {
   status: CodexAuthStatusView | null
   usage: CodexUsageView | null
+  usageBusy: boolean
   loadState: LoadState
   t: CodexCapabilitySettingsProps['t']
 }): ReactNode {
-  if (status === null) return loadState === 'loading' ? <p className={classes.loading}>{t('refreshing')}</p> : null
+  if (status === null) {
+    if (loadState === 'loading') {
+      return (
+        <div className={classes.authDashboard}>
+          <dl className={classes.facts}>
+            <Fact label={t('plan')} value={<span className={classes.skeletonInlineValue} />} />
+            <Fact label={t('weeklyReset')} value={<span className={classes.skeletonInlineValue} />} />
+          </dl>
+          <div className={classes.quotaContainer}>
+            <div className={classes.quotaInfo}>
+              <span className={classes.quotaLabel}>{t('quotaRemaining')}</span>
+              <span className={classes.quotaQuerying}>
+                <span className={classes.queryingSpinner} aria-hidden="true" />
+                <span>{t('queryingQuota')}</span>
+              </span>
+            </div>
+            <div className={classes.progressTrack}>
+              <div className={classes.shimmerTrack} aria-hidden="true" />
+            </div>
+          </div>
+        </div>
+      )
+    }
+    return null
+  }
+
+  const remainingPercent = usage?.weeklyRemainingPercent
+  const showQuerying = usageBusy && remainingPercent === undefined
+
   return (
-    <dl className={classes.facts}>
-      <Fact label={t('plan')} value={status.planType === undefined ? t('unknownPlan') : `${titleCase(status.planType)} plan`} />
-      <Fact
-        label={t('quotaRemaining')}
-        value={usage?.weeklyRemainingPercent === undefined ? '—' : `${String(usage.weeklyRemainingPercent)}%`}
-      />
-      <Fact
-        label={t('weeklyReset')}
-        value={usage?.weeklyResetAt === undefined ? '—' : localDate(usage.weeklyResetAt)}
-      />
-    </dl>
+    <div className={classes.authDashboard}>
+      <dl className={classes.facts}>
+        <Fact label={t('plan')} value={status.planType === undefined ? t('unknownPlan') : `${titleCase(status.planType)} plan`} />
+        <Fact
+          label={t('weeklyReset')}
+          value={
+            usage?.weeklyResetAt !== undefined
+              ? localDate(usage.weeklyResetAt)
+              : usageBusy
+                ? <span className={classes.skeletonInlineValue} />
+                : '—'
+          }
+        />
+      </dl>
+      <div className={classes.quotaContainer}>
+        <div className={classes.quotaInfo}>
+          <span className={classes.quotaLabel}>{t('quotaRemaining')}</span>
+          {showQuerying ? (
+            <span className={classes.quotaQuerying}>
+              <span className={classes.queryingSpinner} aria-hidden="true" />
+              <span>{t('queryingQuota')}</span>
+            </span>
+          ) : remainingPercent !== undefined ? (
+            <span
+              className={classes.quotaValue}
+              data-tone={quotaTone(remainingPercent)}
+            >
+              {remainingPercent}%
+            </span>
+          ) : (
+            <span className={classes.quotaValue}>—</span>
+          )}
+        </div>
+        <div className={classes.progressTrack}>
+          {showQuerying ? (
+            <div className={classes.shimmerTrack} aria-hidden="true" />
+          ) : remainingPercent !== undefined ? (
+            <div
+              className={classes.progressFill}
+              data-tone={quotaTone(remainingPercent)}
+              style={{ width: `${Math.max(0, Math.min(100, remainingPercent))}%` }}
+            />
+          ) : null}
+        </div>
+      </div>
+    </div>
   )
 }
 
-function Fact({ label, value }: { label: string; value: string }): ReactNode {
-  return <div className={classes.fact}><dt>{label}</dt><dd>{value}</dd></div>
+function Fact({ label, value }: { label: string; value: ReactNode }): ReactNode {
+  return (
+    <div className={classes.fact}>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  )
 }
 
 function SettingsState<T>({
@@ -291,8 +396,20 @@ function SettingsState<T>({
   t: CodexCapabilitySettingsProps['t']
   children: ReactNode
 }): ReactNode {
-  if (snapshot.status === 'loading') return <p className={classes.loading}>{t('settingsLoading')}</p>
-  if (snapshot.status === 'unavailable' || snapshot.value === undefined) return <p className={classes.loading}>{t('settingsUnavailable')}</p>
+  if (snapshot.status === 'loading') {
+    return (
+      <div className={classes.skeletonFormRows} role="status" aria-live="polite" aria-busy="true">
+        <span className={classes.srOnly}>{t('settingsLoading')}</span>
+        <div className={classes.skeletonRow} aria-hidden="true" />
+        <div className={classes.skeletonRow} aria-hidden="true" />
+        <div className={classes.skeletonRow} aria-hidden="true" />
+        <div className={classes.skeletonRow} aria-hidden="true" />
+      </div>
+    )
+  }
+  if (snapshot.status === 'unavailable' || snapshot.value === undefined) {
+    return <p className={classes.loading}>{t('settingsUnavailable')}</p>
+  }
   return children
 }
 
@@ -310,11 +427,10 @@ function SearchControls({
   onError: (message: string | null) => void
 }): ReactNode {
   const value = snapshot.value as SearchSettingsView
-  const disabled = !snapshot.writable || unavailable
+  const disabled = !snapshot.writable || unavailable || !value.enabled
   const write = writer(scope, onError, t)
   return (
-    <div className={classes.controls}>
-      <Switch label={t('enableSearch')} checked={value.enabled} disabled={disabled} onChange={next => { void write('enabled', next) }} />
+    <div className={classes.formRows} data-dimmed={!value.enabled || unavailable}>
       <Control label={t('searchMode')}>
         <select aria-label={t('searchMode')} value={value.mode} disabled={disabled} onChange={event => { void write('mode', event.target.value) }}>
           <option value="live">{t('live')}</option><option value="cached">{t('cached')}</option><option value="indexed">{t('indexed')}</option>
@@ -349,11 +465,10 @@ function ImageControls({
   onError: (message: string | null) => void
 }): ReactNode {
   const value = snapshot.value as ImageSettingsView
-  const disabled = !snapshot.writable || unavailable
+  const disabled = !snapshot.writable || unavailable || !value.enabled
   const write = writer(scope, onError, t)
   return (
-    <div className={classes.controls}>
-      <Switch label={t('enableImage')} checked={value.enabled} disabled={disabled} onChange={next => { void write('enabled', next) }} />
+    <div className={classes.formRows} data-dimmed={!value.enabled || unavailable}>
       <Control label={t('imageModel')}>
         <input aria-label={t('imageModel')} value={value.model} disabled={disabled} onChange={event => { void write('model', event.target.value) }} />
       </Control>
@@ -393,15 +508,26 @@ function Switch({
   onChange: (value: boolean) => void
 }): ReactNode {
   return (
-    <label className={classes.switchRow}>
-      <span>{label}</span>
-      <input type="checkbox" aria-label={label} checked={checked} disabled={disabled} onChange={(event: ChangeEvent<HTMLInputElement>) => { onChange(event.target.checked) }} />
+    <label className={classes.switchToggle} title={label}>
+      <input
+        type="checkbox"
+        aria-label={label}
+        checked={checked}
+        disabled={disabled}
+        onChange={(event: ChangeEvent<HTMLInputElement>) => { onChange(event.target.checked) }}
+      />
+      <span className={classes.switchSlider} />
     </label>
   )
 }
 
 function Control({ label, children }: { label: string; children: ReactNode }): ReactNode {
-  return <label className={classes.control}><span>{label}</span>{children}</label>
+  return (
+    <div className={classes.formRow}>
+      <span className={classes.formLabel}>{label}</span>
+      <div className={classes.formField}>{children}</div>
+    </div>
+  )
 }
 
 function useScope<T>(scope: SettingsScope<T>): SettingsScopeSnapshot<T> {
@@ -433,4 +559,10 @@ function titleCase(value: string): string {
 function messageOf(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.length > 0) return error.message
   return fallback
+}
+
+function quotaTone(percent: number): 'error' | 'warning' | 'normal' {
+  if (percent < 30) return 'error'
+  if (percent <= 60) return 'warning'
+  return 'normal'
 }

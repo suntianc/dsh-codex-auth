@@ -5,7 +5,7 @@
 
 [English](README.md) | 中文
 
-当前版本：**v0.2.0**
+当前版本：**v0.2.1**
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -108,15 +108,30 @@ cursor 和来源筛选，同时返回稳定 Image Handle 与真实 ImageBlock，
 成功的 `generate_image` 结果只展示 DSH 标准图片画廊；`list_images` 是供模型使用的目录状态，
 不提供面向用户的结果视图。插件通过公开的会话授权附件 API 读取图片，使用有界 Blob URL 缓存，
 并在连接重置、淘汰和插件卸载时回收自身 URL。生成图会作为对话附件持久保存。
-DeepSeek Harness `0.1.0-rc.6` 尚未提供二进制工作区写入 API，因此界面不提供工作区导出操作；
+DeepSeek Harness `0.1.0-rc.7` 尚未提供二进制工作区写入 API，因此界面不提供工作区导出操作；
 插件也不会通过 Node 文件系统绕过 DSH 的文件策略。
+
+### ACP 图片互操作
+
+在 DSH rc.7 中，如果当前 `openai-codex` 模型明确声明支持图片输入，ACP 客户端可以发送
+PNG、JPEG、WebP 或 GIF 内联图片。DSH 会在用户消息入队前完成校验和持久化，因此这些图片
+会作为普通的 `user` 图片进入本插件的图片目录，之后可通过 Image Handle 选作
+`generate_image` 参考图。
+
+rc.7 的 ACP 桥接只发送已经提交到 `assistant/message` 的文本和图片块。`generate_image`
+生成的图片仍位于 `tool/result` 内，因此 ACP 客户端不会直接收到这些生成图的二进制内容；
+除非后续 assistant 消息自身包含 ImageBlock。
 
 ## 环境要求
 
-- DeepSeek Harness `0.1.0-rc.6` 或兼容的后续 `0.1.x` 版本。
+- DeepSeek Harness `0.1.0-rc.7` 或兼容的后续 `0.1.x` 版本。
 - Node.js `^22.19.0` 或 `>=24.0.0`。
 - `codex` CLI 已加入 `PATH`。
 - 可提前执行 `codex login`，也可在 GPT Auth 卡片中启动登录。
+
+rc.7 是完整 Web 设置功能的最低基线：Host 会把插件注册的 `codex-search`、`codex-image`
+设置 namespace 暴露给浏览器。原版 rc.6 虽然能够注册 GPT Auth 分区，但这两个实时设置
+scope 无法通过远程接口读取或写入。
 
 ## 从 npm 安装（推荐）
 
@@ -131,7 +146,7 @@ dsh plugin --profile web add dsh-codex-auth
 ## 安装预构建 Release
 
 ```sh
-dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.2.0/dsh-codex-auth-0.2.0.tgz
+dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.2.1/dsh-codex-auth-0.2.1.tgz
 ```
 
 重启 `dsh web`，打开设置并选择 **GPT Auth**。
@@ -150,7 +165,7 @@ Git 依赖会通过包内 `prepare` 脚本从源码构建。pnpm 10+ 默认阻�
 需要可复现安装时，固定 release tag 或 commit：
 
 ```sh
-dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.2.0
+dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.2.1
 ```
 
 ## 从 tarball 安装
@@ -160,7 +175,7 @@ git clone https://github.com/suntianc/dsh-codex-auth.git
 cd dsh-codex-auth
 pnpm install
 pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.2.0.tgz
+dsh plugin --profile web add ./dsh-codex-auth-0.2.1.tgz
 ```
 
 ## 升级
@@ -168,11 +183,11 @@ dsh plugin --profile web add ./dsh-codex-auth-0.2.0.tgz
 先停止正在运行的 `dsh web`，再将 Web Profile 更新到当前版本：
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth@0.2.0
+dsh plugin --profile web add dsh-codex-auth@0.2.1
 dsh plugin --profile web list
 ```
 
-列表显示 `dsh-codex-auth@0.2.0` 后，重新启动 `dsh web` 并刷新浏览器。
+列表显示 `dsh-codex-auth@0.2.1` 后，重新启动 `dsh web` 并刷新浏览器。
 
 ## Host 配置
 

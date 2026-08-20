@@ -308,7 +308,10 @@ describe('CodexAuthService authenticated operation boundary', () => {
     authPath = join(dir, 'auth.json')
     ctx = new Context()
   })
-  afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
+  afterEach(async () => {
+    await ctx.fiber.dispose()
+    await rm(dir, { recursive: true, force: true })
+  })
 
   function service(fetchImpl: typeof fetch, refreshLeadMs = 5 * 60 * 1000): CodexAuthService {
     return new CodexAuthService(ctx, {
@@ -614,6 +617,56 @@ describe('CodexAuthService authenticated operation boundary', () => {
         await vi.advanceTimersByTimeAsync(60 * 1000)
         for (let settle = 0; settle < 10; settle++) await new Promise(resolve => setImmediate(resolve))
       }
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('waits for an in-flight proactive refresh during disposal', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const nowSeconds = Math.floor(Date.now() / 1000)
+      const current = fakeJwt(nowSeconds + 420, 'acct-1')
+      const refreshed = fakeJwt(nowSeconds + 3600, 'acct-1')
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: current, refresh_token: 'rt-current', account_id: 'acct-1' },
+      }), 'utf8')
+      let markStarted!: () => void
+      let releaseRefresh!: () => void
+      const started = new Promise<void>(resolve => { markStarted = resolve })
+      const released = new Promise<void>(resolve => { releaseRefresh = resolve })
+      const fetchMock = vi.fn(async () => {
+        markStarted()
+        await released
+        return new Response(JSON.stringify({
+          access_token: refreshed,
+          refresh_token: 'rt-refreshed',
+          account_id: 'acct-1',
+        }), { status: 200 })
+      })
+      const coordinator = service(fetchMock)
+      await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: current })
+
+      for (let step = 0; step < 6 && fetchMock.mock.calls.length === 0; step++) {
+        vi.advanceTimersByTime(60 * 1000)
+        for (let settle = 0; settle < 20 && fetchMock.mock.calls.length === 0; settle++) {
+          await new Promise(resolve => setImmediate(resolve))
+        }
+      }
+      await started
+
+      let disposed = false
+      const disposal = ctx.fiber.dispose().then(() => { disposed = true })
+      for (let settle = 0; settle < 10 && !disposed; settle++) {
+        await new Promise(resolve => setImmediate(resolve))
+      }
+      const disposedBeforeRelease = disposed
+
+      releaseRefresh()
+      await disposal
+      expect(disposedBeforeRelease).toBe(false)
+      expect(disposed).toBe(true)
       expect(fetchMock).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()

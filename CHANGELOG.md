@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+## [0.2.1] - 2026-08-20
+
+### Changed
+
+- Refined the GPT Auth settings UI with compact cards, header status indication, native-style capability toggles, quota progress feedback, and stable skeleton/refresh states.
+- Raised the minimum DeepSeek Harness baseline to `0.1.0-rc.7` across peer dependencies, development dependencies, and reproducible workspace resolution.
+- Documented that rc.7 exposes the plugin-owned `codex-search` and `codex-image` settings namespaces while the existing top-level `settings.section` registration remains compatible.
+- Documented rc.7 ACP image admission: persisted user images participate in the Image Catalog and reference flow, while generated tool-result images are not projected directly over ACP.
+- Hardened packaged-artifact smoke checks so manifest ranges semantically enforce the rc.7 floor and the lockfile rejects every pre-rc.7 DSH resolution.
+
+### Fixed
+
+- Made proactive token refresh lifecycle-safe by returning and tracking timer flights, preventing plugin teardown and test cleanup from racing an in-flight auth-file write.
+- Restored the visible Host-only token privacy disclosure and made settings loading/reduced-motion behavior accessible.
+
 ## [0.2.0] - 2026-08-14
 
 ### Added
@@ -28,4 +45,6 @@ All notable changes to this project are documented in this file.
 
 - DSH `0.1.0-rc.6` does not expose a policy-aware binary workspace-write API, so generated images remain durable conversation attachments and workspace export is not offered.
 
+[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/suntianc/dsh-codex-auth/compare/v0.1.0...v0.2.0

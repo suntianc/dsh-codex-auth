@@ -113,12 +113,18 @@ export class CodexAuthService extends Service {
   private readonly statusListeners = new Set<() => void>()
   private cachedCredential: CachedCredential | undefined
   private refreshTimer: NodeJS.Timeout | undefined
+  private backgroundRefreshFlight: Promise<void> | undefined
+  private disposed = false
   private statusReadAt = 0
 
   constructor(ctx: Context, private readonly options: CodexAuthServiceOptions) {
     super(ctx, 'codexAuth')
     this.probeCodex()
-    this.ctx.effect(() => () => { this.clearRefreshTimer() })
+    this.ctx.effect(() => async () => {
+      this.disposed = true
+      this.clearRefreshTimer()
+      await this.backgroundRefreshFlight
+    }, 'codex-auth: background refresh')
   }
 
   /** Whether the codex CLI resolved at startup. */
@@ -401,6 +407,7 @@ export class CodexAuthService extends Service {
     // Every resolved snapshot supersedes the previous schedule. This matters
     // when the Codex CLI writes a login whose token expires sooner.
     this.clearRefreshTimer()
+    if (this.disposed) return
     const refreshToken = file.tokens?.refresh_token
     if (typeof refreshToken !== 'string' || refreshToken.length === 0) return
     const now = Date.now()
@@ -423,12 +430,24 @@ export class CodexAuthService extends Service {
       : Math.max(BACKGROUND_REFRESH_MIN_DELAY_MS, Math.min(delayMs, MAX_TIMER_DELAY_MS))
     const timer = setTimeout(() => {
       this.refreshTimer = undefined
-      // The returned promise lets fake-timer test harnesses await the refresh.
-      this.refreshInBackground()
+      // Returning the tracked flight lets fake-timer harnesses and teardown
+      // await the same background operation.
+      return this.startBackgroundRefresh()
     }, delay)
     timer.unref?.()
     this.refreshTimer = timer
   }
+  /** Start or join the one lifecycle-tracked background refresh flight. */
+  private startBackgroundRefresh(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    if (this.backgroundRefreshFlight !== undefined) return this.backgroundRefreshFlight
+    const flight = this.refreshInBackground().finally(() => {
+      if (this.backgroundRefreshFlight === flight) this.backgroundRefreshFlight = undefined
+    })
+    this.backgroundRefreshFlight = flight
+    return flight
+  }
+
   /**
    * Refresh the token set ahead of the request path when the auth file says it
    * is due. The request path still refreshes synchronously when a token is
@@ -481,7 +500,7 @@ export class CodexAuthService extends Service {
       this.warnCredentialFailure('background token refresh could not coordinate; will retry later', error)
       retry = true
     }
-    if (retry) this.scheduleBackgroundRetry()
+    if (retry && !this.disposed) this.scheduleBackgroundRetry()
   }
 
   private clearRefreshTimer(): void {
@@ -492,11 +511,12 @@ export class CodexAuthService extends Service {
 
   /** Re-arm the background refresh after a failure. */
   private scheduleBackgroundRetry(): void {
-    if (this.refreshTimer !== undefined) return
+    if (this.disposed || this.refreshTimer !== undefined) return
     const timer = setTimeout(() => {
       this.refreshTimer = undefined
-      // The returned promise lets fake-timer test harnesses await the refresh.
-      this.refreshInBackground()
+      // Returning the tracked flight lets fake-timer harnesses and teardown
+      // await the same background operation.
+      return this.startBackgroundRefresh()
     }, BACKGROUND_REFRESH_RETRY_MS)
     timer.unref?.()
     this.refreshTimer = timer

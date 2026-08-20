@@ -35,9 +35,12 @@ const IMAGE: CodexImageSettings = {
   background: 'auto',
 }
 
-function fakeScope<T>(initial: T): { scope: SettingsScope<T>; set: ReturnType<typeof vi.fn> } {
+function fakeScope<T>(
+  initial: T,
+  status: SettingsScopeSnapshot<T>['status'] = 'ready',
+): { scope: SettingsScope<T>; set: ReturnType<typeof vi.fn> } {
   let snapshot: SettingsScopeSnapshot<T> = {
-    status: 'ready',
+    status,
     value: initial,
     base: initial,
     user: {},
@@ -121,6 +124,23 @@ describe('Codex Capability Bundle settings', () => {
     await waitFor(() => expect(search.set).toHaveBeenCalledWith('mode', 'cached'))
     fireEvent.change(screen.getByLabelText('Default image count'), { target: { value: '3' } })
     await waitFor(() => expect(image.set).toHaveBeenCalledWith('n', 3))
+  })
+
+  it('announces loading settings while keeping skeleton rows decorative', async () => {
+    const { container } = render(<CodexCapabilitySettings
+      rpc={rpc(authStatus({ planType: 'plus' }))}
+      t={t}
+      subscribe={subscribe}
+      searchScope={fakeScope(SEARCH, 'loading').scope}
+      imageScope={fakeScope(IMAGE, 'loading').scope}
+    />)
+
+    expect(await screen.findByText('Active')).toBeTruthy()
+    expect(screen.getAllByText('Loading settings…')).toHaveLength(2)
+    const busyRegions = screen.getAllByRole('status')
+      .filter(region => region.getAttribute('aria-busy') === 'true')
+    expect(busyRegions).toHaveLength(2)
+    expect(container.querySelectorAll('[aria-busy="true"] > div:not([aria-hidden="true"])')).toHaveLength(0)
   })
 
   it('identifies a known Free plan while leaving unknown plans backend-authoritative', async () => {

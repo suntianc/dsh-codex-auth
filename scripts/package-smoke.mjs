@@ -4,7 +4,10 @@ import { execFileSync } from 'node:child_process'
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import semver from 'semver'
 
+const DSH_BASELINE = '0.1.0-rc.7'
+const SEMVER_OPTIONS = { includePrerelease: true }
 const sourceRoot = resolve(import.meta.dirname, '..')
 const temporary = await mkdtemp(resolve(sourceRoot, '.package-smoke-'))
 try {
@@ -26,6 +29,35 @@ try {
   const changelog = await readFile(resolve(packageRoot, 'CHANGELOG.md'), 'utf8')
   if (!changelog.includes(`## [${String(manifest.version)}]`)) {
     throw new Error(`package smoke: CHANGELOG.md lacks release ${String(manifest.version)}`)
+  }
+  for (const section of ['peerDependencies', 'devDependencies']) {
+    const entries = Object.entries(manifest[section] ?? {})
+      .filter(([name]) => name.startsWith('@deepseek-ai/dsh-'))
+    if (entries.length === 0) throw new Error(`package smoke: ${section} declares no DSH packages`)
+    for (const [name, range] of entries) {
+      const parsed = semver.validRange(String(range), SEMVER_OPTIONS)
+      const minimum = parsed === null ? null : semver.minVersion(parsed, SEMVER_OPTIONS)
+      if (parsed === null
+        || minimum === null
+        || !semver.satisfies(DSH_BASELINE, parsed, SEMVER_OPTIONS)
+        || semver.lt(minimum, DSH_BASELINE)) {
+        throw new Error(`package smoke: ${section}.${name} must accept ${DSH_BASELINE} and exclude every earlier version`)
+      }
+    }
+  }
+  const lockfile = await readFile(resolve(sourceRoot, 'pnpm-lock.yaml'), 'utf8')
+  const dshResolutions = [...lockfile.matchAll(
+    /^ {2}['"](@deepseek-ai\/dsh-[^@'"]+)@([^('"\s:]+).*['"]:\s*$/gmu,
+  )].map(([, name, version]) => ({ name, version }))
+  if (dshResolutions.length === 0) {
+    throw new Error('package smoke: pnpm-lock.yaml contains no resolved DSH package entries')
+  }
+  const staleDshResolutions = dshResolutions.filter(({ version }) => (
+    semver.valid(version) === null || semver.lt(version, DSH_BASELINE)
+  ))
+  if (staleDshResolutions.length > 0) {
+    const stale = [...new Set(staleDshResolutions.map(({ name, version }) => `${name}@${version}`))]
+    throw new Error(`package smoke: pnpm-lock.yaml resolves DSH below ${DSH_BASELINE}: ${stale.join(', ')}`)
   }
   const hostExports = ['.', './search', './image', './invariant']
   for (const key of hostExports) {
