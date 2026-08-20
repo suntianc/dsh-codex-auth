@@ -58,16 +58,23 @@ describe('usageFromPayload', () => {
 describe('CodexAuthService.usage()', () => {
   let dir: string
   let authPath: string
+  let contexts: Context[]
 
   beforeEach(async () => {
+    contexts = []
     dir = await mkdtemp(join(tmpdir(), 'codex-auth-usage-'))
     authPath = join(dir, 'auth.json')
   })
-  afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
+  afterEach(async () => {
+    for (const ctx of contexts.reverse()) await ctx.fiber.dispose()
+    await rm(dir, { recursive: true, force: true })
+  })
 
   // Each service registers itself on its Context, so every probe needs one.
   function service(fetchImpl: typeof fetch, usageTimeoutMs?: number): CodexAuthService {
-    return new CodexAuthService(new Context(), {
+    const ctx = new Context()
+    contexts.push(ctx)
+    return new CodexAuthService(ctx, {
       authJsonPath: authPath,
       codexCommand: 'definitely-not-codex',
       credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
