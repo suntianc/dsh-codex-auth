@@ -5,7 +5,7 @@
 
 English | [中文](README.zh.md)
 
-Current release: **v0.2.1**
+Current release: **v0.2.2**
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -169,7 +169,7 @@ Restart `dsh web`, open Settings, and select **GPT Auth**.
 ## Install a prebuilt release
 
 ```sh
-dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.2.1/dsh-codex-auth-0.2.1.tgz
+dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.2.2/dsh-codex-auth-0.2.2.tgz
 ```
 
 Restart `dsh web`, open Settings, and select **GPT Auth**.
@@ -189,7 +189,7 @@ again. Only grant this permission after reviewing the source.
 For a reproducible install, pin a release tag or commit:
 
 ```sh
-dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.2.1
+dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.2.2
 ```
 
 ## Install a tarball
@@ -199,7 +199,7 @@ git clone https://github.com/suntianc/dsh-codex-auth.git
 cd dsh-codex-auth
 pnpm install
 pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.2.1.tgz
+dsh plugin --profile web add ./dsh-codex-auth-0.2.2.tgz
 ```
 
 ## Upgrade
@@ -208,11 +208,11 @@ Stop the running `dsh web` process and update the Web profile to the current
 release:
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth@0.2.1
+dsh plugin --profile web add dsh-codex-auth@0.2.2
 dsh plugin --profile web list
 ```
 
-After the list reports `dsh-codex-auth@0.2.1`, restart `dsh web` and refresh the
+After the list reports `dsh-codex-auth@0.2.2`, restart `dsh web` and refresh the
 browser.
 
 ## Host configuration

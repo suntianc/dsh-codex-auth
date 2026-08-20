@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-20
+
 ### Fixed
 
 - Restored generated-image rendering on DSH rc.7+ by owning the gallery in this client bundle instead of importing React values from the attachment plugin browser face, which does not expose presentation components.
@@ -49,6 +51,7 @@ All notable changes to this project are documented in this file.
 
 - DSH `0.1.0-rc.6` does not expose a policy-aware binary workspace-write API, so generated images remain durable conversation attachments and workspace export is not offered.
 
-[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/suntianc/dsh-codex-auth/compare/v0.1.0...v0.2.0
