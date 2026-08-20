@@ -4,6 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
 import { mkdtemp, mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,7 +17,7 @@ import {
 } from '../src/codex-auth.ts'
 import type { CodexAuthFile } from '../src/codex-auth.ts'
 import { CodexAuthAdapter, resolveCodexAccessToken } from '../src/codex-auth-adapter.ts'
-import { CodexAuthService } from '../src/codex-auth-service.ts'
+import { CodexAuthService, type CodexAuthServiceOptions } from '../src/codex-auth-service.ts'
 import { Config as PluginConfig, type Config as PluginConfigView } from '../src/index.ts'
 
 /** Captures the options each CodexAuthAdapter hands to the PiAiAdapter base. */
@@ -92,8 +93,10 @@ describe('authState / needsRefresh', () => {
 
 describe('refreshTokens', () => {
   it('posts the OAuth refresh grant (JSON body, codex client_id) and parses the reply', async () => {
+    const controller = new AbortController()
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       expect(init?.method).toBe('POST')
+      expect(init?.signal).toBe(controller.signal)
       expect((init?.headers as Record<string, string> | undefined)?.['content-type']).toBe('application/json')
       expect(typeof init?.body).toBe('string')
       const body = JSON.parse(typeof init?.body === 'string' ? init.body : '') as {
@@ -111,7 +114,7 @@ describe('refreshTokens', () => {
         account_id: 'acct-2',
       }), { status: 200 })
     })
-    const reply = await refreshTokens('rt-1', fetchMock)
+    const reply = await refreshTokens('rt-1', fetchMock, controller.signal)
     expect(reply.access_token).toBe('at-2')
     expect(reply.refresh_token).toBe('rt-2')
     expect(reply.account_id).toBe('acct-2')
@@ -313,14 +316,27 @@ describe('CodexAuthService authenticated operation boundary', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  function service(fetchImpl: typeof fetch, refreshLeadMs = 5 * 60 * 1000): CodexAuthService {
+  function service(
+    fetchImpl: typeof fetch,
+    refreshLeadMs = 5 * 60 * 1000,
+    disposeTimeoutMs?: number,
+    authFileWriter?: (path: string, file: CodexAuthFile) => Promise<void>,
+  ): CodexAuthService {
     return new CodexAuthService(ctx, {
       authJsonPath: authPath,
       codexCommand: 'definitely-not-codex',
       credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
       refreshLeadMs,
       fetchImpl,
+      ...(disposeTimeoutMs === undefined ? {} : { disposeTimeoutMs }),
+      ...(authFileWriter === undefined ? {} : { authFileWriter }),
     })
+  }
+
+  async function advanceBackgroundClock(coordinator: CodexAuthService, milliseconds: number): Promise<void> {
+    await vi.advanceTimersByTimeAsync(milliseconds)
+    const flight: unknown = Reflect.get(coordinator, 'backgroundRefreshFlight')
+    if (flight instanceof Promise) await flight
   }
 
   it('coalesces concurrent refreshes and returns account-scoped credentials', async () => {
@@ -512,27 +528,35 @@ describe('CodexAuthService authenticated operation boundary', () => {
   })
 
   it('refuses a cached credential that has neared expiry and refreshes once', async () => {
-    const nowSeconds = Math.floor(Date.now() / 1000)
-    const token = fakeJwt(nowSeconds + 6, 'acct-1')
-    const refreshed = fakeJwt(nowSeconds + 3600, 'acct-1')
-    await writeFile(authPath, JSON.stringify({
-      tokens: { access_token: token, refresh_token: 'rt-1', account_id: 'acct-1' },
-    }), 'utf8')
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      access_token: refreshed,
-      refresh_token: 'rt-2',
-      account_id: 'acct-1',
-    }), { status: 200 }))
-    const coordinator = service(fetchMock, 1_000)
+    const realNow = Date.now()
+    let now = realNow
+    const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      const nowSeconds = Math.floor(now / 1000)
+      const token = fakeJwt(nowSeconds + 6, 'acct-1')
+      const refreshed = fakeJwt(nowSeconds + 3600, 'acct-1')
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: token, refresh_token: 'rt-1', account_id: 'acct-1' },
+      }), 'utf8')
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+        access_token: refreshed,
+        refresh_token: 'rt-2',
+        account_id: 'acct-1',
+      }), { status: 200 }))
+      const coordinator = service(fetchMock, 1_000)
 
-    await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: token })
-    expect(fetchMock).not.toHaveBeenCalled()
+      await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: token })
+      expect(fetchMock).not.toHaveBeenCalled()
 
-    // Wait past the 1s lead: the cached entry must be refused and refreshed once.
-    await new Promise(resolve => setTimeout(resolve, 5200))
-    await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: refreshed })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-  }, 15_000)
+      // Cross the 1s lead without a wall-clock sleep: the cached entry must be
+      // refused and refreshed exactly once.
+      now = realNow + 5200
+      await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: refreshed })
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      dateNow.mockRestore()
+    }
+  })
 
   it('pre-refreshes in the background before the access token nears expiry', async () => {
     // Fake only the clock APIs this flow uses; setImmediate stays real so each
@@ -563,10 +587,7 @@ describe('CodexAuthService authenticated operation boundary', () => {
       // re-arms; the first firing is a no-op, the second is a no-op at the
       // exact lead boundary, and the third crosses the lead and refreshes.
       for (let step = 0; step < 6 && fetchMock.mock.calls.length === 0; step++) {
-        await vi.advanceTimersByTimeAsync(60 * 1000)
-        for (let settle = 0; settle < 10; settle++) {
-          await new Promise(resolve => setImmediate(resolve))
-        }
+        await advanceBackgroundClock(coordinator, 60 * 1000)
       }
       expect(fetchMock).toHaveBeenCalledTimes(1)
 
@@ -586,6 +607,7 @@ describe('CodexAuthService authenticated operation boundary', () => {
       expect(persisted?.tokens?.refresh_token).toBe('rt-2')
       expect(fetchMock).toHaveBeenCalledTimes(1)
     } finally {
+      await ctx.fiber.dispose()
       vi.useRealTimers()
     }
   })
@@ -614,11 +636,11 @@ describe('CodexAuthService authenticated operation boundary', () => {
       await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: sooner })
 
       for (let step = 0; step < 6 && fetchMock.mock.calls.length === 0; step++) {
-        await vi.advanceTimersByTimeAsync(60 * 1000)
-        for (let settle = 0; settle < 10; settle++) await new Promise(resolve => setImmediate(resolve))
+        await advanceBackgroundClock(coordinator, 60 * 1000)
       }
       expect(fetchMock).toHaveBeenCalledTimes(1)
     } finally {
+      await ctx.fiber.dispose()
       vi.useRealTimers()
     }
   })
@@ -634,9 +656,11 @@ describe('CodexAuthService authenticated operation boundary', () => {
       }), 'utf8')
       let markStarted!: () => void
       let releaseRefresh!: () => void
+      let refreshSignal: AbortSignal | null | undefined
       const started = new Promise<void>(resolve => { markStarted = resolve })
       const released = new Promise<void>(resolve => { releaseRefresh = resolve })
-      const fetchMock = vi.fn(async () => {
+      const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        refreshSignal = init?.signal
         markStarted()
         await released
         return new Response(JSON.stringify({
@@ -662,13 +686,229 @@ describe('CodexAuthService authenticated operation boundary', () => {
         await new Promise(resolve => setImmediate(resolve))
       }
       const disposedBeforeRelease = disposed
+      const abortedBeforeRelease = refreshSignal?.aborted
 
       releaseRefresh()
       await disposal
       expect(disposedBeforeRelease).toBe(false)
+      expect(abortedBeforeRelease).toBe(true)
       expect(disposed).toBe(true)
       expect(fetchMock).toHaveBeenCalledTimes(1)
     } finally {
+      await ctx.fiber.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('bounds disposal when an injected proactive refresh ignores abort', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const nowSeconds = Math.floor(Date.now() / 1000)
+      const current = fakeJwt(nowSeconds + 420, 'acct-1')
+      const refreshed = fakeJwt(nowSeconds + 3600, 'acct-1')
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: current, refresh_token: 'rt-current', account_id: 'acct-1' },
+      }), 'utf8')
+      let markStarted!: () => void
+      let releaseRefresh!: () => void
+      let refreshSignal: AbortSignal | null | undefined
+      const started = new Promise<void>(resolve => { markStarted = resolve })
+      const released = new Promise<void>(resolve => { releaseRefresh = resolve })
+      const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        refreshSignal = init?.signal
+        markStarted()
+        await released
+        return new Response(JSON.stringify({
+          access_token: refreshed,
+          refresh_token: 'rt-refreshed',
+          account_id: 'acct-1',
+        }), { status: 200 })
+      })
+      const coordinator = service(fetchMock, 5 * 60 * 1000, 25)
+      await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: current })
+
+      for (let step = 0; step < 6 && fetchMock.mock.calls.length === 0; step++) {
+        vi.advanceTimersByTime(60 * 1000)
+        for (let settle = 0; settle < 20 && fetchMock.mock.calls.length === 0; settle++) {
+          await new Promise(resolve => setImmediate(resolve))
+        }
+      }
+      await started
+      const backgroundFlight: unknown = Reflect.get(coordinator, 'backgroundRefreshFlight')
+
+      let disposed = false
+      const disposal = ctx.fiber.dispose().then(() => { disposed = true })
+      for (let settle = 0; settle < 10; settle++) await new Promise(resolve => setImmediate(resolve))
+      const abortedDuringDisposal = refreshSignal?.aborted
+      vi.advanceTimersByTime(25)
+      for (let settle = 0; settle < 10 && !disposed; settle++) {
+        await new Promise(resolve => setImmediate(resolve))
+      }
+      const disposedAfterDeadline = disposed
+
+      releaseRefresh()
+      await disposal
+      if (backgroundFlight instanceof Promise) await backgroundFlight
+      expect(abortedDuringDisposal).toBe(true)
+      expect(disposedAfterDeadline).toBe(true)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      await expect(readAuthFile(authPath)).resolves.toMatchObject({
+        tokens: { access_token: current, refresh_token: 'rt-current', account_id: 'acct-1' },
+      })
+    } finally {
+      await ctx.fiber.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps overlapping service flights lifecycle-neutral and detaches a disposed caller', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const nowSeconds = Math.floor(Date.now() / 1000)
+      const current = fakeJwt(nowSeconds + 30, 'acct-1')
+      const staleReply = fakeJwt(nowSeconds + 3600, 'acct-1')
+      const replacementReply = fakeJwt(nowSeconds + 3600, 'acct-1')
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: current, refresh_token: 'rt-current', account_id: 'acct-1' },
+      }), 'utf8')
+
+      let markStaleStarted!: () => void
+      let releaseStale!: () => void
+      let staleSignal: AbortSignal | null | undefined
+      const staleStarted = new Promise<void>(resolve => { markStaleStarted = resolve })
+      const staleReleased = new Promise<void>(resolve => { releaseStale = resolve })
+      const staleFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        staleSignal = init?.signal
+        markStaleStarted()
+        await staleReleased
+        return new Response(JSON.stringify({
+          access_token: staleReply,
+          refresh_token: 'rt-stale',
+          account_id: 'acct-1',
+        }), { status: 200 })
+      })
+      const staleContext = ctx
+      const staleCoordinator = service(staleFetch, 5 * 60 * 1000, 25)
+      const statusChanged = vi.fn()
+      staleCoordinator.watchStatus(statusChanged)
+      let staleSettled = false
+      let staleResult: Awaited<ReturnType<CodexAuthService['credential']>>
+      const staleCredential = staleCoordinator.credential().then(result => {
+        staleSettled = true
+        staleResult = result
+        return result
+      })
+      await staleStarted
+      statusChanged.mockClear()
+      const staleFlight: unknown = Reflect.get(staleCoordinator, 'credentialFlight')
+
+      let markReplacementStarted!: () => void
+      let releaseReplacement!: () => void
+      let replacementSignal: AbortSignal | null | undefined
+      const replacementStarted = new Promise<void>(resolve => { markReplacementStarted = resolve })
+      const replacementReleased = new Promise<void>(resolve => { releaseReplacement = resolve })
+      ctx = new Context()
+      const replacementFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        replacementSignal = init?.signal
+        markReplacementStarted()
+        await replacementReleased
+        return new Response(JSON.stringify({
+          access_token: replacementReply,
+          refresh_token: 'rt-replacement',
+          account_id: 'acct-1',
+        }), { status: 200 })
+      })
+      const replacementCoordinator = service(replacementFetch, 5 * 60 * 1000, 25)
+      const replacementCredential = replacementCoordinator.credential()
+      const replacementFlight: unknown = Reflect.get(replacementCoordinator, 'credentialFlight')
+      const independentFlights = staleFlight instanceof Promise
+        && replacementFlight instanceof Promise
+        && staleFlight !== replacementFlight
+      if (independentFlights) await replacementStarted
+
+      let disposed = false
+      const disposal = staleContext.fiber.dispose().then(() => { disposed = true })
+      for (let settle = 0; settle < 10; settle++) await new Promise(resolve => setImmediate(resolve))
+      const staleAbortedDuringDisposal = staleSignal?.aborted
+      const callerDetachedBeforeRelease = staleSettled && staleResult === undefined
+      const replacementStayedActive = replacementSignal?.aborted === false
+      vi.advanceTimersByTime(25)
+      for (let settle = 0; settle < 10 && !disposed; settle++) {
+        await new Promise(resolve => setImmediate(resolve))
+      }
+      const disposedAfterDeadline = disposed
+
+      releaseReplacement()
+      const replacementResult = await replacementCredential
+      releaseStale()
+      await staleCredential
+      if (staleFlight instanceof Promise) await staleFlight
+      await disposal
+
+      expect(independentFlights).toBe(true)
+      expect(staleAbortedDuringDisposal).toBe(true)
+      expect(callerDetachedBeforeRelease).toBe(true)
+      expect(replacementStayedActive).toBe(true)
+      expect(disposedAfterDeadline).toBe(true)
+      expect(statusChanged).not.toHaveBeenCalled()
+      expect(replacementResult).toMatchObject({ accessToken: replacementReply, accountId: 'acct-1' })
+      await expect(readAuthFile(authPath)).resolves.toMatchObject({
+        tokens: { access_token: replacementReply, refresh_token: 'rt-replacement', account_id: 'acct-1' },
+      })
+    } finally {
+      await ctx.fiber.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps disposal joined to an atomic auth-file commit already in progress', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const nowSeconds = Math.floor(Date.now() / 1000)
+      const current = fakeJwt(nowSeconds + 30, 'acct-1')
+      const refreshed = fakeJwt(nowSeconds + 3600, 'acct-1')
+      await writeFile(authPath, JSON.stringify({
+        tokens: { access_token: current, refresh_token: 'rt-current', account_id: 'acct-1' },
+      }), 'utf8')
+      let markCommitStarted!: () => void
+      let releaseCommit!: () => void
+      const commitStarted = new Promise<void>(resolve => { markCommitStarted = resolve })
+      const commitReleased = new Promise<void>(resolve => { releaseCommit = resolve })
+      const writer = vi.fn(async (path: string, file: CodexAuthFile) => {
+        markCommitStarted()
+        await commitReleased
+        await writeAuthFile(path, file)
+      })
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+        access_token: refreshed,
+        refresh_token: 'rt-refreshed',
+        account_id: 'acct-1',
+      }), { status: 200 }))
+      const coordinator = service(fetchMock, 5 * 60 * 1000, 25, writer)
+      const credential = coordinator.credential()
+      await commitStarted
+
+      let disposed = false
+      const disposal = ctx.fiber.dispose().then(() => { disposed = true })
+      for (let settle = 0; settle < 10; settle++) await new Promise(resolve => setImmediate(resolve))
+      vi.advanceTimersByTime(25)
+      for (let settle = 0; settle < 10 && !disposed; settle++) {
+        await new Promise(resolve => setImmediate(resolve))
+      }
+      const disposedWhileCommitPending = disposed
+
+      releaseCommit()
+      const result = await credential
+      await disposal
+      expect(disposedWhileCommitPending).toBe(false)
+      expect(disposed).toBe(true)
+      expect(result).toBeUndefined()
+      expect(writer).toHaveBeenCalledTimes(1)
+      await expect(readAuthFile(authPath)).resolves.toMatchObject({
+        tokens: { access_token: refreshed, refresh_token: 'rt-refreshed', account_id: 'acct-1' },
+      })
+    } finally {
+      await ctx.fiber.dispose()
       vi.useRealTimers()
     }
   })
@@ -706,16 +946,15 @@ describe('CodexAuthService authenticated operation boundary', () => {
       await expect(coordinator.credential()).resolves.toMatchObject({ accessToken: tokenA })
 
       for (let step = 0; step < 6 && fetchMock.mock.calls.length === 0; step++) {
-        await vi.advanceTimersByTimeAsync(60 * 1000)
-        for (let settle = 0; settle < 10; settle++) await new Promise(resolve => setImmediate(resolve))
+        await advanceBackgroundClock(coordinator, 60 * 1000)
       }
       expect(fetchMock).toHaveBeenCalledTimes(1)
       for (let step = 0; step < 12 && fetchMock.mock.calls.length < 2; step++) {
-        await vi.advanceTimersByTimeAsync(60 * 1000)
-        for (let settle = 0; settle < 20; settle++) await new Promise(resolve => setImmediate(resolve))
+        await advanceBackgroundClock(coordinator, 60 * 1000)
       }
       expect(fetchMock).toHaveBeenCalledTimes(2)
     } finally {
+      await ctx.fiber.dispose()
       vi.useRealTimers()
     }
   })
@@ -726,7 +965,10 @@ describe('CodexAuthService', () => {
   let ctx: Context
 
   beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'codex-auth-service-')); ctx = new Context() })
-  afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
+  afterEach(async () => {
+    await ctx.fiber.dispose()
+    await rm(dir, { recursive: true, force: true })
+  })
 
   it('reports availability, account, plan, and timestamps without token material', async () => {
     const authPath = join(dir, 'auth.json')
@@ -745,6 +987,37 @@ describe('CodexAuthService', () => {
     expect(status.planType).toBe('plus')
     expect(status.credentialRef).toBe('CODEX_CHATGPT_TOKEN')
     expect(JSON.stringify(status)).not.toContain(token)
+  })
+
+  it('force-stops and detaches a codex CLI probe that ignores SIGTERM', async () => {
+    type Spawn = NonNullable<CodexAuthServiceOptions['spawnImpl']>
+    const stdout = Object.assign(new EventEmitter(), { destroy: vi.fn() })
+    const stderr = Object.assign(new EventEmitter(), { destroy: vi.fn() })
+    const unref = vi.fn()
+    let child!: ReturnType<Spawn>
+    const kill = vi.fn((signal?: NodeJS.Signals | number) => {
+      if (signal === 'SIGKILL') queueMicrotask(() => { child.emit('close', null, 'SIGKILL') })
+      return true
+    })
+    child = Object.assign(new EventEmitter(), { stdout, stderr, kill, unref }) as unknown as ReturnType<Spawn>
+    const spawnImpl = vi.fn(() => child) as unknown as Spawn
+    const coordinator = new CodexAuthService(ctx, {
+      authJsonPath: join(dir, 'auth.json'),
+      codexCommand: 'slow-codex',
+      credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
+      spawnImpl,
+      probeStopTimeoutMs: 1,
+    })
+    child.emit('spawn')
+    stdout.emit('data', Buffer.from('codex-cli 9.9.9\n'))
+
+    await ctx.fiber.dispose()
+    expect(spawnImpl).toHaveBeenCalledWith('slow-codex', ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    expect(kill.mock.calls.map(([signal]) => signal)).toEqual(['SIGTERM', 'SIGKILL'])
+    expect(stdout.destroy).toHaveBeenCalledTimes(1)
+    expect(stderr.destroy).toHaveBeenCalledTimes(1)
+    expect(unref).toHaveBeenCalledTimes(1)
+    expect(coordinator.available).toBe(false)
   })
 
   it('refuses login when the codex CLI is unavailable', async () => {

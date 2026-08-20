@@ -46,6 +46,14 @@ export interface CodexAuthServiceOptions {
   fetchImpl?: typeof fetch
   /** Host-owned deadline for the best-effort usage probe; primarily injectable for tests. */
   usageTimeoutMs?: number
+  /** Maximum teardown wait for abortable auth work; atomic commits always drain. */
+  disposeTimeoutMs?: number
+  /** Injectable atomic auth-file writer; defaults to the production writer. */
+  authFileWriter?: (path: string, file: CodexAuthFile) => Promise<void>
+  /** Injectable process spawner for CLI lifecycle tests. */
+  spawnImpl?: typeof spawn
+  /** Grace period before a stuck CLI probe is force-stopped. */
+  probeStopTimeoutMs?: number
 }
 
 /** Host-only credential facts returned at an authenticated operation boundary. */
@@ -55,9 +63,6 @@ export interface CodexCredential {
   /** Locally decoded plan claim; absence means unknown, not unavailable. */
   planType?: string
 }
-
-/** One refresh/read operation shared by every in-process consumer of an auth path. */
-const credentialFlights = new Map<string, Promise<CodexCredential | undefined>>()
 
 /** How long a resolved credential may be served from memory without re-reading the auth file. */
 const CREDENTIAL_CACHE_MAX_AGE_MS = 10 * 60 * 1000
@@ -71,6 +76,9 @@ const REFRESH_GRACE_MS = 60 * 1000
 /** Retry interval after a failed background refresh. */
 const BACKGROUND_REFRESH_RETRY_MS = 5 * 60 * 1000
 
+/** Maximum unload wait after signalling cancellation to abortable auth work. */
+const DISPOSE_TIMEOUT_MS = 5_000
+
 /** Floor for a background refresh that is not yet due; avoids a zero-delay re-arm loop. */
 const BACKGROUND_REFRESH_MIN_DELAY_MS = 60 * 1000
 
@@ -79,6 +87,9 @@ const MAX_TIMER_DELAY_MS = 2 ** 31 - 1
 
 /** Codex CLI version probe timeout. */
 const PROBE_TIMEOUT_MS = 5_000
+
+/** Grace before a stopping CLI probe is detached and force-killed. */
+const PROBE_STOP_TIMEOUT_MS = 500
 
 /** Read-only ChatGPT backend endpoint answering the account's usage windows. */
 const CODEX_USAGE_ENDPOINT = 'https://chatgpt.com/backend-api/wham/usage'
@@ -113,18 +124,48 @@ export class CodexAuthService extends Service {
   private readonly statusListeners = new Set<() => void>()
   private cachedCredential: CachedCredential | undefined
   private refreshTimer: NodeJS.Timeout | undefined
+  private credentialFlight: Promise<CodexCredential | undefined> | undefined
   private backgroundRefreshFlight: Promise<void> | undefined
+  private readonly commitFlights = new Set<Promise<void>>()
+  private readonly lifecycleAbort = new AbortController()
   private disposed = false
   private statusReadAt = 0
 
   constructor(ctx: Context, private readonly options: CodexAuthServiceOptions) {
     super(ctx, 'codexAuth')
     this.probeCodex()
-    this.ctx.effect(() => async () => {
-      this.disposed = true
-      this.clearRefreshTimer()
-      await this.backgroundRefreshFlight
-    }, 'codex-auth: background refresh')
+    this.ctx.effect(() => () => this.disposeOperations(), 'codex-auth: operations')
+  }
+
+  private async disposeOperations(): Promise<void> {
+    if (this.disposed) return
+    this.disposed = true
+    this.clearRefreshTimer()
+    this.statusListeners.clear()
+    this.cachedCredential = undefined
+    this.lifecycleAbort.abort(new Error('codex-auth: auth operation cancelled during disposal'))
+
+    const foreground = this.credentialFlight
+    const background = this.backgroundRefreshFlight
+    const operations = [
+      ...(foreground === undefined ? [] : [foreground]),
+      ...(background === undefined ? [] : [background]),
+    ]
+    if (operations.length > 0) {
+      const timeoutMs = this.options.disposeTimeoutMs ?? DISPOSE_TIMEOUT_MS
+      const drain = Promise.allSettled(operations).then(() => {})
+      if (!await waitForSettlement(drain, timeoutMs)) {
+        this.ctx.logger.warn(
+          'codex-auth: abortable auth work did not stop within %dms; disposal will continue',
+          timeoutMs,
+        )
+      }
+    }
+    this.credentialFlight = undefined
+
+    // Once an atomic commit starts it is not cancellable. Keep teardown joined
+    // to it so no auth-file mutation can finish after the module is disposed.
+    if (this.commitFlights.size > 0) await Promise.allSettled(this.commitFlights)
   }
 
   /** Whether the codex CLI resolved at startup. */
@@ -152,17 +193,21 @@ export class CodexAuthService extends Service {
    */
   async credential(signal?: AbortSignal): Promise<CodexCredential | undefined> {
     throwIfAborted(signal)
+    if (this.disposed) return undefined
     const cached = this.cachedCredential
-    if (cached !== undefined && await this.cachedCredentialFresh(cached)) return cached.credential
-    const path = this.options.authJsonPath
-    let flight = credentialFlights.get(path)
-    if (flight === undefined) {
-      flight = this.resolveCredential().finally(() => {
-        if (credentialFlights.get(path) === flight) credentialFlights.delete(path)
-      })
-      credentialFlights.set(path, flight)
+    if (cached !== undefined) {
+      const fresh = await this.cachedCredentialFresh(cached)
+      if (this.disposed) return undefined
+      if (fresh) return cached.credential
     }
-    return waitForCredential(flight, signal)
+    let flight = this.credentialFlight
+    if (flight === undefined) {
+      flight = this.resolveCredential(this.lifecycleAbort.signal).finally(() => {
+        if (this.credentialFlight === flight) this.credentialFlight = undefined
+      })
+      this.credentialFlight = flight
+    }
+    return waitForCredential(flight, signal, this.lifecycleAbort.signal)
   }
 
   /**
@@ -194,11 +239,12 @@ export class CodexAuthService extends Service {
     try {
       file = await readAuthFile(this.options.authJsonPath)
     } catch (error) {
-      this.warnCredentialFailure('status could not read the Codex Login State', error)
+      if (!this.disposed) this.warnCredentialFailure('status could not read the Codex Login State', error)
     }
-    const status = this.publishStatus(statusFromFile(file, this.available, this.codexVersion, this.options.credentialRef))
+    const status = statusFromFile(file, this.available, this.codexVersion, this.options.credentialRef)
+    if (this.disposed) return status
     this.statusReadAt = Date.now()
-    return status
+    return this.publishStatus(status)
   }
 
   /**
@@ -209,29 +255,18 @@ export class CodexAuthService extends Service {
    * card renders as dashes instead of erroring the whole login block.
    */
   async usage(signal?: AbortSignal): Promise<CodexUsageView> {
-    const bounded = boundedSignal(signal, this.options.usageTimeoutMs ?? CODEX_USAGE_TIMEOUT_MS)
+    const bounded = boundedSignal(
+      [signal, this.lifecycleAbort.signal],
+      this.options.usageTimeoutMs ?? CODEX_USAGE_TIMEOUT_MS,
+    )
     try {
       throwIfAborted(bounded.signal)
       const credential = await this.credential(bounded.signal)
       if (credential === undefined) return {}
-      const response = await (this.options.fetchImpl ?? fetch)(CODEX_USAGE_ENDPOINT, {
-        headers: {
-          authorization: `Bearer ${credential.accessToken}`,
-          ...credential.accountId === undefined ? {} : { 'chatgpt-account-id': credential.accountId },
-          'content-type': 'application/json',
-          'user-agent': 'dsh-codex-auth/0.1.0',
-        },
-        signal: bounded.signal,
-      })
-      if (!response.ok) {
-        try { await response.body?.cancel() } catch { /* best effort */ }
-        return {}
-      }
-      const text = await readBoundedResponseText(response, CODEX_USAGE_MAX_BYTES, bounded.signal, {
-        tooLarge: () => new Error('usage response exceeded the encoded size limit'),
-        cancelled: () => new Error('usage probe was cancelled'),
-      })
-      return usageFromPayload(JSON.parse(text) as unknown)
+      return await waitForAbort(
+        probeUsage(this.options.fetchImpl ?? fetch, credential, bounded.signal),
+        bounded.signal,
+      )
     } catch {
       // Best-effort probe: login problems, network failures, malformed
       // envelopes, and cancellation all degrade to an empty view.
@@ -251,7 +286,7 @@ export class CodexAuthService extends Service {
     }
     const args = mode === 'device' ? ['login', '--device-auth'] : ['login']
     try {
-      const child = spawn(this.options.codexCommand, args, { detached: true, stdio: 'ignore' })
+      const child = (this.options.spawnImpl ?? spawn)(this.options.codexCommand, args, { detached: true, stdio: 'ignore' })
       child.unref()
       return Promise.resolve({ started: true })
     } catch (error) {
@@ -262,11 +297,13 @@ export class CodexAuthService extends Service {
   }
 
   /** Resolve from the latest locked document and refresh at most once. */
-  private async resolveCredential(): Promise<CodexCredential | undefined> {
+  private async resolveCredential(signal: AbortSignal): Promise<CodexCredential | undefined> {
     let observed: CodexAuthFile | undefined
     try {
       observed = await readAuthFile(this.options.authJsonPath)
+      if (isAborted(signal)) return undefined
     } catch (error) {
+      if (isAborted(signal)) return undefined
       // The pre-lock read is only a hint: another DSH process or Codex CLI may
       // replace a missing or malformed document before this process owns the lock.
       this.warnCredentialFailure('pre-lock read could not inspect the Codex Login State', error)
@@ -278,25 +315,33 @@ export class CodexAuthService extends Service {
       // endpoint never blocks other credential readers or the background
       // refresher behind the lock's 2-second contention deadline.
       const decision = await withFileLock(this.options.authJsonPath, () => this.decideRefreshLocked())
-      if (decision.mode === 'absent') return undefined
+      if (isAborted(signal)) return undefined
+      if (decision.mode === 'absent') {
+        this.publishStatus(statusFromFile(decision.file, this.available, this.codexVersion, this.options.credentialRef))
+        return undefined
+      }
       if (decision.mode === 'ready') {
+        this.publishStatus(statusFromFile(decision.snapshot.file, this.available, this.codexVersion, this.options.credentialRef))
         this.recordResolved(decision.snapshot)
         return credentialFromFile(decision.snapshot.file)
       }
       try {
-        const reply = await refreshTokens(decision.refreshToken, this.options.fetchImpl ?? fetch)
+        const reply = await refreshTokens(decision.refreshToken, this.options.fetchImpl ?? fetch, signal)
+        if (isAborted(signal)) return undefined
         const adopted = await withFileLock(
           this.options.authJsonPath,
-          () => this.adoptRefreshedLocked(decision.snapshot.file, reply),
+          () => this.adoptRefreshedLocked(decision.snapshot.file, reply, signal),
         )
-        if (adopted === undefined) return undefined
+        if (isAborted(signal) || adopted === undefined) return undefined
         this.publishStatus(statusFromFile(adopted.file, this.available, this.codexVersion, this.options.credentialRef))
         this.recordResolved(adopted)
         return credentialFromFile(adopted.file)
       } catch (error) {
+        if (isAborted(signal)) return undefined
         // The Codex CLI does not share this lock. If it rotated the same login
         // while our refresh was in flight, recover from its newer state.
         const replacement = await readAuthSnapshot(this.options.authJsonPath)
+        if (isAborted(signal)) return undefined
         const leadMs = this.options.refreshLeadMs ?? DEFAULT_REFRESH_LEAD_MS
         if (canAdoptReplacement(decision.snapshot.file, replacement?.file, leadMs)) {
           this.publishStatus(statusFromFile(replacement.file, this.available, this.codexVersion, this.options.credentialRef))
@@ -312,39 +357,32 @@ export class CodexAuthService extends Service {
         return undefined
       }
     } catch (error) {
+      if (isAborted(signal)) return undefined
       this.warnCredentialFailure('could not coordinate the Codex Login State', error, observed)
       return undefined
     }
   }
 
   /**
-   * Under the writer lock: read the auth file and decide whether a refresh is
-   * due. `ready` documents are published and returned for the caller to cache;
-   * `refresh` carries the refresh token for the (unlocked) OAuth round trip.
+   * Under the writer lock, read the auth file and return a side-effect-free
+   * refresh decision. Callers publish/cache only after their lifecycle check.
    */
   private async decideRefreshLocked(): Promise<
-    | { mode: 'absent' }
+    | { mode: 'absent'; file: CodexAuthFile | undefined }
     | { mode: 'ready'; snapshot: CodexAuthSnapshot }
     | { mode: 'refresh'; snapshot: CodexAuthSnapshot; refreshToken: string }
   > {
     const snapshot = await readAuthSnapshot(this.options.authJsonPath)
-    if (snapshot === undefined) {
-      this.publishStatus(statusFromFile(undefined, this.available, this.codexVersion, this.options.credentialRef))
-      return { mode: 'absent' }
-    }
+    if (snapshot === undefined) return { mode: 'absent', file: undefined }
     const file = snapshot.file
     const state = authState(file)
-    if (state.accessToken === undefined) {
-      this.publishStatus(statusFromFile(file, this.available, this.codexVersion, this.options.credentialRef))
-      return { mode: 'absent' }
-    }
+    if (state.accessToken === undefined) return { mode: 'absent', file }
     const leadMs = this.options.refreshLeadMs ?? DEFAULT_REFRESH_LEAD_MS
     if (!needsRefresh(state, leadMs) && !refreshTooOld(file, MAX_REFRESH_AGE_MS)) {
-      this.publishStatus(statusFromFile(file, this.available, this.codexVersion, this.options.credentialRef))
       return { mode: 'ready', snapshot }
     }
     const refreshToken = file.tokens?.refresh_token
-    if (typeof refreshToken !== 'string' || refreshToken.length === 0) return { mode: 'absent' }
+    if (typeof refreshToken !== 'string' || refreshToken.length === 0) return { mode: 'absent', file }
     return { mode: 'refresh', snapshot, refreshToken }
   }
 
@@ -357,9 +395,11 @@ export class CodexAuthService extends Service {
   private async adoptRefreshedLocked(
     previous: CodexAuthFile,
     reply: CodexRefreshReply,
+    signal?: AbortSignal,
   ): Promise<CodexAuthSnapshot | undefined> {
+    if (isAborted(signal)) return undefined
     const current = await readAuthSnapshot(this.options.authJsonPath)
-    if (current === undefined) return undefined
+    if (isAborted(signal) || current === undefined) return undefined
     const leadMs = this.options.refreshLeadMs ?? DEFAULT_REFRESH_LEAD_MS
     if (!needsRefresh(authState(current.file), leadMs) && !refreshTooOld(current.file, MAX_REFRESH_AGE_MS)) {
       return current
@@ -368,12 +408,27 @@ export class CodexAuthService extends Service {
       this.publishStatus(statusFromFile(current.file, this.available, this.codexVersion, this.options.credentialRef))
       return undefined
     }
-    await writeAuthFile(this.options.authJsonPath, mergeRefreshed(current.file, reply))
+    if (!await this.commitAuthFile(mergeRefreshed(current.file, reply), signal)) return undefined
+    if (isAborted(signal)) return undefined
     const persisted = await readAuthSnapshot(this.options.authJsonPath)
     if (persisted === undefined
       || needsRefresh(authState(persisted.file), leadMs)
       || refreshTooOld(persisted.file, MAX_REFRESH_AGE_MS)) return undefined
     return persisted
+  }
+
+  /** Commit one non-cancellable atomic write while keeping teardown joined. */
+  private async commitAuthFile(file: CodexAuthFile, signal?: AbortSignal): Promise<boolean> {
+    if (isAborted(signal)) return false
+    const writer = this.options.authFileWriter ?? writeAuthFile
+    const commit = Promise.resolve().then(() => writer(this.options.authJsonPath, file))
+    this.commitFlights.add(commit)
+    try {
+      await commit
+      return !isAborted(signal)
+    } finally {
+      this.commitFlights.delete(commit)
+    }
   }
 
   /**
@@ -382,6 +437,7 @@ export class CodexAuthService extends Service {
    * entry, so filesystem uncertainty fails closed.
    */
   private recordResolved(snapshot: CodexAuthSnapshot): void {
+    if (this.disposed) return
     const credential = credentialFromFile(snapshot.file)
     if (credential === undefined) {
       this.cachedCredential = undefined
@@ -430,8 +486,7 @@ export class CodexAuthService extends Service {
       : Math.max(BACKGROUND_REFRESH_MIN_DELAY_MS, Math.min(delayMs, MAX_TIMER_DELAY_MS))
     const timer = setTimeout(() => {
       this.refreshTimer = undefined
-      // Returning the tracked flight lets fake-timer harnesses and teardown
-      // await the same background operation.
+      // Keep the timer callback linked to the lifecycle-tracked operation.
       return this.startBackgroundRefresh()
     }, delay)
     timer.unref?.()
@@ -441,7 +496,7 @@ export class CodexAuthService extends Service {
   private startBackgroundRefresh(): Promise<void> {
     if (this.disposed) return Promise.resolve()
     if (this.backgroundRefreshFlight !== undefined) return this.backgroundRefreshFlight
-    const flight = this.refreshInBackground().finally(() => {
+    const flight = this.refreshInBackground(this.lifecycleAbort.signal).finally(() => {
       if (this.backgroundRefreshFlight === flight) this.backgroundRefreshFlight = undefined
     })
     this.backgroundRefreshFlight = flight
@@ -457,23 +512,31 @@ export class CodexAuthService extends Service {
    * sections only), so a slow token endpoint never blocks other readers;
    * failures are logged and retried later.
    */
-  private async refreshInBackground(): Promise<void> {
+  private async refreshInBackground(signal: AbortSignal): Promise<void> {
     let retry = false
     try {
+      if (isAborted(signal)) return
       const decision = await withFileLock(this.options.authJsonPath, () => this.decideRefreshLocked())
-      if (decision.mode === 'absent') return
+      if (isAborted(signal)) return
+      if (decision.mode === 'absent') {
+        this.publishStatus(statusFromFile(decision.file, this.available, this.codexVersion, this.options.credentialRef))
+        return
+      }
       if (decision.mode === 'ready') {
         // Already fresh — a request-path refresh won the race, or the login
         // changed under us. Re-arm from the current document.
+        this.publishStatus(statusFromFile(decision.snapshot.file, this.available, this.codexVersion, this.options.credentialRef))
         this.recordResolved(decision.snapshot)
         return
       }
       try {
-        const reply = await refreshTokens(decision.refreshToken, this.options.fetchImpl ?? fetch)
+        const reply = await refreshTokens(decision.refreshToken, this.options.fetchImpl ?? fetch, signal)
+        if (isAborted(signal)) return
         const adopted = await withFileLock(
           this.options.authJsonPath,
-          () => this.adoptRefreshedLocked(decision.snapshot.file, reply),
+          () => this.adoptRefreshedLocked(decision.snapshot.file, reply, signal),
         )
+        if (isAborted(signal)) return
         if (adopted === undefined) {
           // A successful reply can still be unusable when the CLI changed the
           // account or refresh-token lineage in flight. Retry from that newer
@@ -484,9 +547,11 @@ export class CodexAuthService extends Service {
           this.recordResolved(adopted)
         }
       } catch (error) {
+        if (isAborted(signal)) return
         // The Codex CLI does not share this lock. If it rotated the same
         // login while our refresh was in flight, adopt its newer state.
         const replacement = await readAuthSnapshot(this.options.authJsonPath)
+        if (isAborted(signal)) return
         const leadMs = this.options.refreshLeadMs ?? DEFAULT_REFRESH_LEAD_MS
         if (canAdoptReplacement(decision.snapshot.file, replacement?.file, leadMs)) {
           this.publishStatus(statusFromFile(replacement.file, this.available, this.codexVersion, this.options.credentialRef))
@@ -497,6 +562,7 @@ export class CodexAuthService extends Service {
         retry = true
       }
     } catch (error) {
+      if (isAborted(signal)) return
       this.warnCredentialFailure('background token refresh could not coordinate; will retry later', error)
       retry = true
     }
@@ -514,8 +580,7 @@ export class CodexAuthService extends Service {
     if (this.disposed || this.refreshTimer !== undefined) return
     const timer = setTimeout(() => {
       this.refreshTimer = undefined
-      // Returning the tracked flight lets fake-timer harnesses and teardown
-      // await the same background operation.
+      // Keep the timer callback linked to the lifecycle-tracked operation.
       return this.startBackgroundRefresh()
     }, BACKGROUND_REFRESH_RETRY_MS)
     timer.unref?.()
@@ -523,7 +588,7 @@ export class CodexAuthService extends Service {
   }
 
   private publishStatus(status: CodexAuthStatusView): CodexAuthStatusView {
-    if (sameStatus(this.lastStatus, status)) return status
+    if (this.disposed || sameStatus(this.lastStatus, status)) return status
     this.lastStatus = status
     for (const listener of this.statusListeners) {
       try { listener() } catch { /* one observer cannot disrupt auth */ }
@@ -541,32 +606,121 @@ export class CodexAuthService extends Service {
    * unavailable.
    */
   private probeCodex(): void {
-    let child: ReturnType<typeof spawn> | undefined
-    let settled = false
-    const finish = (version: string | undefined): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      this.codexVersion = version
-    }
-    const timer = setTimeout(() => {
-      child?.kill()
-      finish(undefined)
-    }, PROBE_TIMEOUT_MS)
-    try {
-      child = spawn(this.options.codexCommand, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
-      let output = ''
-      child.stdout?.on('data', (chunk) => { output += String(chunk) })
-      child.stderr?.on('data', (chunk) => { output += String(chunk) })
-      child.on('error', () => finish(undefined))
-      child.on('close', (code) => {
-        const line = code === 0 ? output.trim().split('\n')[0] : undefined
-        finish(typeof line === 'string' && line.length > 0 ? line : undefined)
-      })
-    } catch {
-      finish(undefined)
-    }
+    this.ctx.effect(() => {
+      let child: ReturnType<typeof spawn> | undefined
+      let settled = false
+      let spawned = false
+      let terminal = false
+      let stopRequested = false
+      let stopSpawnedFlight: Promise<void> | undefined
+      let resolveSpawnOutcome!: () => void
+      let resolveClosed!: () => void
+      const spawnOutcome = new Promise<void>(resolve => { resolveSpawnOutcome = resolve })
+      const closed = new Promise<void>(resolve => { resolveClosed = resolve })
+      const stopTimeoutMs = this.options.probeStopTimeoutMs ?? PROBE_STOP_TIMEOUT_MS
+      const markTerminal = (): void => {
+        if (terminal) return
+        terminal = true
+        resolveSpawnOutcome()
+        resolveClosed()
+      }
+      const detach = (): void => {
+        try { child?.stdout?.destroy() } catch { /* best effort */ }
+        try { child?.stderr?.destroy() } catch { /* best effort */ }
+        try { child?.unref() } catch { /* best effort */ }
+      }
+      const kill = (signal: NodeJS.Signals): boolean => {
+        try { return child?.kill(signal) === true } catch { return false }
+      }
+      const stopSpawned = (): Promise<void> => {
+        if (stopSpawnedFlight !== undefined) return stopSpawnedFlight
+        stopSpawnedFlight = (async () => {
+          if (terminal) return
+          kill('SIGTERM')
+          if (await waitForSettlement(closed, stopTimeoutMs)) return
+          kill('SIGKILL')
+          detach()
+          await waitForSettlement(closed, stopTimeoutMs)
+        })()
+        return stopSpawnedFlight
+      }
+      const stop = async (): Promise<void> => {
+        stopRequested = true
+        if (!spawned && !terminal && !await waitForSettlement(spawnOutcome, stopTimeoutMs)) {
+          // A pathological spawner produced neither `spawn` nor `error`.
+          // Detach its pipes now; a late `spawn` event still triggers stopSpawned.
+          detach()
+          return
+        }
+        if (spawned && !terminal) await stopSpawned()
+      }
+      const finish = (version: string | undefined): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (!this.disposed) this.codexVersion = version
+      }
+      const timer = setTimeout(() => {
+        finish(undefined)
+        void stop()
+      }, PROBE_TIMEOUT_MS)
+      timer.unref?.()
+      try {
+        child = (this.options.spawnImpl ?? spawn)(this.options.codexCommand, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+        let output = ''
+        child.stdout?.on('data', (chunk) => { output += String(chunk) })
+        child.stderr?.on('data', (chunk) => { output += String(chunk) })
+        child.on('spawn', () => {
+          spawned = true
+          resolveSpawnOutcome()
+          if (stopRequested) void stopSpawned()
+        })
+        child.on('error', () => {
+          finish(undefined)
+          if (spawned) void stopSpawned()
+          else markTerminal()
+        })
+        child.on('close', (code) => {
+          markTerminal()
+          const line = code === 0 ? output.trim().split('\n')[0] : undefined
+          finish(typeof line === 'string' && line.length > 0 ? line : undefined)
+        })
+      } catch {
+        markTerminal()
+        finish(undefined)
+      }
+      return async () => {
+        settled = true
+        clearTimeout(timer)
+        await stop()
+      }
+    }, 'codex-auth: CLI probe')
   }
+}
+
+async function probeUsage(
+  fetchImpl: typeof fetch,
+  credential: CodexCredential,
+  signal: AbortSignal,
+): Promise<CodexUsageView> {
+  const response = await fetchImpl(CODEX_USAGE_ENDPOINT, {
+    headers: {
+      authorization: `Bearer ${credential.accessToken}`,
+      ...credential.accountId === undefined ? {} : { 'chatgpt-account-id': credential.accountId },
+      'content-type': 'application/json',
+      'user-agent': 'dsh-codex-auth/0.1.0',
+    },
+    signal,
+  })
+  if (!response.ok) {
+    try { await response.body?.cancel() } catch { /* best effort */ }
+    return {}
+  }
+  const text = await readBoundedResponseText(response, CODEX_USAGE_MAX_BYTES, signal, {
+    tooLarge: () => new Error('usage response exceeded the encoded size limit'),
+    cancelled: () => new Error('usage probe was cancelled'),
+  })
+  return usageFromPayload(JSON.parse(text) as unknown)
 }
 
 function credentialFromFile(file: CodexAuthFile): CodexCredential | undefined {
@@ -698,14 +852,35 @@ function sameStatus(left: CodexAuthStatusView | undefined, right: CodexAuthStatu
     && left.authFileExists === right.authFileExists
 }
 
-function boundedSignal(parent: AbortSignal | undefined, timeoutMs: number): {
+function waitForSettlement(task: Promise<void>, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve, reject) => {
+    const timer = setTimeout(() => resolve(false), Math.max(1, timeoutMs))
+    timer.unref?.()
+    void task.then(
+      () => {
+        clearTimeout(timer)
+        resolve(true)
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
+function boundedSignal(parents: readonly (AbortSignal | undefined)[], timeoutMs: number): {
   signal: AbortSignal
   cleanup: () => void
 } {
   const controller = new AbortController()
-  const onParentAbort = (): void => { controller.abort(parent?.reason) }
-  if (parent?.aborted === true) onParentAbort()
-  else parent?.addEventListener('abort', onParentAbort, { once: true })
+  const active = parents.filter((parent): parent is AbortSignal => parent !== undefined)
+  const onParentAbort = (): void => {
+    controller.abort(active.find(parent => parent.aborted)?.reason)
+  }
+  const aborted = active.find(parent => parent.aborted)
+  if (aborted !== undefined) controller.abort(aborted.reason)
+  else for (const parent of active) parent.addEventListener('abort', onParentAbort, { once: true })
   const timer = setTimeout(
     () => controller.abort(new Error(`usage probe timed out after ${String(timeoutMs)}ms`)),
     Math.max(1, timeoutMs),
@@ -715,20 +890,20 @@ function boundedSignal(parent: AbortSignal | undefined, timeoutMs: number): {
     signal: controller.signal,
     cleanup: () => {
       clearTimeout(timer)
-      parent?.removeEventListener('abort', onParentAbort)
+      for (const parent of active) parent.removeEventListener('abort', onParentAbort)
     },
   }
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted === true) throw signal.reason
 }
 
-function waitForCredential(
-  flight: Promise<CodexCredential | undefined>,
-  signal: AbortSignal | undefined,
-): Promise<CodexCredential | undefined> {
-  if (signal === undefined) return flight
+function waitForAbort<T>(task: Promise<T>, signal: AbortSignal): Promise<T> {
   throwIfAborted(signal)
   return new Promise((resolve, reject) => {
     const onAbort = (): void => {
@@ -736,9 +911,38 @@ function waitForCredential(
       reject(signal.reason)
     }
     signal.addEventListener('abort', onAbort, { once: true })
-    flight.then(
+    task.then(
       value => { signal.removeEventListener('abort', onAbort); resolve(value) },
       error => { signal.removeEventListener('abort', onAbort); reject(error) },
+    )
+  })
+}
+
+function waitForCredential(
+  flight: Promise<CodexCredential | undefined>,
+  signal: AbortSignal | undefined,
+  lifecycleSignal: AbortSignal,
+): Promise<CodexCredential | undefined> {
+  throwIfAborted(signal)
+  if (lifecycleSignal.aborted) return Promise.resolve(undefined)
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => {
+      signal?.removeEventListener('abort', onCallerAbort)
+      lifecycleSignal.removeEventListener('abort', onLifecycleAbort)
+    }
+    const onCallerAbort = (): void => {
+      cleanup()
+      reject(signal?.reason)
+    }
+    const onLifecycleAbort = (): void => {
+      cleanup()
+      resolve(undefined)
+    }
+    signal?.addEventListener('abort', onCallerAbort, { once: true })
+    lifecycleSignal.addEventListener('abort', onLifecycleAbort, { once: true })
+    flight.then(
+      value => { cleanup(); resolve(value) },
+      error => { cleanup(); reject(error) },
     )
   })
 }

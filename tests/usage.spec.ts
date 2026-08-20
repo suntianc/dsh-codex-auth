@@ -120,6 +120,82 @@ describe('CodexAuthService.usage()', () => {
     expect(outcome).toEqual({ kind: 'usage', value: {} })
   })
 
+  it('detaches an in-flight usage probe even when its transport ignores abort', async () => {
+    await writeFile(authPath, JSON.stringify({
+      auth_mode: 'chatgpt',
+      last_refresh: new Date().toISOString(),
+      tokens: { access_token: fakeJwt(Math.floor(Date.now() / 1000) + 3600), refresh_token: 'rt-1' },
+    }), 'utf8')
+    const ctx = new Context()
+    let markStarted!: () => void
+    let releaseFetch!: () => void
+    let usageSignal: AbortSignal | null | undefined
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const released = new Promise<void>(resolve => { releaseFetch = resolve })
+    const hangingFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      usageSignal = init?.signal
+      markStarted()
+      await released
+      return new Response('{}', { status: 200 })
+    })
+    const coordinator = new CodexAuthService(ctx, {
+      authJsonPath: authPath,
+      codexCommand: 'definitely-not-codex',
+      credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
+      fetchImpl: hangingFetch,
+    })
+    const usage = coordinator.usage()
+    await started
+
+    const disposal = ctx.fiber.dispose()
+    const outcome = await Promise.race([
+      usage.then(value => ({ kind: 'usage' as const, value })),
+      new Promise<{ kind: 'still-pending' }>(resolve => setTimeout(() => resolve({ kind: 'still-pending' }), 50)),
+    ])
+    releaseFetch()
+    await disposal
+    expect(outcome).toEqual({ kind: 'usage', value: {} })
+    expect(usageSignal?.aborted).toBe(true)
+  })
+
+  it('detaches while an abort-ignoring response body is stalled', async () => {
+    await writeFile(authPath, JSON.stringify({
+      auth_mode: 'chatgpt',
+      last_refresh: new Date().toISOString(),
+      tokens: { access_token: fakeJwt(Math.floor(Date.now() / 1000) + 3600), refresh_token: 'rt-1' },
+    }), 'utf8')
+    const ctx = new Context()
+    let markBodyStarted!: () => void
+    let releaseBody!: () => void
+    const bodyStarted = new Promise<void>(resolve => { markBodyStarted = resolve })
+    const bodyReleased = new Promise<void>(resolve => { releaseBody = resolve })
+    const fetchMock = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        markBodyStarted()
+        await bodyReleased
+        controller.enqueue(new TextEncoder().encode('{}'))
+        controller.close()
+      },
+    }), { status: 200 }))
+    const coordinator = new CodexAuthService(ctx, {
+      authJsonPath: authPath,
+      codexCommand: 'definitely-not-codex',
+      credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
+      fetchImpl: fetchMock,
+    })
+    const usage = coordinator.usage()
+    await bodyStarted
+
+    const disposal = ctx.fiber.dispose()
+    const outcome = await Promise.race([
+      usage.then(value => ({ kind: 'usage' as const, value })),
+      new Promise<{ kind: 'still-pending' }>(resolve => setTimeout(() => resolve({ kind: 'still-pending' }), 50)),
+    ])
+    releaseBody()
+    await disposal
+    expect(outcome).toEqual({ kind: 'usage', value: {} })
+  })
+
   it('answers an empty view when logged out, on upstream errors, and on malformed payloads', async () => {
     const unauthenticated = service(vi.fn(async () => new Response('{}', { status: 200 })))
     await expect(unauthenticated.usage()).resolves.toEqual({})

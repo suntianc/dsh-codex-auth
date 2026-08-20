@@ -242,9 +242,11 @@ export function refreshTooOld(file: CodexAuthFile | undefined, maxAgeMs: number)
 export async function refreshTokens(
   refreshToken: string,
   fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal,
 ): Promise<CodexRefreshReply> {
   const response = await fetchImpl(CODEX_OAUTH_TOKEN_URL, {
     method: 'POST',
+    ...(signal === undefined ? {} : { signal }),
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       client_id: CODEX_OAUTH_CLIENT_ID,

@@ -16,7 +16,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
-- Made proactive token refresh lifecycle-safe by returning and tracking timer flights, preventing plugin teardown and test cleanup from racing an in-flight auth-file write.
+- Made auth work lifecycle-safe across overlapping Host coordinators with per-instance singleflight, disposal-abortable network/probe work, bounded caller detachment, and coordinated atomic commits.
 - Restored the visible Host-only token privacy disclosure and made settings loading/reduced-motion behavior accessible.
 
 ## [0.2.0] - 2026-08-14
