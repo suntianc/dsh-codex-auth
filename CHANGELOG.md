@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Restored generated-image rendering on DSH rc.7+ by owning the gallery in this client bundle instead of importing React values from the attachment plugin browser face, which does not expose presentation components.
+
 ## [0.2.1] - 2026-08-20
 
 ### Changed

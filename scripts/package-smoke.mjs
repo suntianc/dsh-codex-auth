@@ -83,6 +83,9 @@ try {
   for (const marker of ['window.__ModuleLoader__.load', 'generate_image', 'list_images', 'codex-search', 'codex-image']) {
     if (!client.includes(marker)) throw new Error(`package smoke: client bundle lacks ${marker}`)
   }
+  if (client.includes('require("@deepseek-ai/dsh-client-ui-attachment")')) {
+    throw new Error('package smoke: client bundle imports private values from the attachment plugin browser face')
+  }
 
   const patch = await readFile(resolve(packageRoot, manifest.dsh?.bundle?.patch ?? ''), 'utf8')
   for (const row of ['dsh-codex-auth', 'dsh-codex-auth/search', 'dsh-codex-auth/image']) {

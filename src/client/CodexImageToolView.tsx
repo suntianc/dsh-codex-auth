@@ -1,8 +1,8 @@
 /** Minimal keyed view for one Image Creation tool call. */
 import type { ReactNode } from 'react'
-import { ImageGallery } from '@deepseek-ai/dsh-client-ui-attachment'
-import type { ImageLoader, MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
+import { CodexImageGallery } from './CodexImageGallery.tsx'
+import type { CodexImageLabels, ImageLoader } from './CodexImageGallery.tsx'
 import { en, type CodexAuthKey } from './locales.ts'
 import classes from './CodexImageToolView.module.css'
 
@@ -31,10 +31,10 @@ export function CodexImageToolView({ block, loadImage, t = english }: CodexImage
     : []).slice(0, 10)
   if (images.length === 0) return null
 
-  return <ImageGallery images={images} load={loadImage} align="start" labels={labels(t)} />
+  return <CodexImageGallery images={images} load={loadImage} labels={labels(t)} />
 }
 
-function labels(t: (key: CodexAuthKey) => string): MessageImageLabels {
+function labels(t: (key: CodexAuthKey) => string): CodexImageLabels {
   return {
     image: t('toolGeneratedImage'),
     open: t('toolOpenImage'),
