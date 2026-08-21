@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import semver from 'semver'
 
-const DSH_BASELINE = '0.1.0-rc.7'
+const DSH_BASELINE = '0.1.1-rc.1'
 const SEMVER_OPTIONS = { includePrerelease: true }
 const sourceRoot = resolve(import.meta.dirname, '..')
 const temporary = await mkdtemp(resolve(sourceRoot, '.package-smoke-'))
@@ -52,11 +52,19 @@ try {
   if (dshResolutions.length === 0) {
     throw new Error('package smoke: pnpm-lock.yaml contains no resolved DSH package entries')
   }
-  const staleDshResolutions = dshResolutions.filter(({ version }) => (
-    semver.valid(version) === null || semver.lt(version, DSH_BASELINE)
-  ))
-  if (staleDshResolutions.length > 0) {
-    const stale = [...new Set(staleDshResolutions.map(({ name, version }) => `${name}@${version}`))]
+  const declaredDshNames = new Set(['peerDependencies', 'devDependencies']
+    .flatMap(section => Object.keys(manifest[section] ?? {}))
+    .filter(name => name.startsWith('@deepseek-ai/dsh-')))
+  const highestDeclaredDshVersions = new Map()
+  for (const { name, version } of dshResolutions) {
+    if (!declaredDshNames.has(name) || semver.valid(version) === null) continue
+    const current = highestDeclaredDshVersions.get(name)
+    if (current === undefined || semver.gt(version, current)) highestDeclaredDshVersions.set(name, version)
+  }
+  const stale = [...declaredDshNames]
+    .filter(name => !highestDeclaredDshVersions.has(name)
+      || semver.lt(highestDeclaredDshVersions.get(name), DSH_BASELINE))
+  if (stale.length > 0) {
     throw new Error(`package smoke: pnpm-lock.yaml resolves DSH below ${DSH_BASELINE}: ${stale.join(', ')}`)
   }
   const hostExports = ['.', './search', './image', './invariant']

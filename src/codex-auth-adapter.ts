@@ -24,7 +24,7 @@
  */
 
 import { builtinProviders } from '@earendil-works/pi-ai/providers/all'
-import type { ApiKeyAuth, Provider } from '@earendil-works/pi-ai'
+import type { ApiKeyAuth, AuthContext, CredentialStore, Provider } from '@earendil-works/pi-ai'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { LlmError, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
@@ -59,6 +59,34 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 
 /** Provider-idle ceiling for one outstanding stream read, mirroring llm-pi-ai's default. */
 const STREAM_IDLE_TIMEOUT_MS = 300_000
+
+/** rc1's default maximum encoded image payload for one pi-ai request. */
+export const MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
+
+/**
+ * Codex owns authentication in the Host-side coordinator and injects its token
+ * through `resolveApiKey` for each request. Pi-ai's login/storage surface must
+ * therefore remain deliberately inert: allowing it to discover or persist a
+ * second credential would break the single-source and secret-boundary rules.
+ */
+export function codexAuthInjection(): { credentials: CredentialStore; authContext: AuthContext } {
+  const credentials: CredentialStore = {
+    read: async () => undefined,
+    list: async () => [],
+    modify: async () => {
+      throw new LlmError(
+        'llm-codex-auth: pi-ai credential persistence is disabled; use the Codex auth coordinator',
+        'AUTH_PERSISTENCE_DISABLED',
+      )
+    },
+    delete: async () => {},
+  }
+  const authContext: AuthContext = {
+    env: async () => undefined,
+    fileExists: async () => false,
+  }
+  return { credentials, authContext }
+}
 
 /** Options one adapter instance is constructed with. */
 export interface CodexAuthAdapterOptions {
@@ -133,6 +161,7 @@ export class CodexAuthAdapter extends PiAiAdapter {
       provider: CODEX_ROUTE,
       displayName: options.displayName,
       streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+      maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES,
       retryPolicy: resolveRetryPolicy(undefined, `llm-codex-auth: provider "${CODEX_ROUTE}" retryPolicy`),
       piProvider: codexProvider(options.displayName),
       configuredMaxTokens: new Map(),
@@ -143,6 +172,10 @@ export class CodexAuthAdapter extends PiAiAdapter {
     const profiles: ReadonlyMap<string, ResolvedPiAiProviderProfile> = new Map([[CODEX_ROUTE, profile]])
     super({
       profiles: () => profiles,
+      // This route always supplies its Host-only coordinator token through
+      // resolveApiKey. Keep pi-ai's independent login and ambient discovery
+      // fail-closed so no second credential path can capture or expose it.
+      auth: codexAuthInjection(),
       // A missing or dead login answers fail-loud with the seam's coded
       // diagnostic, whose resolution is `codex login` — the agreed
       // degradation instead of letting pi-ai's ambient OAuth discovery run

@@ -108,30 +108,31 @@ cursor 和来源筛选，同时返回稳定 Image Handle 与真实 ImageBlock，
 成功的 `generate_image` 结果只展示 DSH 标准图片画廊；`list_images` 是供模型使用的目录状态，
 不提供面向用户的结果视图。插件通过公开的会话授权附件 API 读取图片，使用有界 Blob URL 缓存，
 并在连接重置、淘汰和插件卸载时回收自身 URL。生成图会作为对话附件持久保存。
-DeepSeek Harness `0.1.0-rc.7` 尚未提供二进制工作区写入 API，因此界面不提供工作区导出操作；
+DeepSeek Harness `0.1.1-rc.1` 尚未提供二进制工作区写入 API，因此界面不提供工作区导出操作；
 插件也不会通过 Node 文件系统绕过 DSH 的文件策略。
 
 ### ACP 图片互操作
 
-在 DSH rc.7 中，如果当前 `openai-codex` 模型明确声明支持图片输入，ACP 客户端可以发送
+历史背景：DSH rc.7 引入了这里使用的 ACP 图片路径；当时如果当前 `openai-codex` 模型明确声明支持图片输入，ACP 客户端可以发送
 PNG、JPEG、WebP 或 GIF 内联图片。DSH 会在用户消息入队前完成校验和持久化，因此这些图片
 会作为普通的 `user` 图片进入本插件的图片目录，之后可通过 Image Handle 选作
 `generate_image` 参考图。
 
-rc.7 的 ACP 桥接只发送已经提交到 `assistant/message` 的文本和图片块。`generate_image`
+历史背景：rc.7 的 ACP 桥接只发送已经提交到 `assistant/message` 的文本和图片块。`generate_image`
 生成的图片仍位于 `tool/result` 内，因此 ACP 客户端不会直接收到这些生成图的二进制内容；
 除非后续 assistant 消息自身包含 ImageBlock。
 
 ## 环境要求
 
-- DeepSeek Harness `0.1.0-rc.7` 或兼容的后续 `0.1.x` 版本。
+- DeepSeek Harness `0.1.1-rc.1` 或兼容的后续 `0.1.x` 版本。
 - Node.js `^22.19.0` 或 `>=24.0.0`。
 - `codex` CLI 已加入 `PATH`。
 - 可提前执行 `codex login`，也可在 GPT Auth 卡片中启动登录。
 
-rc.7 是完整 Web 设置功能的最低基线：Host 会把插件注册的 `codex-search`、`codex-image`
-设置 namespace 暴露给浏览器。原版 rc.6 虽然能够注册 GPT Auth 分区，但这两个实时设置
-scope 无法通过远程接口读取或写入。
+最低兼容版本为 `0.1.1-rc.1`（见上方环境要求）。历史背景：rc.7 是第一个完整的 Web
+设置功能基线，当时 Host 会把插件注册的 `codex-search`、`codex-image` 设置 namespace
+暴露给浏览器；原版 rc.6 虽然能够注册 GPT Auth 分区，但这两个实时设置 scope 无法通过
+远程接口读取或写入。
 
 ## 从 npm 安装（推荐）
 

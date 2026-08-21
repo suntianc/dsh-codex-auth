@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-21
+
+### Changed
+
+- Raised the minimum DeepSeek Harness baseline to `0.1.1-rc.1` across peer dependencies, development dependencies, documentation, and reproducible workspace resolution.
+- Adapted the Codex LLM route to the required `PiAiAdapterOptions.auth` contract while preserving the plugin-owned Host credential coordinator as the only token source.
+- Added the rc.1 request image payload default and attachment dimension limit to the adapter and test fixtures.
+- Updated packaged-artifact validation to verify declared rc.1 resolutions without rejecting legitimate older transitive snapshots embedded by upstream packages.
+
+### Security
+
+- Kept pi-ai credential persistence and ambient discovery fail-closed so Codex tokens cannot enter a second credential path, client state, or RPC payloads.
+
 ## [0.2.2] - 2026-08-20
 
 ### Fixed
@@ -51,7 +64,8 @@ All notable changes to this project are documented in this file.
 
 - DSH `0.1.0-rc.6` does not expose a policy-aware binary workspace-write API, so generated images remain durable conversation attachments and workspace export is not offered.
 
-[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/suntianc/dsh-codex-auth/compare/v0.1.0...v0.2.0

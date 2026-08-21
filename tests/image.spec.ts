@@ -61,6 +61,7 @@ function bench(overrides: Partial<CodexImageToolOptions> = {}) {
       maxImagesPerMessage: 10,
       maxMessageImageBytes: 10 * 1024 * 1024,
       maxImagePixels: 10_000_000,
+      maxImageDimension: 4096,
       mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const,
     },
     validateImage: vi.fn(async (_input: SaveImageAttachment) => {}),

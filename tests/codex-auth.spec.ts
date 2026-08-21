@@ -10,24 +10,27 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type { PiAiAdapterOptions } from '@deepseek-ai/dsh-llm-pi-ai'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import {
   authState, decodeAccessToken, defaultAuthJsonPath, MAX_REFRESH_AGE_MS, mergeRefreshed, needsRefresh,
   readAuthFile, refreshTooOld, refreshTokens, writeAuthFile, CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_URL,
 } from '../src/codex-auth.ts'
 import type { CodexAuthFile } from '../src/codex-auth.ts'
-import { CodexAuthAdapter, resolveCodexAccessToken } from '../src/codex-auth-adapter.ts'
+import {
+  CodexAuthAdapter, MAX_REQUEST_IMAGE_BYTES, resolveCodexAccessToken,
+} from '../src/codex-auth-adapter.ts'
 import { CodexAuthService, type CodexAuthServiceOptions } from '../src/codex-auth-service.ts'
 import { Config as PluginConfig, type Config as PluginConfigView } from '../src/index.ts'
 
 /** Captures the options each CodexAuthAdapter hands to the PiAiAdapter base. */
-const piAiAdapterCalls: Array<{ profiles: () => ReadonlyMap<string, unknown> }> = []
+const piAiAdapterCalls: PiAiAdapterOptions[] = []
 vi.mock('@deepseek-ai/dsh-llm-pi-ai', async (importOriginal) => {
   const original = await importOriginal<typeof import('@deepseek-ai/dsh-llm-pi-ai')>()
   return {
     ...original,
     PiAiAdapter: class {
-      constructor(options: { profiles: () => ReadonlyMap<string, unknown> }) {
+      constructor(options: PiAiAdapterOptions) {
         piAiAdapterCalls.push(options)
       }
     },
@@ -297,7 +300,46 @@ describe('CodexAuthAdapter route profile', () => {
     })
     const options = piAiAdapterCalls.at(-1)
     const profile = options?.profiles().get('openai-codex') as Record<string, unknown> | undefined
-    expect(profile).toMatchObject({ transport: 'auto', websocketConnectTimeoutMs: 3_000, timeoutMs: 60_000 })
+    expect(profile).toMatchObject({
+      transport: 'auto',
+      websocketConnectTimeoutMs: 3_000,
+      timeoutMs: 60_000,
+      maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES,
+    })
+  })
+
+  it('keeps pi-ai credential storage and ambient discovery fail-closed', async () => {
+    const ctx = new Context()
+    const service = new CodexAuthService(ctx, {
+      authJsonPath: '/nonexistent/auth.json',
+      codexCommand: 'definitely-not-codex',
+      credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
+    })
+    new CodexAuthAdapter(ctx, {
+      auth: service,
+      authJsonPath: '/nonexistent/auth.json',
+      credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
+      refreshLeadMs: 5 * 60 * 1000,
+      fetchImpl: fetch,
+      displayName: 'OpenAI Codex (chatgpt)',
+      transport: 'sse',
+      websocketConnectTimeoutMs: 3_000,
+      timeoutMs: 60_000,
+    })
+
+    const injection = piAiAdapterCalls.at(-1)?.auth
+    expect(injection).toBeDefined()
+    if (injection === undefined) throw new Error('missing pi-ai auth injection')
+    expect(await injection.credentials.read('openai-codex')).toBeUndefined()
+    expect(await injection.credentials.list()).toEqual([])
+    const mutate = vi.fn(async () => ({ type: 'api_key' as const, key: 'must-not-be-stored' }))
+    await expect(injection.credentials.modify('openai-codex', mutate)).rejects.toMatchObject({
+      code: 'AUTH_PERSISTENCE_DISABLED',
+    })
+    expect(mutate).not.toHaveBeenCalled()
+    await expect(injection.credentials.delete('openai-codex')).resolves.toBeUndefined()
+    await expect(injection.authContext.env('CODEX_CHATGPT_TOKEN')).resolves.toBeUndefined()
+    await expect(injection.authContext.fileExists('~/.codex/auth.json')).resolves.toBe(false)
   })
 })
 
