@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-22
+
+### Added
+
+- Added a live, default-off 1M context policy for GPT-5.6 Luna, Sol, and Terra through the new `codex-llm` Settings namespace.
+- Added accessible collapse/expand controls for the detailed Web Search and Image Creation settings.
+
+### Changed
+
+- Reordered GPT Auth Settings to place LLM Context immediately below Login and matched login-action sizing to the Antigravity settings panel.
+
 ## [0.2.3] - 2026-08-21
 
 ### Changed
@@ -64,7 +75,8 @@ All notable changes to this project are documented in this file.
 
 - DSH `0.1.0-rc.6` does not expose a policy-aware binary workspace-write API, so generated images remain durable conversation attachments and workspace export is not offered.
 
-[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.0...v0.2.1

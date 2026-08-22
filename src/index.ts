@@ -21,6 +21,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import { DEFAULT_REFRESH_LEAD_MS, defaultAuthJsonPath } from './codex-auth.ts'
 import {
   CODEX_ROUTE, CodexAuthAdapter, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_TRANSPORT,
@@ -28,6 +29,10 @@ import {
 } from './codex-auth-adapter.ts'
 import type { CodexAuthTransport } from './codex-auth-adapter.ts'
 import { CodexAuthService } from './codex-auth-service.ts'
+import {
+  CODEX_LLM_SETTINGS_NAMESPACE, CodexLlmSettingsConfig,
+} from './codex-context.ts'
+import type { CodexLlmSettings } from './codex-context.ts'
 import { installEnvHttpProxy } from './env-proxy.ts'
 import { CODEX_AUTH_RPC_CHANNEL, handleCodexAuthRpc } from './rpc.ts'
 
@@ -48,6 +53,8 @@ export interface Config {
   codexCommand: string
   /** Selector label for the provider route. */
   displayName: string
+  /** Opt into the one-million-token context budget for supported GPT-5.6 models. */
+  longContextEnabled: boolean
   /** Streaming transport for the route; SSE by default because the WebSocket upgrade is unreliable through common HTTP proxies. */
   transport: CodexAuthTransport
   /** WebSocket connect timeout in milliseconds; only used when `transport` is not `sse`; zero disables it. */
@@ -63,6 +70,7 @@ export const Config: z<Config> = z.object({
   refreshLeadMs: z.number().min(0).default(DEFAULT_REFRESH_LEAD_MS),
   codexCommand: z.string().default('codex'),
   displayName: z.string().default('OpenAI Codex (chatgpt)'),
+  longContextEnabled: z.boolean().default(false),
   transport: z.union([z.const('auto'), z.const('sse'), z.const('websocket')]).default(DEFAULT_TRANSPORT),
   websocketConnectTimeoutMs: z.natural().default(DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS),
   timeoutMs: z.natural().default(DEFAULT_REQUEST_TIMEOUT_MS),
@@ -82,6 +90,9 @@ export function apply(ctx: Context, config: Config): void {
     refreshLeadMs: config.refreshLeadMs,
     fetchImpl: fetch,
   })
+  const settingsEntry: CodexLlmSettings = { longContextEnabled: config.longContextEnabled }
+  let currentSettings = (): CodexLlmSettings => settingsEntry
+  let announceModelPolicyChange = (): void => {}
   if (config.llmEnabled) {
     if (ctx.llm.listProviders().some(provider => provider.id === CODEX_ROUTE)) {
       throw new Error(
@@ -89,18 +100,24 @@ export function apply(ctx: Context, config: Config): void {
         + 'dsh-codex-auth and dsh-codex are mutually exclusive, so uninstall or disable one bundle',
       )
     }
-    ctx.llm.registerAdapter([CODEX_ROUTE], new CodexAuthAdapter(ctx, {
+    const registration = ctx.llm.registerAdapter([CODEX_ROUTE], new CodexAuthAdapter(ctx, {
       auth: service,
       authJsonPath,
       credentialRef: credentialReference,
       refreshLeadMs: config.refreshLeadMs,
       fetchImpl: fetch,
       displayName: config.displayName,
+      settings: () => currentSettings(),
       transport: config.transport,
       websocketConnectTimeoutMs: config.websocketConnectTimeoutMs,
       timeoutMs: config.timeoutMs,
     }))
+    announceModelPolicyChange = () => { registration.replace([CODEX_ROUTE]) }
   }
+  installSettingsSection(ctx, CODEX_LLM_SETTINGS_NAMESPACE, CodexLlmSettingsConfig, settingsEntry, {
+    setSource: source => { currentSettings = source },
+    onChange: announceModelPolicyChange,
+  })
   ctx.inject(['connection'], connectionCtx => connectionCtx.connection.rpc.handle(
     CODEX_AUTH_RPC_CHANNEL,
     (endpoint, payload, signal) => handleCodexAuthRpc(service, endpoint, payload, signal),

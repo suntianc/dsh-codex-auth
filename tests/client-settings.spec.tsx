@@ -19,6 +19,8 @@ vi.mock('@deepseek-ai/dsh-client-ui-attachment', () => ({
   ),
 }))
 
+const LLM = { longContextEnabled: false }
+
 const SEARCH: CodexSearchSettings = {
   enabled: true,
   mode: 'live',
@@ -93,7 +95,8 @@ const subscribe = (): (() => void) => () => {}
 afterEach(() => cleanup())
 
 describe('Codex Capability Bundle settings', () => {
-  it('renders Login, Search, and Image Creation as one live three-card section', async () => {
+  it('renders Login, LLM Context, Search, and Image Creation as one live four-card section', async () => {
+    const llm = fakeScope(LLM)
     const search = fakeScope(SEARCH)
     const image = fakeScope(IMAGE)
     render(<CodexCapabilitySettings
@@ -103,12 +106,14 @@ describe('Codex Capability Bundle settings', () => {
       )}
       t={t}
       subscribe={subscribe}
+      llmScope={llm.scope}
       searchScope={search.scope}
       imageScope={image.scope}
     />)
 
     expect(await screen.findByText('Active')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Login' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'LLM Context' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Web Search' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Image Creation' })).toBeTruthy()
     // The login block only surfaces plan, remaining quota, and weekly reset.
@@ -119,6 +124,18 @@ describe('Codex Capability Bundle settings', () => {
     expect(screen.queryByText('acct-1')).toBeNull()
     expect(screen.queryByText('/Users/alice/.codex/auth.json')).toBeNull()
     expect(screen.getByText(/no token value is ever sent to the Web client/i)).toBeTruthy()
+
+    fireEvent.click(screen.getByLabelText('Enable 1M context'))
+    await waitFor(() => expect(llm.set).toHaveBeenCalledWith('longContextEnabled', true))
+
+    const expandSearch = screen.getByRole('button', { name: 'Expand Web Search settings' })
+    const expandImage = screen.getByRole('button', { name: 'Expand Image Creation settings' })
+    expect(expandSearch.getAttribute('aria-expanded')).toBe('false')
+    expect(expandImage.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(expandSearch)
+    fireEvent.click(expandImage)
+    expect(screen.getByRole('button', { name: 'Collapse Web Search settings' }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Collapse Image Creation settings' }).getAttribute('aria-expanded')).toBe('true')
 
     fireEvent.change(screen.getByLabelText('Search mode'), { target: { value: 'cached' } })
     await waitFor(() => expect(search.set).toHaveBeenCalledWith('mode', 'cached'))
@@ -131,15 +148,17 @@ describe('Codex Capability Bundle settings', () => {
       rpc={rpc(authStatus({ planType: 'plus' }))}
       t={t}
       subscribe={subscribe}
+      llmScope={fakeScope(LLM, 'loading').scope}
       searchScope={fakeScope(SEARCH, 'loading').scope}
       imageScope={fakeScope(IMAGE, 'loading').scope}
     />)
 
     expect(await screen.findByText('Active')).toBeTruthy()
-    expect(screen.getAllByText('Loading settings…')).toHaveLength(2)
-    const busyRegions = screen.getAllByRole('status')
+    expect(screen.getAllByText('Loading settings…')).toHaveLength(3)
+    const visibleBusyRegions = screen.getAllByRole('status')
       .filter(region => region.getAttribute('aria-busy') === 'true')
-    expect(busyRegions).toHaveLength(2)
+    expect(visibleBusyRegions).toHaveLength(1)
+    expect(container.querySelectorAll('[aria-busy="true"]')).toHaveLength(3)
     expect(container.querySelectorAll('[aria-busy="true"] > div:not([aria-hidden="true"])')).toHaveLength(0)
   })
 
@@ -148,6 +167,7 @@ describe('Codex Capability Bundle settings', () => {
       rpc={rpc(authStatus({ credentialRef: '/tmp/auth.json', accountId: 'acct-free', planType: 'free' }))}
       t={t}
       subscribe={subscribe}
+      llmScope={fakeScope(LLM).scope}
       searchScope={fakeScope(SEARCH).scope}
       imageScope={fakeScope(IMAGE).scope}
     />)
@@ -158,6 +178,7 @@ describe('Codex Capability Bundle settings', () => {
       rpc={rpc(authStatus({ credentialRef: '/tmp/auth.json' }))}
       t={t}
       subscribe={subscribe}
+      llmScope={fakeScope(LLM).scope}
       searchScope={fakeScope(SEARCH).scope}
       imageScope={fakeScope(IMAGE).scope}
     />)
@@ -170,6 +191,7 @@ describe('Codex Capability Bundle settings', () => {
       rpc={rpc(authStatus({ configured: false, authFileExists: false }))}
       t={t}
       subscribe={subscribe}
+      llmScope={fakeScope(LLM).scope}
       searchScope={fakeScope(SEARCH).scope}
       imageScope={fakeScope(IMAGE).scope}
     />)
@@ -240,6 +262,7 @@ describe('client plugin registration', () => {
   it('registers one settings row and keyed views for both image tools', () => {
     const registered: Array<Record<string, unknown>> = []
     const scopes = new Map([
+      ['codex-llm', fakeScope(LLM).scope],
       ['codex-search', fakeScope(SEARCH).scope],
       ['codex-image', fakeScope(IMAGE).scope],
     ])

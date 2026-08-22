@@ -21,6 +21,9 @@ import {
   CodexAuthAdapter, MAX_REQUEST_IMAGE_BYTES, resolveCodexAccessToken,
 } from '../src/codex-auth-adapter.ts'
 import { CodexAuthService, type CodexAuthServiceOptions } from '../src/codex-auth-service.ts'
+import {
+  CODEX_LONG_CONTEXT_WINDOW, CODEX_STANDARD_CONTEXT_WINDOW, CodexLlmSettingsConfig,
+} from '../src/codex-context.ts'
 import { Config as PluginConfig, type Config as PluginConfigView } from '../src/index.ts'
 
 /** Captures the options each CodexAuthAdapter hands to the PiAiAdapter base. */
@@ -259,8 +262,17 @@ describe('resolveCodexAccessToken', () => {
 describe('Auth / LLM row configuration', () => {
   it('keeps the route enabled by default and permits coordinator-only composition', () => {
     const parse = PluginConfig as unknown as (input: Partial<PluginConfigView>) => PluginConfigView
-    expect(parse({})).toMatchObject({ llmEnabled: true })
-    expect(parse({ llmEnabled: false })).toMatchObject({ llmEnabled: false })
+    expect(parse({})).toMatchObject({ llmEnabled: true, longContextEnabled: false })
+    expect(parse({ llmEnabled: false, longContextEnabled: true })).toMatchObject({
+      llmEnabled: false,
+      longContextEnabled: true,
+    })
+  })
+
+  it('keeps the independent live LLM context policy default-off', () => {
+    const parse = CodexLlmSettingsConfig as unknown as (input: Record<string, unknown>) => { longContextEnabled: boolean }
+    expect(parse({})).toEqual({ longContextEnabled: false })
+    expect(parse({ longContextEnabled: true })).toEqual({ longContextEnabled: true })
   })
 
   it('defaults the route to SSE transport with bounded transport timeouts', () => {
@@ -294,6 +306,7 @@ describe('CodexAuthAdapter route profile', () => {
       refreshLeadMs: 5 * 60 * 1000,
       fetchImpl: fetch,
       displayName: 'OpenAI Codex (chatgpt)',
+      settings: () => ({ longContextEnabled: false }),
       transport: 'auto',
       websocketConnectTimeoutMs: 3_000,
       timeoutMs: 60_000,
@@ -306,6 +319,49 @@ describe('CodexAuthAdapter route profile', () => {
       timeoutMs: 60_000,
       maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES,
     })
+  })
+
+  it('applies the live 1M policy only to supported GPT-5.6 model descriptors', () => {
+    const ctx = new Context()
+    const service = new CodexAuthService(ctx, {
+      authJsonPath: '/nonexistent/auth.json',
+      codexCommand: 'definitely-not-codex',
+      credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
+    })
+    let longContextEnabled = false
+    new CodexAuthAdapter(ctx, {
+      auth: service,
+      authJsonPath: '/nonexistent/auth.json',
+      credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
+      refreshLeadMs: 5 * 60 * 1000,
+      fetchImpl: fetch,
+      displayName: 'OpenAI Codex (chatgpt)',
+      settings: () => ({ longContextEnabled }),
+      transport: 'sse',
+      websocketConnectTimeoutMs: 3_000,
+      timeoutMs: 60_000,
+    })
+
+    const profile = piAiAdapterCalls.at(-1)?.profiles().get('openai-codex') as {
+      piProvider?: { getModels: () => ReadonlyArray<{ id: string; contextWindow: number }> }
+    } | undefined
+    const getModels = profile?.piProvider?.getModels
+    expect(getModels).toBeDefined()
+    if (getModels === undefined) throw new Error('missing codex model provider')
+
+    const standard = getModels()
+    for (const id of ['gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra']) {
+      expect(standard.find(model => model.id === id)?.contextWindow).toBe(CODEX_STANDARD_CONTEXT_WINDOW)
+    }
+    const unchanged = standard.find(model => model.id === 'gpt-5.4')
+
+    longContextEnabled = true
+    const long = getModels()
+    for (const id of ['gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra']) {
+      expect(long.find(model => model.id === id)?.contextWindow).toBe(CODEX_LONG_CONTEXT_WINDOW)
+    }
+    expect(long.find(model => model.id === 'gpt-5.4')).toBe(unchanged)
+    expect(standard.find(model => model.id === 'gpt-5.6-sol')?.contextWindow).toBe(CODEX_STANDARD_CONTEXT_WINDOW)
   })
 
   it('keeps pi-ai credential storage and ambient discovery fail-closed', async () => {
@@ -322,6 +378,7 @@ describe('CodexAuthAdapter route profile', () => {
       refreshLeadMs: 5 * 60 * 1000,
       fetchImpl: fetch,
       displayName: 'OpenAI Codex (chatgpt)',
+      settings: () => ({ longContextEnabled: false }),
       transport: 'sse',
       websocketConnectTimeoutMs: 3_000,
       timeoutMs: 60_000,

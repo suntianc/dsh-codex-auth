@@ -70,6 +70,8 @@ Login buttons continue to spawn the official `codex login` browser or device-cod
 
 With its default `llmEnabled: true`, the package owns exactly one `openai-codex` adapter route. An installer can set `llmEnabled: false` while retaining the shared Login State coordinator for Search and Image. `PiAiAdapter` continues to handle conversation streaming, ordinary function tools, reasoning replay, usage, cancellation, compaction, and input attachment conversion.
 
+The independently live `codex-llm` settings namespace owns one narrow policy: `longContextEnabled`. Its default-off implementation wraps the generated pi-ai catalog without mutating it, replacing only the `contextWindow` of the known GPT-5.6 Luna, Sol, and Terra descriptors with 1,000,000. The adapter registration republishes its unchanged route after a settings update so model consumers refresh metadata. This changes DSH token-pressure and compaction decisions; it does not add a backend request parameter or assert account entitlement.
+
 The route defaults to SSE and exposes `sse`, `websocket`, and `auto` transport selection. `websocketConnectTimeoutMs` bounds the WebSocket handshake, while `timeoutMs` bounds the SSE response-header phase or the WebSocket message-idle interval; neither setting is presented as a whole-stream deadline, and `0` explicitly disables the corresponding timeout.
 
 Installed pi-ai `0.82.1` does not model Codex standalone search, Responses `web_search`, or image-generation result items. Search and image creation therefore do not modify or inject payloads into `PiAiAdapter`; they use dedicated capability plugins and the official Codex standalone endpoints.

@@ -85,6 +85,7 @@ describe('dsh-codex-auth client apply', () => {
 
   it('registers and cleans one settings section plus two keyed image views', async () => {
     const b = bench()
+    expect(b.bindScope).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'codex-llm' }))
     expect(b.bindScope).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'codex-search' }))
     expect(b.bindScope).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'codex-image' }))
     expect(b.slots.map(record => record.options)).toEqual(expect.arrayContaining([

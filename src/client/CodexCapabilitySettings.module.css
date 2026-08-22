@@ -74,6 +74,17 @@
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.05),
     inset 0 0 0 1px var(--dsw-alias-border-l2);
+  transition-property: gap;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.card[data-collapsed='true'] {
+  gap: 0;
+}
+
+.contextCard {
+  gap: 10px;
 }
 
 .cardHeader {
@@ -107,7 +118,66 @@
   flex: none;
   display: flex;
   align-items: center;
+  gap: 8px;
   padding-top: 2px;
+}
+
+.disclosureButton {
+  position: relative;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  transition-property: transform, background-color;
+  transition-duration: 140ms;
+}
+
+.disclosureButton::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+}
+
+.disclosureButton:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.disclosureIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition-property: transform;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.disclosureIcon[data-expanded='true'] {
+  transform: rotate(180deg);
+}
+
+.collapsibleRegion {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition-property: grid-template-rows, opacity, visibility;
+  transition-duration: 200ms, 150ms, 0s;
+  transition-delay: 0ms, 0ms, 200ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.collapsibleRegion[data-expanded='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0ms;
+}
+
+.collapsibleInner {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .badge {
@@ -128,6 +198,24 @@
   background: var(--dsw-alias-state-warn-tertiary);
   color: var(--dsw-alias-state-warn-label);
   box-shadow: none;
+}
+
+.contextDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.contextDetails p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.contextWarning {
+  color: var(--dsw-alias-state-warn-label, #b45309);
 }
 
 /* Auth Dashboard & Quota Progress */
@@ -313,6 +401,29 @@
   flex-wrap: wrap;
 }
 
+.actions .compactButton {
+  position: relative;
+  height: 32px;
+  padding: 0 14px;
+  gap: 6px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 20px;
+  transition-property: transform, background-color, border-color, opacity;
+  transition-duration: 140ms;
+}
+
+.compactButton::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+}
+
+.compactButton:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
 .privacyNotice {
   margin: -2px 0 0;
   color: var(--dsw-alias-label-tertiary);
@@ -325,6 +436,10 @@
   min-width: 104px;
   justify-content: center;
   margin-left: auto;
+}
+
+.actions .compactButton.refresh {
+  padding: 0 10px;
 }
 
 @keyframes spin {
@@ -599,6 +714,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .card,
+  .compactButton,
+  .disclosureButton,
+  .disclosureIcon,
+  .collapsibleRegion,
   .switchSlider,
   .switchSlider::after,
   .quotaValue,

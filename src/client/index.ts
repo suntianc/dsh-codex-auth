@@ -12,14 +12,16 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { createCodexAuthRpcClient } from '../rpc-contract.ts'
 import { CodexCapabilitySettings } from './CodexCapabilitySettings.tsx'
 import type {
-  CodexCapabilitySettingsProps, ImageSettingsView, SearchSettingsView,
+  CodexCapabilitySettingsProps, ImageSettingsView, LlmSettingsView, SearchSettingsView,
 } from './CodexCapabilitySettings.tsx'
 import { CodexImageToolView } from './CodexImageToolView.tsx'
 import { en, zh, type CodexAuthKey } from './locales.ts'
 import { SessionImageUrls } from './SessionImageUrls.ts'
 
 export { CodexCapabilitySettings } from './CodexCapabilitySettings.tsx'
-export type { CodexCapabilitySettingsProps, ImageSettingsView, SearchSettingsView } from './CodexCapabilitySettings.tsx'
+export type {
+  CodexCapabilitySettingsProps, ImageSettingsView, LlmSettingsView, SearchSettingsView,
+} from './CodexCapabilitySettings.tsx'
 export { CodexImageToolView } from './CodexImageToolView.tsx'
 export type { CodexImageToolViewProps } from './CodexImageToolView.tsx'
 
@@ -31,18 +33,23 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 const NS = 'settings.codexAuth'
+const LLM_NAMESPACE = 'codex-llm'
 const SEARCH_NAMESPACE = 'codex-search'
 const IMAGE_NAMESPACE = 'codex-image'
 
 /** Required browser services, including session-authorized attachment reads. */
 export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope', 'sessions']
 
-/** Register the three-card settings section and keyed image result renderers. */
+/** Register the four-card settings section and keyed image result renderers. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'codex-capabilities: copy dictionaries')
   const connection = ctx.get('connection') as ConnectionHandle
   const rpc = createCodexAuthRpcClient(connection.rpc)
   const t = ctx.locale.bind(NS) as CodexCapabilitySettingsProps['t']
+  const llmScope = ctx.settingsScope.bind<LlmSettingsView>({
+    namespace: LLM_NAMESPACE,
+    decode: decodeLlmSettings,
+  })
   const searchScope = ctx.settingsScope.bind<SearchSettingsView>({
     namespace: SEARCH_NAMESPACE,
     decode: decodeSearchSettings,
@@ -69,7 +76,7 @@ export function apply(ctx: ClientContext): void {
     id: 'codex-auth',
     order: 20,
     label: () => t('nav'),
-    inject: (): CodexCapabilitySettingsProps => ({ rpc, t, subscribe, searchScope, imageScope }),
+    inject: (): CodexCapabilitySettingsProps => ({ rpc, t, subscribe, llmScope, searchScope, imageScope }),
   }, CodexCapabilitySettings))
 
   const ToolView = imageToolView(imageUrls)
@@ -99,6 +106,11 @@ function imageToolView(imageUrls: SessionImageUrls): (props: LocalizedToolViewPr
     )
     return createElement(CodexImageToolView, { block: props.block, loadImage, t: props.t })
   }
+}
+
+function decodeLlmSettings(value: unknown): LlmSettingsView | undefined {
+  if (!isRecord(value) || typeof value.longContextEnabled !== 'boolean') return undefined
+  return { longContextEnabled: value.longContextEnabled }
 }
 
 function decodeSearchSettings(value: unknown): SearchSettingsView | undefined {

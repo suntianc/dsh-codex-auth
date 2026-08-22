@@ -36,6 +36,8 @@ import {
 } from './codex-auth.ts'
 import type { CodexAuthFile } from './codex-auth.ts'
 import type { CodexAuthService } from './codex-auth-service.ts'
+import { applyCodexContextPolicy } from './codex-context.ts'
+import type { CodexLlmSettings } from './codex-context.ts'
 
 /** The provider route this adapter registers. */
 export const CODEX_ROUTE = 'openai-codex'
@@ -102,6 +104,8 @@ export interface CodexAuthAdapterOptions {
   fetchImpl: typeof fetch
   /** Selector label for the route. */
   displayName: string
+  /** Live model-capacity settings read for each catalog access. */
+  settings: () => CodexLlmSettings
   /** Streaming transport preference (`sse` by default). */
   transport: CodexAuthTransport
   /** WebSocket connect timeout in milliseconds; only used when `transport` is not `sse`. */
@@ -132,7 +136,7 @@ function harnessApiKeyAuth(name: string): ApiKeyAuth {
  * llm-pi-ai uses for a profile that names a credential on an OAuth-only
  * catalog route.
  */
-function codexProvider(displayName: string): Provider {
+function codexProvider(displayName: string, settings: () => CodexLlmSettings): Provider {
   const base = builtinProviders().find(candidate => candidate.id === CODEX_ROUTE)
   if (base === undefined) {
     throw new Error('llm-codex-auth: the installed pi-ai catalog ships no openai-codex provider')
@@ -142,7 +146,7 @@ function codexProvider(displayName: string): Provider {
     name: displayName,
     ...base.baseUrl === undefined ? {} : { baseUrl: base.baseUrl },
     auth: { ...base.auth, apiKey: harnessApiKeyAuth(displayName) },
-    getModels: () => base.getModels(),
+    getModels: () => applyCodexContextPolicy(base.getModels(), settings()),
     // Delegated rather than copied: the catalog provider stays the receiver,
     // so an implementation holding state on itself keeps working.
     stream: (model, context, options) => base.stream(model, context, options),
@@ -163,7 +167,7 @@ export class CodexAuthAdapter extends PiAiAdapter {
       streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
       maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES,
       retryPolicy: resolveRetryPolicy(undefined, `llm-codex-auth: provider "${CODEX_ROUTE}" retryPolicy`),
-      piProvider: codexProvider(options.displayName),
+      piProvider: codexProvider(options.displayName, options.settings),
       configuredMaxTokens: new Map(),
       transport: options.transport,
       websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,

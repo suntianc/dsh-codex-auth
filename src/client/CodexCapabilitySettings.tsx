@@ -1,11 +1,17 @@
-/** Unified three-card settings surface for the Codex Capability Bundle. */
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+/** Unified four-card settings surface for the Codex Capability Bundle. */
+import { useCallback, useEffect, useId, useState, useSyncExternalStore } from 'react'
 import type { ChangeEvent, ReactNode } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import { Button, IconRefreshOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, IconChevronDownOutline14, IconRefreshOutline16, StateDot,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CodexAuthRpcClient, CodexAuthStatusView, CodexUsageView } from '../rpc-contract.ts'
 import type { CodexAuthKey } from './locales.ts'
 import classes from './CodexCapabilitySettings.module.css'
+
+export interface LlmSettingsView {
+  longContextEnabled: boolean
+}
 
 export interface SearchSettingsView {
   enabled: boolean
@@ -28,6 +34,7 @@ export interface CodexCapabilitySettingsProps {
   rpc: CodexAuthRpcClient
   t: (key: CodexAuthKey) => string
   subscribe: (listener: () => void) => () => void
+  llmScope: SettingsScope<LlmSettingsView>
   searchScope: SettingsScope<SearchSettingsView>
   imageScope: SettingsScope<ImageSettingsView>
 }
@@ -39,6 +46,7 @@ export function CodexCapabilitySettings({
   rpc,
   t,
   subscribe,
+  llmScope,
   searchScope,
   imageScope,
 }: CodexCapabilitySettingsProps): ReactNode {
@@ -50,6 +58,11 @@ export function CodexCapabilitySettings({
   const [loginBusy, setLoginBusy] = useState(false)
   const [refreshBusy, setRefreshBusy] = useState(false)
   const [tick, setTick] = useState(0)
+  const [searchExpanded, setSearchExpanded] = useState(false)
+  const [imageExpanded, setImageExpanded] = useState(false)
+  const searchRegionId = useId()
+  const imageRegionId = useId()
+  const llm = useScope(llmScope)
   const search = useScope(searchScope)
   const image = useScope(imageScope)
 
@@ -126,6 +139,7 @@ export function CodexCapabilitySettings({
           <div className={classes.actions}>
             <Button
               variant="primary"
+              className={classes.compactButton}
               disabled={loginBusy || status?.available !== true}
               onClick={() => { void startLogin('browser') }}
             >
@@ -133,6 +147,7 @@ export function CodexCapabilitySettings({
             </Button>
             <Button
               variant="outline"
+              className={classes.compactButton}
               disabled={loginBusy || status?.available !== true}
               onClick={() => { void startLogin('device') }}
             >
@@ -140,7 +155,7 @@ export function CodexCapabilitySettings({
             </Button>
             <Button
               variant="ghost"
-              className={classes.refresh}
+              className={`${classes.compactButton} ${classes.refresh}`}
               icon={(
                 <span className={refreshBusy ? classes.spinIcon : classes.staticIcon}>
                   <IconRefreshOutline16 size={16} />
@@ -155,37 +170,74 @@ export function CodexCapabilitySettings({
           <p className={classes.privacyNotice}>{t('privacyNotice')}</p>
         </article>
 
+        {/* LLM Context Card */}
+        <article className={`${classes.card} ${classes.contextCard}`}>
+          <CardHeading
+            title={t('contextCardTitle')}
+            intro={t('contextCardIntro')}
+            badge={llm.value === undefined
+              ? undefined
+              : llm.value.longContextEnabled ? t('contextLongBadge') : t('contextStandardBadge')}
+            action={llm.value === undefined ? null : (
+              <Switch
+                label={t('enableLongContext')}
+                checked={llm.value.longContextEnabled}
+                disabled={!llm.writable}
+                onChange={next => { void writer(llmScope, setError, t)('longContextEnabled', next) }}
+              />
+            )}
+          />
+          <SettingsState snapshot={llm} t={t}>
+            <div className={classes.contextDetails}>
+              <p>{t('contextBehavior')}</p>
+              <p className={classes.contextWarning}>{t('contextWarning')}</p>
+            </div>
+          </SettingsState>
+        </article>
+
         {/* Web Search Card */}
-        <article className={classes.card}>
+        <article className={classes.card} data-collapsed={!searchExpanded}>
           <CardHeading
             title={t('searchCardTitle')}
             intro={t('searchCardIntro')}
             badge={status !== null && !status.configured ? t('availableAfterLogin') : undefined}
             tone={status?.configured === false ? 'warning' : 'neutral'}
-            action={search.value === undefined ? null : (
-              <Switch
-                label={t('enableSearch')}
-                checked={search.value.enabled}
-                disabled={!search.writable || searchUnavailable}
-                onChange={next => { void writer(searchScope, setError, t)('enabled', next) }}
-              />
+            action={(
+              <>
+                {search.value === undefined ? null : (
+                  <Switch
+                    label={t('enableSearch')}
+                    checked={search.value.enabled}
+                    disabled={!search.writable || searchUnavailable}
+                    onChange={next => { void writer(searchScope, setError, t)('enabled', next) }}
+                  />
+                )}
+                <DisclosureButton
+                  expanded={searchExpanded}
+                  controls={searchRegionId}
+                  label={searchExpanded ? t('collapseSearch') : t('expandSearch')}
+                  onClick={() => { setSearchExpanded(value => !value) }}
+                />
+              </>
             )}
           />
-          <SettingsState snapshot={search} t={t}>
-            {search.value === undefined ? null : (
-              <SearchControls
-                scope={searchScope}
-                snapshot={search}
-                t={t}
-                unavailable={searchUnavailable}
-                onError={setError}
-              />
-            )}
-          </SettingsState>
+          <CollapsibleRegion id={searchRegionId} expanded={searchExpanded}>
+            <SettingsState snapshot={search} t={t}>
+              {search.value === undefined ? null : (
+                <SearchControls
+                  scope={searchScope}
+                  snapshot={search}
+                  t={t}
+                  unavailable={searchUnavailable}
+                  onError={setError}
+                />
+              )}
+            </SettingsState>
+          </CollapsibleRegion>
         </article>
 
         {/* Image Creation Card */}
-        <article className={classes.card}>
+        <article className={classes.card} data-collapsed={!imageExpanded}>
           <CardHeading
             title={t('imageCardTitle')}
             intro={t('imageCardIntro')}
@@ -197,26 +249,38 @@ export function CodexCapabilitySettings({
                   ? t('unavailableFree')
                   : undefined}
             tone={!status?.configured || status.planType?.toLowerCase() === 'free' ? 'warning' : 'neutral'}
-            action={image.value === undefined ? null : (
-              <Switch
-                label={t('enableImage')}
-                checked={image.value.enabled}
-                disabled={!image.writable || imageUnavailable}
-                onChange={next => { void writer(imageScope, setError, t)('enabled', next) }}
-              />
+            action={(
+              <>
+                {image.value === undefined ? null : (
+                  <Switch
+                    label={t('enableImage')}
+                    checked={image.value.enabled}
+                    disabled={!image.writable || imageUnavailable}
+                    onChange={next => { void writer(imageScope, setError, t)('enabled', next) }}
+                  />
+                )}
+                <DisclosureButton
+                  expanded={imageExpanded}
+                  controls={imageRegionId}
+                  label={imageExpanded ? t('collapseImage') : t('expandImage')}
+                  onClick={() => { setImageExpanded(value => !value) }}
+                />
+              </>
             )}
           />
-          <SettingsState snapshot={image} t={t}>
-            {image.value === undefined ? null : (
-              <ImageControls
-                scope={imageScope}
-                snapshot={image}
-                t={t}
-                unavailable={imageUnavailable}
-                onError={setError}
-              />
-            )}
-          </SettingsState>
+          <CollapsibleRegion id={imageRegionId} expanded={imageExpanded}>
+            <SettingsState snapshot={image} t={t}>
+              {image.value === undefined ? null : (
+                <ImageControls
+                  scope={imageScope}
+                  snapshot={image}
+                  t={t}
+                  unavailable={imageUnavailable}
+                  onError={setError}
+                />
+              )}
+            </SettingsState>
+          </CollapsibleRegion>
         </article>
       </div>
 
@@ -250,6 +314,56 @@ function CardHeading({
       </div>
       {action !== undefined ? <div className={classes.cardAction}>{action}</div> : null}
     </header>
+  )
+}
+
+function DisclosureButton({
+  expanded,
+  controls,
+  label,
+  onClick,
+}: {
+  expanded: boolean
+  controls: string
+  label: string
+  onClick: () => void
+}): ReactNode {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={classes.disclosureButton}
+      aria-expanded={expanded}
+      aria-controls={controls}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
+      <span className={classes.disclosureIcon} data-expanded={expanded} aria-hidden="true">
+        <IconChevronDownOutline14 size={14} />
+      </span>
+    </Button>
+  )
+}
+
+function CollapsibleRegion({
+  id,
+  expanded,
+  children,
+}: {
+  id: string
+  expanded: boolean
+  children: ReactNode
+}): ReactNode {
+  return (
+    <div
+      id={id}
+      className={classes.collapsibleRegion}
+      data-expanded={expanded}
+      aria-hidden={!expanded}
+    >
+      <div className={classes.collapsibleInner}>{children}</div>
+    </div>
   )
 }
 

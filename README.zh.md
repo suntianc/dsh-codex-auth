@@ -5,7 +5,7 @@
 
 [English](README.md) | 中文
 
-当前版本：**v0.2.2**
+当前 npm 版本：**v0.3.0**
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -15,7 +15,8 @@
 - 接入 DSH 内置 `web_search` 工具的全局 Codex 搜索提供方；
 - 通过 `generate_image` 实现持久图片生成与编辑，并提供供模型使用的 `list_images` 目录；
 - 稳健的 Codex 周用量状态；
-- 一个原生 **GPT Auth** 设置分区，内含「登录」「网页搜索」「图片创作」三张卡片。
+- 一个原生 **GPT Auth** 设置分区，内含「登录」「LLM 上下文」「网页搜索」「图片创作」
+  四张卡片；搜索与图片的详细设置可收起为紧凑卡片。
 
 > **⚠️ 非官方通道——仅限个人开发。** 私有、受账户权限控制的
 > `chatgpt.com/backend-api` 未获官方支持、可随时撤销，也可能在没有通知的情况下被限流
@@ -33,6 +34,14 @@
 - 设置页显示连接状态，以及尽力获取的周剩余额度和重置时间。固定的
   `/backend-api/wham/usage` 探测有 10 秒 Host 截止时间，并按窗口时长识别七天窗口。
 - 插件自有、仅允许 loopback 的 `/codex-auth` Connection RPC 不会向浏览器发送任何 token 值。
+
+### GPT-5.6 长上下文
+
+GPT Auth 设置在登录卡片与能力卡片之间提供实时生效、默认关闭的 **1M 上下文**开关。
+它会把 `gpt-5.6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra` 向 DSH 报告的
+上下文窗口从保守的 272,000 Token 提升到 1,000,000 Token。DSH 会据此计算 Token
+压力和压缩时机；插件不会在请求里发送用于和后端协商容量的参数。超过 272K 的请求可能
+更快消耗账户配额，后端是否支持仍取决于账户，而且启用开关不会展开 DSH 已经压缩的历史。
 
 ### 网页搜索
 
@@ -176,7 +185,7 @@ git clone https://github.com/suntianc/dsh-codex-auth.git
 cd dsh-codex-auth
 pnpm install
 pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.2.2.tgz
+dsh plugin --profile web add ./dsh-codex-auth-0.3.0.tgz
 ```
 
 ## 升级
@@ -184,11 +193,11 @@ dsh plugin --profile web add ./dsh-codex-auth-0.2.2.tgz
 先停止正在运行的 `dsh web`，再将 Web Profile 更新到当前版本：
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth@0.2.2
+dsh plugin --profile web add dsh-codex-auth@0.3.0
 dsh plugin --profile web list
 ```
 
-列表显示 `dsh-codex-auth@0.2.2` 后，重新启动 `dsh web` 并刷新浏览器。
+列表显示 `dsh-codex-auth@0.3.0` 后，重新启动 `dsh web` 并刷新浏览器。
 
 ## Host 配置
 
@@ -211,6 +220,7 @@ dsh plugin --profile web list
 | `refreshLeadMs` | `300000` | token 到期前的刷新提前量（毫秒） |
 | `codexCommand` | `codex` | 登录和版本探测使用的 CLI 命令 |
 | `displayName` | `OpenAI Codex (chatgpt)` | 模型选择器中的 provider 名称 |
+| `longContextEnabled` | `false` | GPT-5.6 实时 1M 上下文策略的基础值；GPT Auth 设置可在 `codex-llm` namespace 覆盖它 |
 | `transport` | `sse` | 流式传输方式：`sse`、`websocket` 或 `auto`（优先 WebSocket、失败回退 SSE）。默认 SSE：WebSocket 升级在常见 HTTP 代理下不稳定，且 `auto` 模式下每个新对话都要先付出连接超时才会回退 |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket 连接超时（毫秒，仅当 `transport` 不是 `sse` 时生效；`0` 表示禁用） |
 | `timeoutMs` | `120000` | 请求超时（毫秒，SSE 响应头阶段；同时作为 WebSocket 消息空闲间隔；`0` 表示禁用） |

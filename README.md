@@ -5,7 +5,7 @@
 
 English | [中文](README.zh.md)
 
-Current release: **v0.2.2**
+Current npm release: **v0.3.0**
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -16,8 +16,8 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 - durable image generation and editing through `generate_image`, plus the
   model-facing `list_images` catalog;
 - resilient weekly Codex usage status;
-- one native **GPT Auth** Settings section with Login, Web Search, and Image
-  Creation cards.
+- one native **GPT Auth** Settings section with Login, LLM Context, Web Search,
+  and Image Creation cards; detailed Search/Image controls collapse into compact rows.
 
 > **⚠️ Unofficial channel — personal development only.** The private,
 > account-gated `chatgpt.com/backend-api` surface is unsupported, revocable, and
@@ -40,6 +40,17 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
   identifies the seven-day window by duration rather than response position.
 - Sends no token value over the plugin-owned, loopback-only `/codex-auth`
   Connection RPC channel.
+
+### GPT-5.6 long context
+
+GPT Auth Settings exposes a live, default-off **1M context** switch between the
+Login and capability cards. It changes the reported context window for
+`gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-5.6-terra` from the conservative
+272,000-token default to 1,000,000 tokens. DSH uses that capacity for token
+pressure and compaction decisions; no request parameter negotiates capacity
+with the backend. Requests beyond 272K may consume account quota faster, backend
+availability remains account-dependent, and enabling the switch does not expand
+history that DSH already compacted.
 
 ### Web Search
 
@@ -200,7 +211,7 @@ git clone https://github.com/suntianc/dsh-codex-auth.git
 cd dsh-codex-auth
 pnpm install
 pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.2.2.tgz
+dsh plugin --profile web add ./dsh-codex-auth-0.3.0.tgz
 ```
 
 ## Upgrade
@@ -209,11 +220,11 @@ Stop the running `dsh web` process and update the Web profile to the current
 release:
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth@0.2.2
+dsh plugin --profile web add dsh-codex-auth@0.3.0
 dsh plugin --profile web list
 ```
 
-After the list reports `dsh-codex-auth@0.2.2`, restart `dsh web` and refresh the
+After the list reports `dsh-codex-auth@0.3.0`, restart `dsh web` and refresh the
 browser.
 
 ## Host configuration
@@ -237,6 +248,7 @@ Login State coordinator available to Search/Image without owning an LLM route:
 | `refreshLeadMs` | `300000` | Refresh lead time in milliseconds |
 | `codexCommand` | `codex` | CLI command used for login and version probing |
 | `displayName` | `OpenAI Codex (chatgpt)` | Provider label in model selectors |
+| `longContextEnabled` | `false` | Base value for the live GPT-5.6 1M context policy; GPT Auth Settings may override it in the `codex-llm` namespace |
 | `transport` | `sse` | Streaming transport: `sse`, `websocket`, or `auto` (WebSocket first with SSE fallback). SSE is the default: the WebSocket upgrade is unreliable through common HTTP proxies, and every new conversation pays the connect timeout before `auto` falls back |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket connect timeout in milliseconds (used only when `transport` is not `sse`; `0` disables it) |
 | `timeoutMs` | `120000` | Request timeout in milliseconds (SSE response-header phase; also the WebSocket message idle interval; `0` disables it) |
