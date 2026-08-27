@@ -18,7 +18,8 @@ import {
 } from '../src/codex-auth.ts'
 import type { CodexAuthFile } from '../src/codex-auth.ts'
 import {
-  CodexAuthAdapter, MAX_REQUEST_IMAGE_BYTES, resolveCodexAccessToken,
+  CodexAuthAdapter, MAX_REQUEST_IMAGE_BYTES, REQUEST_IMAGE_MAX_BYTES, REQUEST_IMAGE_PIXEL_BUDGET,
+  resolveCodexAccessToken,
 } from '../src/codex-auth-adapter.ts'
 import { CodexAuthService, type CodexAuthServiceOptions } from '../src/codex-auth-service.ts'
 import {
@@ -318,6 +319,8 @@ describe('CodexAuthAdapter route profile', () => {
       websocketConnectTimeoutMs: 3_000,
       timeoutMs: 60_000,
       maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES,
+      requestImagePixelBudget: REQUEST_IMAGE_PIXEL_BUDGET,
+      requestImageMaxBytes: REQUEST_IMAGE_MAX_BYTES,
     })
   })
 

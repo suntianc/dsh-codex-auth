@@ -64,6 +64,10 @@ const STREAM_IDLE_TIMEOUT_MS = 300_000
 
 /** rc1's default maximum encoded image payload for one pi-ai request. */
 export const MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
+/** rc1's default maximum pixel count for one normalized request image. */
+export const REQUEST_IMAGE_PIXEL_BUDGET = 2048 * 2048
+/** rc1's default maximum encoded byte length for one normalized request image. */
+export const REQUEST_IMAGE_MAX_BYTES = 1024 * 1024
 
 /**
  * Codex owns authentication in the Host-side coordinator and injects its token
@@ -166,6 +170,8 @@ export class CodexAuthAdapter extends PiAiAdapter {
       displayName: options.displayName,
       streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
       maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES,
+      requestImagePixelBudget: REQUEST_IMAGE_PIXEL_BUDGET,
+      requestImageMaxBytes: REQUEST_IMAGE_MAX_BYTES,
       retryPolicy: resolveRetryPolicy(undefined, `llm-codex-auth: provider "${CODEX_ROUTE}" retryPolicy`),
       piProvider: codexProvider(options.displayName, options.settings),
       configuredMaxTokens: new Map(),
