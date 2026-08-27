@@ -71,3 +71,15 @@ _Avoid_: Auth capability
 **Long Context Mode**:
 An explicit, default-off model policy that reports a one-million-token capacity for supported GPT-5.6 models so DSH can defer compaction. It is not a Codex Login State, request parameter, or backend entitlement.
 _Avoid_: 1M entitlement, enable backend capacity
+
+**Portable Checkpoint**:
+A provider-neutral DSH text summary that can re-establish earlier conversation context for any compatible model route. It is conversation state, not a Codex Login State or Long Context Mode policy.
+_Avoid_: Codex checkpoint, native summary
+
+**Codex Native Checkpoint**:
+Codex-owned canonical replacement state whose meaning and replay contract belong to the Codex provider protocol. It is conversation state, not authorization or reported context capacity.
+_Avoid_: Portable Checkpoint, generic DSH summary
+
+**Dual Checkpoint**:
+One compaction transaction that carries both a Portable Checkpoint and a Codex Native Checkpoint for their distinct replay roles; it does not alter Codex Login State or Long Context Mode.
+_Avoid_: two compactions, merged summary

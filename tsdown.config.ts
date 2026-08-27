@@ -7,7 +7,7 @@ const packageName = 'dsh-codex-auth'
 export default defineConfig([
   {
     name: packageName,
-    entry: ['src/index.ts', 'src/search.ts', 'src/image.ts', 'src/invariant.ts'],
+    entry: ['src/index.ts', 'src/search.ts', 'src/image.ts', 'src/compaction.ts', 'src/invariant.ts'],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

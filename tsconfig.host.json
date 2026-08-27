@@ -9,6 +9,7 @@
     "tests/rpc.spec.ts",
     "tests/search.spec.ts",
     "tests/image.spec.ts",
+    "tests/compaction.spec.ts",
     "build/**/*.ts",
     "tsdown.config.ts",
     "vitest.config.ts"

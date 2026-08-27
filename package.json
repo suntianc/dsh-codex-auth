@@ -25,7 +25,8 @@
     "chatgpt",
     "oauth",
     "web-search",
-    "image-generation"
+    "image-generation",
+    "context-compaction"
   ],
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -46,6 +47,10 @@
       "types": "./lib/types/image.d.ts",
       "default": "./lib/image.js"
     },
+    "./compaction": {
+      "types": "./lib/types/compaction.d.ts",
+      "default": "./lib/compaction.js"
+    },
     "./invariant": {
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
@@ -59,6 +64,7 @@
     "lib/types/**/*.d.ts",
     "lib/types/**/*.d.ts.map",
     "cordis.patch.yml",
+    "examples/agent-presets/codex-portable/*.yml",
     "CHANGELOG.md",
     "README.md",
     "README.zh.md",
@@ -106,6 +112,8 @@
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-client-ui-tool": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-compaction": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-compaction-basic": "0.1.1-rc.2",
     "@deepseek-ai/dsh-credentials": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-fs": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-host-apiproxy": "^0.1.1-rc.1",
@@ -114,41 +122,60 @@
     "@deepseek-ai/dsh-llm-pi-ai": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-session": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-settings": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-token-meter": "0.1.1-rc.2",
     "@deepseek-ai/dsh-tools": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-web": "^0.1.1-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1",
     "@earendil-works/pi-ai": "^0.82.1",
     "react": "^18.2.0"
   },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-compaction": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-compaction-basic": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-token-meter": {
+      "optional": true
+    }
+  },
   "dependencies": {
     "undici": "^8.10.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-api-remotes": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-atomic-write": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-attachment": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-client-connection": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-settings": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-tool": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-credentials": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-fs": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-host-apiproxy": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-llm": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-llm-pi-ai": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-session": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-settings": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-system-prompt": "0.1.1-rc.1",
-    "@deepseek-ai/dsh-tools": "^0.1.1-rc.1",
-    "@deepseek-ai/dsh-web": "^0.1.1-rc.1",
+    "@deepseek-ai/cordis-plugin-include": "^1.0.6",
+    "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
+    "@deepseek-ai/dsh-agent": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-api-remotes": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-atomic-write": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-attachment": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-runtime": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-tool": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-command-compact": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-compaction": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-compaction-basic": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-compaction-tool-result-pruner": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-credentials": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-fs": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-host-apiproxy": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-invariants": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-settings": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-token-meter": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-web": "0.1.1-rc.2",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "@earendil-works/pi-ai": "^0.82.1",
+    "@earendil-works/pi-ai": "0.82.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.31",

@@ -1,0 +1,3 @@
+name: Codex Portable Compaction (experimental)
+description: Minimal custom preset demonstrating the version-pinned Codex compaction Adapter while it remains Portable-only.
+order: 100

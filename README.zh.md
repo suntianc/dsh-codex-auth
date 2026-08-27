@@ -43,6 +43,35 @@ GPT Auth 设置在登录卡片与能力卡片之间提供实时生效、默认�
 压力和压缩时机；插件不会在请求里发送用于和后端协商容量的参数。超过 272K 的请求可能
 更快消耗账户配额，后端是否支持仍取决于账户，而且启用开关不会展开 DSH 已经压缩的历史。
 
+### 实验性 Portable Checkpoint 压缩 Adapter
+
+包额外导出 `dsh-codex-auth/compaction`，仅供用户或部署者在**自定义 Agent preset**
+中显式选择。当前第一阶段仍然只有 Portable Checkpoint：
+`CodexCompactionEngine` 继承 DSH 的 `BasicCompactionEngine`，并把摘要生成委托给它，
+因此产生的仍是相同的 provider-neutral 文本 checkpoint。它**不会**生成、持久化、请求或
+回放 Codex Native Checkpoint，也不会增加远程压缩请求。
+
+正常安装 Codex 能力包不会启用这个 Adapter。`cordis.patch.yml` 与 DSH 内置 preset
+仍然使用 stock Basic 压缩。要显式启用，可把 npm 包内最小示例的完整 `compaction`
+group 复制到自定义 preset：
+
+```text
+node_modules/dsh-codex-auth/examples/agent-presets/codex-portable/
+├── preset.yml
+└── agent.cordis.yml
+```
+
+该 group 在 `ctx.compaction` 只选择一个 `dsh-codex-auth/compaction` 行，并保留
+`@deepseek-ai/dsh-command-compact` 与
+`@deepseek-ai/dsh-compaction-tool-result-pruner`。不要在旁边再添加
+`@deepseek-ai/dsh-compaction-basic`。示例刻意不含 persona 或工具；应把这个 group
+合并进部署者维护的完整 preset，而不是用它替代 DSH 的标准能力。
+
+该实验性导出只支持 DSH / Basic compaction `0.1.1-rc.2` 与 pi-ai `0.82.1`；
+在其他版本组合上挂载会给出可操作的兼容性错误并失败。长上下文模式可以改变压力压缩的
+触发时机，但不会启用或改变该 Adapter。回滚时只需重新选择 DSH 内置 preset；已有
+Portable Checkpoint 仍是普通、provider-neutral 的会话历史。
+
 ### 网页搜索
 
 `codex-search` Host 行通过 `@deepseek-ai/dsh-web` 注册 ID 为 `codex` 的提供方。
@@ -254,6 +283,7 @@ pnpm run check
 - `lib/index.js`：认证 / LLM Host 插件；
 - `lib/search.js`：搜索 Host 插件；
 - `lib/image.js`：图片 Host 插件；
+- `lib/compaction.js`：供自定义 preset 使用的实验性 Portable 压缩 Adapter；
 - `lib/invariant.js`：invariant companion；
 - `lib/client.js`：兼容 Loader、内联 CSS Modules 的浏览器插件；
 - `lib/types/**`：类型声明。

@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added an experimental, Portable-only `dsh-codex-auth/compaction` Host Adapter and a packaged custom-preset example that retains the stock compact command and tool-result pruner.
+- Documented the Portable, Codex Native, and Dual Checkpoint vocabulary plus the custom-preset/Basic-subclass architecture decision.
+
+### Changed
+
+- Pinned the experimental compatibility set to DSH `0.1.1-rc.2` and pi-ai `0.82.1` with fail-loud runtime validation; the normal bundle patch and shipped DSH presets remain text-only.
+
 ## [0.3.1] - 2026-08-27
 
 ### Fixed

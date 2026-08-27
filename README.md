@@ -52,6 +52,40 @@ with the backend. Requests beyond 272K may consume account quota faster, backend
 availability remains account-dependent, and enabling the switch does not expand
 history that DSH already compacted.
 
+### Experimental Portable compaction Adapter
+
+The package exports `dsh-codex-auth/compaction` for an explicitly selected,
+user/deployer-authored **custom agent preset**. This first experimental slice is
+Portable-only: `CodexCompactionEngine` subclasses DSH's
+`BasicCompactionEngine`, delegates summarization to it, and creates the same
+provider-neutral text checkpoint. It does **not** generate, persist, request, or
+replay a Codex Native Checkpoint, and it adds no remote compaction request.
+
+Installing the normal Codex Capability Bundle does not activate this Adapter.
+`cordis.patch.yml` and DSH's shipped presets continue to select stock Basic
+compaction. To opt in, copy the complete `compaction` group from the packaged
+minimal example into a custom preset:
+
+```text
+node_modules/dsh-codex-auth/examples/agent-presets/codex-portable/
+├── preset.yml
+└── agent.cordis.yml
+```
+
+That group selects exactly one `dsh-codex-auth/compaction` row at
+`ctx.compaction` and retains `@deepseek-ai/dsh-command-compact` plus
+`@deepseek-ai/dsh-compaction-tool-result-pruner`. Do not add
+`@deepseek-ai/dsh-compaction-basic` beside it. The example intentionally
+contains no persona or tools; merge the group into a deployer-owned full preset
+rather than treating it as a replacement for DSH's standard capabilities.
+
+This experimental export supports exactly DSH / Basic compaction
+`0.1.1-rc.2` and pi-ai `0.82.1`; mounting it on another pair fails with an
+actionable compatibility error. Long Context Mode may change when pressure
+compaction runs, but does not activate or change this Adapter. Roll back by
+selecting a shipped DSH preset; existing Portable Checkpoints remain ordinary,
+provider-neutral conversation history.
+
 ### Web Search
 
 The `codex-search` Host row registers provider ID `codex` through
@@ -286,6 +320,7 @@ pnpm run check
 - `lib/index.js` — Auth / LLM Host plugin;
 - `lib/search.js` — Search Host plugin;
 - `lib/image.js` — Image Host plugin;
+- `lib/compaction.js` — experimental custom-preset Portable compaction Adapter;
 - `lib/invariant.js` — invariant companion;
 - `lib/client.js` — loader-compatible browser plugin with inline CSS Modules;
 - `lib/types/**` — declarations.
