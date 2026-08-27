@@ -10,6 +10,7 @@
     "tests/search.spec.ts",
     "tests/image.spec.ts",
     "tests/compaction.spec.ts",
+    "tests/native-checkpoint.spec.ts",
     "build/**/*.ts",
     "tsdown.config.ts",
     "vitest.config.ts"

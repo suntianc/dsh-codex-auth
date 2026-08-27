@@ -9,7 +9,8 @@
  * Everything provider-specific — the chatgpt.com/backend-api Responses
  * protocol, tool calls, SSE/WebSocket transports, the model catalog — is the
  * installed pi-ai `openai-codex` provider, wrapped by the harness's own
- * `PiAiAdapter`; this package only supplies the credential and the route.
+ * `PiAiAdapter`; this package supplies the credential, route, and a narrow
+ * request-scoped replay hook for already durable Native Checkpoints.
  *
  * The route streams over SSE by default: pi-ai prefers a WebSocket connection
  * (`wss://chatgpt.com/backend-api/codex/responses`) with a 15-second connect
@@ -28,6 +29,7 @@ import type { ApiKeyAuth, AuthContext, CredentialStore, Provider } from '@earend
 import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { LlmError, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import {
@@ -38,6 +40,8 @@ import type { CodexAuthFile } from './codex-auth.ts'
 import type { CodexAuthService } from './codex-auth-service.ts'
 import { applyCodexContextPolicy } from './codex-context.ts'
 import type { CodexLlmSettings } from './codex-context.ts'
+import { CodexNativeCheckpointReplay } from './native-checkpoint-replay.ts'
+import type { CodexProviderPayloadCallback } from './native-checkpoint-replay.ts'
 
 /** The provider route this adapter registers. */
 export const CODEX_ROUTE = 'openai-codex'
@@ -126,6 +130,8 @@ export interface CodexAuthAdapterOptions {
   websocketConnectTimeoutMs: number
   /** Request timeout in milliseconds (SSE response-header phase and WebSocket message idle). */
   timeoutMs: number
+  /** Existing provider payload hook composed after Native marker restoration. */
+  onPayload?: CodexProviderPayloadCallback
 }
 
 /**
@@ -146,11 +152,16 @@ function harnessApiKeyAuth(name: string): ApiKeyAuth {
 
 /**
  * The installed pi-ai catalog provider for the codex route, with the harness
- * api-key method added beside its native OAuth — the same construction
- * llm-pi-ai uses for a profile that names a credential on an OAuth-only
- * catalog route.
+ * api-key method beside native OAuth and request-scoped payload restoration
+ * composed around both stream entry points. The catalog provider remains the
+ * owner of wire conversion and transport.
  */
-function codexProvider(displayName: string, settings: () => CodexLlmSettings): Provider {
+function codexProvider(
+  displayName: string,
+  settings: () => CodexLlmSettings,
+  replay: CodexNativeCheckpointReplay,
+  configuredOnPayload?: CodexProviderPayloadCallback,
+): Provider {
   const base = builtinProviders().find(candidate => candidate.id === CODEX_ROUTE)
   if (base === undefined) {
     throw new Error('llm-codex-auth: the installed pi-ai catalog ships no openai-codex provider')
@@ -163,8 +174,42 @@ function codexProvider(displayName: string, settings: () => CodexLlmSettings): P
     getModels: () => applyCodexContextPolicy(base.getModels(), settings()),
     // Delegated rather than copied: the catalog provider stays the receiver,
     // so an implementation holding state on itself keeps working.
-    stream: (model, context, options) => base.stream(model, context, options),
-    streamSimple: (model, context, options) => base.streamSimple(model, context, options),
+    stream: (model, context, options) => base.stream(
+      model,
+      context,
+      withReplayPayload(options, configuredOnPayload, replay),
+    ),
+    streamSimple: (model, context, options) => base.streamSimple(
+      model,
+      context,
+      withReplayPayload(options, configuredOnPayload, replay),
+    ),
+  }
+}
+
+function withReplayPayload<
+  Options extends { readonly onPayload?: CodexProviderPayloadCallback } | undefined,
+>(
+  options: Options,
+  configured: CodexProviderPayloadCallback | undefined,
+  replay: CodexNativeCheckpointReplay,
+): Options {
+  const previous = composePayloadCallbacks(configured, options?.onPayload)
+  const onPayload = replay.payloadCallback(previous)
+  return (onPayload === undefined ? options : { ...options, onPayload }) as Options
+}
+
+function composePayloadCallbacks(
+  first?: CodexProviderPayloadCallback,
+  second?: CodexProviderPayloadCallback,
+): CodexProviderPayloadCallback | undefined {
+  if (first === undefined) return second
+  if (second === undefined) return first
+  return async (payload, model) => {
+    const firstResult = await first(payload, model)
+    const afterFirst = firstResult === undefined ? payload : firstResult
+    const secondResult = await second(afterFirst, model)
+    return secondResult === undefined ? afterFirst : secondResult
   }
 }
 
@@ -174,7 +219,10 @@ function codexProvider(displayName: string, settings: () => CodexLlmSettings): P
  * file per request.
  */
 export class CodexAuthAdapter extends PiAiAdapter {
+  private readonly nativeReplay: CodexNativeCheckpointReplay
+
   constructor(ctx: Context, options: CodexAuthAdapterOptions) {
+    const nativeReplay = new CodexNativeCheckpointReplay()
     const profile: CodexResolvedPiAiProviderProfile = {
       provider: CODEX_ROUTE,
       displayName: options.displayName,
@@ -183,7 +231,12 @@ export class CodexAuthAdapter extends PiAiAdapter {
       requestImagePixelBudget: REQUEST_IMAGE_PIXEL_BUDGET,
       requestImageMaxBytes: REQUEST_IMAGE_MAX_BYTES,
       retryPolicy: resolveRetryPolicy(undefined, `llm-codex-auth: provider "${CODEX_ROUTE}" retryPolicy`),
-      piProvider: codexProvider(options.displayName, options.settings),
+      piProvider: codexProvider(
+        options.displayName,
+        options.settings,
+        nativeReplay,
+        options.onPayload,
+      ),
       configuredMaxTokens: new Map(),
       transport: options.transport,
       websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
@@ -209,10 +262,28 @@ export class CodexAuthAdapter extends PiAiAdapter {
             'MISSING_CREDENTIAL',
           )
         }
+        nativeReplay.noteAccount(credential.accountId)
         return credential.accessToken
       },
       resolveAttachments: () => ctx.get('attachments'),
     })
+    this.nativeReplay = nativeReplay
+  }
+
+  override async prepareCall(
+    provider: string,
+    model: string,
+    signal?: AbortSignal,
+  ): Promise<PreparedAdapterCall> {
+    const prepared = await super.prepareCall(provider, model, signal)
+    return Object.freeze({
+      ...prepared,
+      stream: (options: GenerateOptions) => this.nativeReplay.stream(options, prepared.stream),
+    })
+  }
+
+  override stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    return this.nativeReplay.stream(options, detached => super.stream(detached))
   }
 }
 

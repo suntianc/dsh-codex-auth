@@ -133,6 +133,23 @@ try {
   }
   compaction.assertCodexCompactionCompatibility()
 
+  const checkpointExport = manifest.exports?.['./native-checkpoint']
+  if (typeof checkpointExport?.default !== 'string'
+    || typeof checkpointExport?.types !== 'string') {
+    throw new Error('package smoke: incomplete native-checkpoint export')
+  }
+  const checkpointTarget = resolve(packageRoot, checkpointExport.default)
+  await access(checkpointTarget)
+  await access(resolve(packageRoot, checkpointExport.types))
+  const checkpoint = await import(pathToFileURL(checkpointTarget).href)
+  if (checkpoint.CODEX_NATIVE_REPLAY_COMPATIBILITY?.dsh !== CODEX_COMPACTION_DSH_VERSION
+    || checkpoint.CODEX_NATIVE_REPLAY_COMPATIBILITY?.piAi !== PI_AI_VERSION
+    || typeof checkpoint.encodeCodexNativeCheckpoint !== 'function'
+    || typeof checkpoint.decodeCodexNativeCheckpoint !== 'function'
+    || checkpoint.isCodexNativeReplayRuntimeCompatible() !== true) {
+    throw new Error('package smoke: native-checkpoint export lacks its pinned codec/replay contract')
+  }
+
   const presetRoot = resolve(packageRoot, 'examples/agent-presets/codex-portable')
   await access(resolve(presetRoot, 'preset.yml'))
   const preset = await readFile(resolve(presetRoot, 'agent.cordis.yml'), 'utf8')
@@ -174,7 +191,7 @@ try {
     throw new Error('package smoke: default bundle must not activate experimental compaction')
   }
 
-  console.log(`package smoke: ${filename} exposes Host modules, Portable compaction example, client, types, and unchanged bundle activation`)
+  console.log(`package smoke: ${filename} exposes Host modules, Native replay codec, Portable compaction example, client, types, and unchanged bundle activation`)
 } finally {
   await rm(temporary, { recursive: true, force: true })
 }

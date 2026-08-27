@@ -8,8 +8,6 @@
  * @module dsh-codex-auth/compaction
  */
 
-import { readFileSync } from 'node:fs'
-import { findPackageJSON } from 'node:module'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
@@ -20,6 +18,7 @@ import type {
   TokenUsage,
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
+import { installedPackageVersion } from './package-version.ts'
 
 /** The replayed prefix accepted by Basic's protected summarization Seam. */
 interface PortableSummarizationInput {
@@ -69,27 +68,15 @@ export interface CodexCompactionRuntimeVersions {
   readonly piAi: string
 }
 
-/** Resolve one installed package version without importing a private package subpath. */
-function installedPackageVersion(specifier: string): string {
-  const packagePath = findPackageJSON(specifier, import.meta.url)
-  if (packagePath === undefined) return 'unresolved'
-  try {
-    const parsed = JSON.parse(readFileSync(packagePath, 'utf8')) as { version?: unknown }
-    return typeof parsed.version === 'string' ? parsed.version : 'unreadable'
-  } catch {
-    return 'unreadable'
-  }
-}
-
 /** Read the installed versions that own the Basic transaction and pi conversion. */
 function installedRuntimeVersions(): CodexCompactionRuntimeVersions {
   const dsh = Object.fromEntries(DSH_RUNTIME_PACKAGES.map(specifier => [
     specifier,
-    installedPackageVersion(specifier),
+    installedPackageVersion(specifier, import.meta.url),
   ])) as Record<DshRuntimePackage, string>
   return {
     dsh,
-    piAi: installedPackageVersion('@earendil-works/pi-ai'),
+    piAi: installedPackageVersion('@earendil-works/pi-ai', import.meta.url),
   }
 }
 

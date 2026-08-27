@@ -51,6 +51,10 @@
       "types": "./lib/types/compaction.d.ts",
       "default": "./lib/compaction.js"
     },
+    "./native-checkpoint": {
+      "types": "./lib/types/native-checkpoint.d.ts",
+      "default": "./lib/native-checkpoint.js"
+    },
     "./invariant": {
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"

@@ -55,11 +55,11 @@ history that DSH already compacted.
 ### Experimental Portable compaction Adapter
 
 The package exports `dsh-codex-auth/compaction` for an explicitly selected,
-user/deployer-authored **custom agent preset**. This first experimental slice is
+user/deployer-authored **custom agent preset**. The compaction backend is still
 Portable-only: `CodexCompactionEngine` subclasses DSH's
 `BasicCompactionEngine`, delegates summarization to it, and creates the same
-provider-neutral text checkpoint. It does **not** generate, persist, request, or
-replay a Codex Native Checkpoint, and it adds no remote compaction request.
+provider-neutral text checkpoint. It does **not** generate, persist, or request
+a Codex Native Checkpoint, and it adds no remote compaction request.
 
 Installing the normal Codex Capability Bundle does not activate this Adapter.
 `cordis.patch.yml` and DSH's shipped presets continue to select stock Basic
@@ -85,6 +85,34 @@ actionable compatibility error. Long Context Mode may change when pressure
 compaction runs, but does not activate or change this Adapter. Roll back by
 selecting a shipped DSH preset; existing Portable Checkpoints remain ordinary,
 provider-neutral conversation history.
+
+### Existing Codex Native Checkpoint replay
+
+Ordinary `openai-codex` inference can restore an already durable **Dual
+Checkpoint**. Before pi-ai converts DSH messages, the Host replaces each valid
+complete checkpoint message with a request-local marker. The provider payload
+hook then replaces that whole marker item at the same position with either the
+canonical Codex Native Checkpoint items or one ordinary user item containing
+the Portable Checkpoint. Native and Portable representations are never sent
+together.
+
+Native replay requires the checkpoint's schema/codec/retention generations,
+provider, exact model, hashed Codex account identity, and compatibility digest
+to match the final Responses request. Unknown, malformed, oversized (over 2
+MiB), secret-bearing, mixed, or incompatible state degrades to Portable text.
+Generated markers are Host-only and any missing, duplicate, embedded, leaked,
+or unconsumed marker fails before network I/O. The replay converter is pinned
+to DSH LLM / pi-ai Adapter `0.1.1-rc.2` and pi-ai `0.82.1`; another runtime pair
+uses Portable text instead. Long Context Mode is excluded from compatibility.
+
+The versioned, Host-only codec is exported as
+`dsh-codex-auth/native-checkpoint`. It preserves canonical text-only retained-user
+Responses items followed by one terminal opaque compaction item as lossless JSON,
+but rejects credentials, headers, raw turn state, and request-scoped metadata. DSH's compaction conversation projection displays and
+copies only the sibling Portable text; the opaque custom block is never
+conversation content. This replay slice does not create native state, send a
+remote compaction request, activate the custom compaction Adapter, or change
+`cordis.patch.yml`.
 
 ### Web Search
 
@@ -321,6 +349,7 @@ pnpm run check
 - `lib/search.js` — Search Host plugin;
 - `lib/image.js` — Image Host plugin;
 - `lib/compaction.js` — experimental custom-preset Portable compaction Adapter;
+- `lib/native-checkpoint.js` — versioned Host codec and replay compatibility contract;
 - `lib/invariant.js` — invariant companion;
 - `lib/client.js` — loader-compatible browser plugin with inline CSS Modules;
 - `lib/types/**` — declarations.

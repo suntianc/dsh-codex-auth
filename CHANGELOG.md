@@ -8,10 +8,16 @@ All notable changes to this project are documented in this file.
 
 - Added an experimental, Portable-only `dsh-codex-auth/compaction` Host Adapter and a packaged custom-preset example that retains the stock compact command and tool-result pruner.
 - Documented the Portable, Codex Native, and Dual Checkpoint vocabulary plus the custom-preset/Basic-subclass architecture decision.
+- Added the versioned `dsh-codex-auth/native-checkpoint` Host codec for lossless, bounded text-retention history ending in one opaque Responses compaction item.
 
 ### Changed
 
-- Pinned the experimental compatibility set to DSH `0.1.1-rc.2` and pi-ai `0.82.1` with fail-loud runtime validation; the normal bundle patch and shipped DSH presets remain text-only.
+- Pinned the experimental compatibility set to DSH `0.1.1-rc.2` and pi-ai `0.82.1`; the custom compaction Adapter fails loud, Native replay falls back to Portable text, and shipped presets keep creating text-only checkpoints.
+- Restored compatible durable Codex Native Checkpoints during ordinary `openai-codex` inference while preserving one exact-position Portable fallback for every incompatible or malformed candidate.
+
+### Security
+
+- Kept native state and generated replay markers Host-only; credentials, sensitive headers, request/turn metadata, unsafe JSON, oversized carriers, erased representations, and marker protocol failures are rejected before provider I/O.
 
 ## [0.3.1] - 2026-08-27
 

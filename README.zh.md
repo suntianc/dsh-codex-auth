@@ -46,10 +46,10 @@ GPT Auth 设置在登录卡片与能力卡片之间提供实时生效、默认�
 ### 实验性 Portable Checkpoint 压缩 Adapter
 
 包额外导出 `dsh-codex-auth/compaction`，仅供用户或部署者在**自定义 Agent preset**
-中显式选择。当前第一阶段仍然只有 Portable Checkpoint：
+中显式选择。压缩 backend 目前仍然只生成 Portable Checkpoint：
 `CodexCompactionEngine` 继承 DSH 的 `BasicCompactionEngine`，并把摘要生成委托给它，
-因此产生的仍是相同的 provider-neutral 文本 checkpoint。它**不会**生成、持久化、请求或
-回放 Codex Native Checkpoint，也不会增加远程压缩请求。
+因此产生的仍是相同的 provider-neutral 文本 checkpoint。它**不会**生成、持久化或请求
+Codex Native Checkpoint，也不会增加远程压缩请求。
 
 正常安装 Codex 能力包不会启用这个 Adapter。`cordis.patch.yml` 与 DSH 内置 preset
 仍然使用 stock Basic 压缩。要显式启用，可把 npm 包内最小示例的完整 `compaction`
@@ -71,6 +71,28 @@ node_modules/dsh-codex-auth/examples/agent-presets/codex-portable/
 在其他版本组合上挂载会给出可操作的兼容性错误并失败。长上下文模式可以改变压力压缩的
 触发时机，但不会启用或改变该 Adapter。回滚时只需重新选择 DSH 内置 preset；已有
 Portable Checkpoint 仍是普通、provider-neutral 的会话历史。
+
+### 回放已有的 Codex Native Checkpoint
+
+普通 `openai-codex` 推理可以恢复会话中已经持久化的 **Dual Checkpoint**。在 pi-ai
+转换 DSH 消息之前，Host 会把每条完整且有效的 checkpoint 消息替换成请求局部 marker；
+provider payload hook 再在原位置把整条 marker item 替换为 canonical Codex Native
+Checkpoint items，或替换为一条只含 Portable Checkpoint 的普通 user item。Native 与
+Portable 两种表示绝不会同时发给 provider。
+
+只有当 checkpoint 的 schema/codec/retention generation、provider、精确 model、哈希后的
+Codex account identity 与 compatibility digest 都匹配最终 Responses 请求时，才会执行
+Native 回放。未知、损坏、超过 2 MiB、含 secret、混合格式或不兼容的状态会退化为 Portable
+文本。生成的 marker 只存在于 Host；marker 缺失、重复、嵌入、泄漏或未消费时会在网络请求
+之前失败。回放 converter 精确固定在 DSH LLM / pi-ai Adapter `0.1.1-rc.2` 与 pi-ai
+`0.82.1`；其他 runtime 组合只使用 Portable 文本。Long Context Mode 不参与兼容性摘要。
+
+版本化 Host codec 通过 `dsh-codex-auth/native-checkpoint` 导出。它以 lossless JSON 保留
+canonical 的纯文本 retained-user Responses items，并要求最后恰有一个 opaque compaction item；
+credential、header、原始 turn state 与请求局部元数据都会被拒绝。
+DSH 的 compaction 会话投影只显示和复制同级 Portable 文本；opaque custom block 不会成为
+会话内容。本阶段不会创建 Native 状态、发送远程压缩请求、启用自定义 compaction Adapter，
+也不会修改 `cordis.patch.yml`。
 
 ### 网页搜索
 
@@ -284,6 +306,7 @@ pnpm run check
 - `lib/search.js`：搜索 Host 插件；
 - `lib/image.js`：图片 Host 插件；
 - `lib/compaction.js`：供自定义 preset 使用的实验性 Portable 压缩 Adapter；
+- `lib/native-checkpoint.js`：版本化 Host codec 与回放兼容性契约；
 - `lib/invariant.js`：invariant companion；
 - `lib/client.js`：兼容 Loader、内联 CSS Modules 的浏览器插件；
 - `lib/types/**`：类型声明。
