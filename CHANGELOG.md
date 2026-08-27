@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-27
+
+### Fixed
+
+- Preserved valid tool-result images in Codex requests on newer DSH releases by supplying the adapter's per-image pixel and byte limits.
+- Kept the manually constructed Codex profile source-compatible with the DSH `0.1.1-rc.1` minimum while allowing newer adapters to consume those limits.
+
 ## [0.3.0] - 2026-08-22
 
 ### Added
@@ -75,7 +82,8 @@ All notable changes to this project are documented in this file.
 
 - DSH `0.1.0-rc.6` does not expose a policy-aware binary workspace-write API, so generated images remain durable conversation attachments and workspace export is not offered.
 
-[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.1...v0.2.2

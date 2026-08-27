@@ -5,7 +5,7 @@
 
 English | [中文](README.zh.md)
 
-Current npm release: **v0.3.0**
+Current npm release: **v0.3.1**
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -211,7 +211,7 @@ git clone https://github.com/suntianc/dsh-codex-auth.git
 cd dsh-codex-auth
 pnpm install
 pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.3.0.tgz
+dsh plugin --profile web add ./dsh-codex-auth-0.3.1.tgz
 ```
 
 ## Upgrade
@@ -220,11 +220,11 @@ Stop the running `dsh web` process and update the Web profile to the current
 release:
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth@0.3.0
+dsh plugin --profile web add dsh-codex-auth@0.3.1
 dsh plugin --profile web list
 ```
 
-After the list reports `dsh-codex-auth@0.3.0`, restart `dsh web` and refresh the
+After the list reports `dsh-codex-auth@0.3.1`, restart `dsh web` and refresh the
 browser.
 
 ## Host configuration
