@@ -1,23 +1,28 @@
 /**
- * Experimental Portable Checkpoint Adapter for custom Codex agent presets.
+ * Experimental Dual Checkpoint Adapter for custom Codex agent presets.
  *
- * This first slice deliberately delegates every compaction decision and durable
- * mutation to BasicCompactionEngine. Later Native Checkpoint work deepens only
- * the protected summarization Seam without replacing the Basic lifecycle.
+ * Manual native generation deepens only BasicCompactionEngine's public manual
+ * entry and protected summarization Seam; every compaction decision and durable
+ * mutation remains owned by the inherited Basic lifecycle.
  *
  * @module dsh-codex-auth/compaction
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-token-meter'
 import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
 import type { BasicCompactionConfig } from '@deepseek-ai/dsh-compaction-basic'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   Message,
   TokenUsage,
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
+import { CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE } from './native-checkpoint.ts'
+import { codexNativeCompactionCoordinator } from './native-compaction.ts'
+import type { CodexNativeCompactionDiagnostic } from './native-compaction.ts'
 import { installedPackageVersion } from './package-version.ts'
 
 /** The replayed prefix accepted by Basic's protected summarization Seam. */
@@ -55,6 +60,9 @@ const DSH_RUNTIME_PACKAGES = [
 ] as const
 
 type DshRuntimePackage = typeof DSH_RUNTIME_PACKAGES[number]
+
+/** Conservative allowance for Basic's private framing around returned summary blocks. */
+const BASIC_FRAME_TOKEN_RESERVE = 256
 
 /** Exact runtime pair whose rc.2 framing and pi conversion behavior this Adapter uses. */
 export const CODEX_COMPACTION_COMPATIBILITY = Object.freeze({
@@ -110,9 +118,139 @@ export const inject = BasicCompactionEngine.inject
 export const Config = BasicCompactionEngine.Config
 export type Config = BasicCompactionConfig
 
+type ManualCommandId = Parameters<BasicCompactionEngine['compactNow']>[2]
+
+function currentRoutedTarget(agent: Agent): { provider: string; model: string } | undefined {
+  const latest = agent.session.requestHeader()?.config
+  if (latest !== undefined && latest.provider.length > 0 && latest.model.length > 0) {
+    return { provider: latest.provider, model: latest.model }
+  }
+  const { provider, model } = agent.options
+  if (provider === undefined || provider.length === 0
+    || model === undefined || model.length === 0) return undefined
+  return { provider, model }
+}
+
+function currentCompactionId(agent: Agent): string | undefined {
+  for (let index = agent.session.events.length - 1; index >= 0; index -= 1) {
+    const event = agent.session.events[index]
+    if (event?.type === 'compaction/start') return String(event.data.compactionId)
+  }
+  return undefined
+}
+
+function logNativeDiagnostic(
+  ctx: Context,
+  diagnostic: CodexNativeCompactionDiagnostic,
+): void {
+  const identity = [
+    diagnostic.compactionId,
+    diagnostic.trigger,
+    diagnostic.codec,
+    diagnostic.codecGeneration,
+    diagnostic.model,
+  ] as const
+  if (diagnostic.event === 'eligibility') {
+    ctx.logger.debug(
+      'codex-compaction: event=eligibility compactionId=%s trigger=%s codec=%s codecGeneration=%d model=%s eligibility=%s',
+      ...identity,
+      diagnostic.eligibility,
+    )
+    return
+  }
+  if (diagnostic.event === 'attempt') {
+    ctx.logger.debug(
+      'codex-compaction: event=attempt compactionId=%s trigger=%s codec=%s codecGeneration=%d model=%s breakerState=%s requestBytes=%d',
+      ...identity,
+      diagnostic.breakerState,
+      diagnostic.requestBytes,
+    )
+    return
+  }
+  if (diagnostic.event === 'response') {
+    const unavailable = 'unavailable'
+    const usageValues = diagnostic.usage.source !== 'unavailable'
+      ? [
+          String(diagnostic.usage.inputTokens),
+          String(diagnostic.usage.outputTokens),
+          diagnostic.usage.cacheReadTokens === undefined
+            ? unavailable
+            : String(diagnostic.usage.cacheReadTokens),
+          diagnostic.usage.cacheWriteTokens === undefined
+            ? unavailable
+            : String(diagnostic.usage.cacheWriteTokens),
+          diagnostic.usage.reasoningTokens === undefined
+            ? unavailable
+            : String(diagnostic.usage.reasoningTokens),
+        ] as const
+      : [unavailable, unavailable, unavailable, unavailable, unavailable] as const
+    ctx.logger.debug(
+      'codex-compaction: event=response compactionId=%s trigger=%s codec=%s codecGeneration=%d model=%s durationMs=%d outputItems=%d ignoredOutputItems=%d artifactBytes=%d opaqueBytes=%d usageSource=%s inputTokens=%s outputTokens=%s cacheReadTokens=%s cacheWriteTokens=%s reasoningTokens=%s',
+      ...identity,
+      diagnostic.durationMs,
+      diagnostic.outputItems,
+      diagnostic.ignoredOutputItems,
+      diagnostic.artifactBytes,
+      diagnostic.opaqueBytes,
+      diagnostic.usage.source,
+      ...usageValues,
+    )
+    return
+  }
+  if (diagnostic.event === 'candidate') {
+    ctx.logger.debug(
+      'codex-compaction: event=candidate compactionId=%s trigger=%s codec=%s codecGeneration=%d model=%s checkpointBytes=%d replayTokens=%d',
+      ...identity,
+      diagnostic.checkpointBytes,
+      diagnostic.replayTokens,
+    )
+    return
+  }
+  if (diagnostic.event === 'result') {
+    ctx.logger.debug(
+      'codex-compaction: event=result compactionId=%s trigger=%s codec=%s codecGeneration=%d model=%s result=%s',
+      ...identity,
+      diagnostic.result,
+    )
+    return
+  }
+  if (diagnostic.reason === 'auth') {
+    ctx.logger.warn(
+      'codex-compaction: event=fallback compactionId=%s trigger=%s codec=%s codecGeneration=%d model=%s breakerState=%s durationMs=%s reason=auth; run "codex login"; retaining the Portable Checkpoint',
+      ...identity,
+      diagnostic.breakerState,
+      diagnostic.durationMs === undefined ? 'unavailable' : String(diagnostic.durationMs),
+    )
+    return
+  }
+  ctx.logger.debug(
+    'codex-compaction: event=fallback compactionId=%s trigger=%s codec=%s codecGeneration=%d model=%s breakerState=%s durationMs=%s reason=%s',
+    ...identity,
+    diagnostic.breakerState,
+    diagnostic.durationMs === undefined ? 'unavailable' : String(diagnostic.durationMs),
+    diagnostic.reason,
+  )
+}
+
+function dualSummaryClearlyShrinks(
+  input: PortableSummarizationInput,
+  summary: readonly ContentBlock[],
+  estimateMessage: (message: Message) => number,
+): boolean {
+  const shadowedEstimate = input.messages.reduce(
+    (total, message) => total + estimateMessage(message),
+    0,
+  )
+  const unframedEstimate = estimateMessage(createUserMessage({
+    content: [...summary],
+    source: { kind: 'plugin', plugin: name },
+  }))
+  return unframedEstimate + BASIC_FRAME_TOKEN_RESERVE < shadowedEstimate
+}
+
 /**
- * Basic-derived Adapter reserved for future Codex Native Checkpoint behavior.
- * It is Portable-only in this slice and intentionally changes no lifecycle.
+ * Basic-derived Adapter that preserves Basic's transaction while augmenting one
+ * eligible manual Portable summary with a request-scoped Native Checkpoint.
  */
 export class CodexCompactionEngine extends BasicCompactionEngine {
   constructor(ctx: Context, config: Config = {}) {
@@ -120,12 +258,71 @@ export class CodexCompactionEngine extends BasicCompactionEngine {
     super(ctx, config)
   }
 
+  override compactNow(
+    agent: Agent,
+    signal: AbortSignal,
+    sourceCommandId?: ManualCommandId,
+  ): Promise<Awaited<ReturnType<BasicCompactionEngine['compactNow']>>> {
+    const target = currentRoutedTarget(agent)
+    const diagnosticModel = target?.model ?? 'unrouted'
+    return codexNativeCompactionCoordinator.runManual({
+      sessionId: String(agent.session.id),
+      target,
+      signal,
+      diagnostic: diagnostic => logNativeDiagnostic(this.ctx, diagnostic),
+    }, async () => {
+      try {
+        const result = await super.compactNow(agent, signal, sourceCommandId)
+        const committedNative = result?.summary.some(
+          block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+        ) ?? false
+        codexNativeCompactionCoordinator.noteResult(
+          diagnosticModel,
+          result === null
+            ? 'no-commit'
+            : committedNative ? 'dual-committed' : 'portable-committed',
+        )
+        return result
+      } catch (error) {
+        codexNativeCompactionCoordinator.noteResult(diagnosticModel, 'failed')
+        throw error
+      }
+    })
+  }
+
   protected override summarize(
     input: PortableSummarizationInput,
     agent: Agent,
     signal?: AbortSignal,
   ): Promise<PortableSummaryResult> {
-    return super.summarize(input, agent, signal)
+    const compactionId = currentCompactionId(agent)
+    if (compactionId !== undefined) {
+      codexNativeCompactionCoordinator.noteCompactionId(compactionId)
+    }
+    return codexNativeCompactionCoordinator.withPortableCapture(
+      input.messages,
+      signal,
+      async () => {
+        const portable = await super.summarize(input, agent, signal)
+        const native = await codexNativeCompactionCoordinator.createCheckpoint(
+          input.messages,
+          portable.provider,
+          portable.model,
+          signal,
+        )
+        if (native === undefined) return portable
+        const summary = [...portable.summary, native]
+        if (!dualSummaryClearlyShrinks(
+          input,
+          summary,
+          message => this.ctx.tokenMeter.estimateMessage(message),
+        )) {
+          codexNativeCompactionCoordinator.noteStrictShrink(portable.model)
+          return portable
+        }
+        return { ...portable, summary }
+      },
+    )
   }
 }
 

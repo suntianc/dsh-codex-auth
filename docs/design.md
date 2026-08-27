@@ -68,13 +68,21 @@ Login buttons continue to spawn the official `codex login` browser or device-cod
 
 ## LLM route
 
-With its default `llmEnabled: true`, the package owns exactly one `openai-codex` adapter route. An installer can set `llmEnabled: false` while retaining the shared Login State coordinator for Search and Image. `PiAiAdapter` continues to handle conversation streaming, ordinary function tools, reasoning replay, usage, cancellation, compaction, and input attachment conversion.
+With its default `llmEnabled: true`, the package owns exactly one `openai-codex` adapter route. An installer can set `llmEnabled: false` while retaining the shared Login State coordinator for Search and Image. `PiAiAdapter` continues to handle ordinary conversation streaming, function tools, reasoning replay, usage, cancellation, Portable summarization, and input attachment conversion; only the opt-in manual Native Checkpoint operation uses the dedicated transport described below.
 
 The independently live `codex-llm` settings namespace owns one narrow policy: `longContextEnabled`. Its default-off implementation wraps the generated pi-ai catalog without mutating it, replacing only the `contextWindow` of the known GPT-5.6 Luna, Sol, and Terra descriptors with 1,000,000. The adapter registration republishes its unchanged route after a settings update so model consumers refresh metadata. This changes DSH token-pressure and compaction decisions; it does not add a backend request parameter or assert account entitlement.
 
 The route defaults to SSE and exposes `sse`, `websocket`, and `auto` transport selection. `websocketConnectTimeoutMs` bounds the WebSocket handshake, while `timeoutMs` bounds the SSE response-header phase or the WebSocket message-idle interval; neither setting is presented as a whole-stream deadline, and `0` explicitly disables the corresponding timeout.
 
 Installed pi-ai `0.82.1` does not model Codex standalone search, Responses `web_search`, or image-generation result items. Search and image creation therefore do not modify or inject payloads into `PiAiAdapter`; they use dedicated capability plugins and the official Codex standalone endpoints.
+
+## Dual Checkpoint compaction
+
+The experimental `dsh-codex-auth/compaction` entry replaces Basic only inside an explicitly authored custom-preset compaction realm. Its manual entry opens a Host operation scope and immediately delegates to Basic. The protected summarization hook completes Basic's Portable call first, while the `openai-codex` provider wrapper captures the effective marker-free payload, exact model/session, already resolved credential, safe public header inputs, and existing timeout transport in that scope. Automatic and explicit-region operations never open this scope.
+
+An eligible manual prefix causes one direct v2 call to the same Codex Responses URL. The request is rebuilt from an explicit semantic allowlist, excludes generation-only fields, and appends a transient trigger. The dedicated SSE decoder requires terminal completion and exactly one opaque compaction output. Client-side retention keeps recent text-only user items under the 64,000-token estimate and appends the artifact last. The versioned credential-free block must satisfy the 2 MiB codec limit and a conservative shrink precheck before Basic atomically lands it beside Portable text.
+
+Native failures are intentionally swallowed only after Portable success; caller cancellation is rethrown. The direct operation performs no retry, does not retain turn state, and uses a process-local account/model/endpoint/codec breaker. Ordinary Codex requests stay on pi-ai, where the request-local replay module chooses exactly one Native or Portable representation for each durable Dual Checkpoint.
 
 ## Web Search
 

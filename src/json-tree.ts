@@ -1,8 +1,30 @@
 /** Shared structural validation for detached JSON-shaped Host state. */
 
+const TEXT_ENCODER = new TextEncoder()
+
 export interface PlainJsonTreeOptions {
   /** pi-ai leaves optional object properties undefined until JSON.stringify. */
   readonly allowUndefinedObjectProperties?: boolean
+}
+
+/** Narrow one value to the plain string-keyed record shape used by JSON trees. */
+export function isPlainRecord<Value>(
+  value: Value,
+): value is Value & Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value) as unknown
+  return prototype === Object.prototype || prototype === null
+}
+
+/** Measure UTF-8 bytes without relying on JavaScript code-unit length. */
+export function utf8ByteLength(value: string): number {
+  return TEXT_ENCODER.encode(value).byteLength
+}
+
+/** Measure the UTF-8 bytes of the JSON wire representation. */
+export function serializedJsonBytes(value: unknown): number {
+  const serialized = JSON.stringify(value)
+  return serialized === undefined ? 0 : utf8ByteLength(serialized)
 }
 
 /**

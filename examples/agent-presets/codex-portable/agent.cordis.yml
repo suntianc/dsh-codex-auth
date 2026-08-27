@@ -1,6 +1,7 @@
-# Minimal agent-preset example for the experimental Codex compaction Adapter.
-# It intentionally contains only the compaction realm; copy this complete group
-# into a user/deployer-authored preset that supplies the desired tools/persona.
+# Minimal agent-preset example for experimental Dual Checkpoint compaction.
+# Manual /compact is Portable-first and attempts one Codex Native Checkpoint;
+# automatic and explicit-region compaction remain Portable-only. Copy this
+# complete group into a user/deployer preset that supplies tools/persona.
 # Do not load compaction-basic beside this Adapter: ctx.compaction has one owner.
 - id: compaction
   name: cordis:group
@@ -9,7 +10,7 @@
     compaction: true
     toolResultPruner: true
   config:
-    - id: compaction-codex-portable
+    - id: compaction-codex-dual
       name: 'dsh-codex-auth/compaction'
       config:
         auto: true

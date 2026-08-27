@@ -52,14 +52,42 @@ with the backend. Requests beyond 272K may consume account quota faster, backend
 availability remains account-dependent, and enabling the switch does not expand
 history that DSH already compacted.
 
-### Experimental Portable compaction Adapter
+### Experimental Dual Checkpoint compaction Adapter
 
 The package exports `dsh-codex-auth/compaction` for an explicitly selected,
-user/deployer-authored **custom agent preset**. The compaction backend is still
-Portable-only: `CodexCompactionEngine` subclasses DSH's
-`BasicCompactionEngine`, delegates summarization to it, and creates the same
-provider-neutral text checkpoint. It does **not** generate, persist, or request
-a Codex Native Checkpoint, and it adds no remote compaction request.
+user/deployer-authored **custom agent preset**. `CodexCompactionEngine`
+subclasses DSH's `BasicCompactionEngine`. For one eligible manual `/compact`, it
+first completes Basic's normal provider-neutral Portable summary, captures that
+call's final marker-free Codex payload and already resolved Login State in
+Host-only memory, then sends one dedicated Responses v2 request ending in a
+transient `compaction_trigger`. A valid opaque result is appended beside the
+Portable summary, and Basic commits the resulting **Dual Checkpoint** in its one
+inherited transaction.
+
+Portable success always comes first. A route/model mismatch, image or empty
+prefix, unsupported payload, timeout, rate limit, HTTP/protocol error, oversized
+state, or conservative shrink failure commits the valid Portable Checkpoint
+alone. Portable failure commits no checkpoint. The native request is not
+retried. A process-local account/model/endpoint/codec breaker opens for ten
+minutes after three transient failures in five minutes, for one hour after a
+protocol failure, and for a capped `Retry-After` after HTTP 429; HTTP 401/403
+does not count; oversize-state and strict-shrink fallbacks do not count either.
+The breaker never disables ordinary inference or Portable compaction. Debug
+diagnostics contain only compaction ID, manual trigger, codec
+generation, model, eligibility/status/fallback class, breaker state, duration,
+item/byte counts, replay estimate, and usage source/counts; an authentication
+rejection recommends `codex login`. They never include prompts, tools, headers,
+tokens, canonical items, or encrypted content.
+
+Native generation is deliberately limited to manual, head-anchored current-
+surface prefixes whose Portable call uses the same exact `openai-codex` model.
+Automatic pressure/overflow compaction and `compactRegion()` remain
+Portable-only. Retained canonical user messages use the versioned 64,000-token
+estimate, the complete custom block is capped at 2 MiB, and Basic still performs
+the authoritative strict-shrink check. Manual compaction neither persists nor
+arms `x-codex-turn-state`. The extra v2 request adds latency and consumes Codex
+quota; its credential-free opaque state is still sensitive conversation data
+and is duplicated by rc.2 in the summary event and replacement message.
 
 Installing the normal Codex Capability Bundle does not activate this Adapter.
 `cordis.patch.yml` and DSH's shipped presets continue to select stock Basic
@@ -82,19 +110,20 @@ rather than treating it as a replacement for DSH's standard capabilities.
 This experimental export supports exactly DSH / Basic compaction
 `0.1.1-rc.2` and pi-ai `0.82.1`; mounting it on another pair fails with an
 actionable compatibility error. Long Context Mode may change when pressure
-compaction runs, but does not activate or change this Adapter. Roll back by
-selecting a shipped DSH preset; existing Portable Checkpoints remain ordinary,
-provider-neutral conversation history.
+compaction runs, but does not change native eligibility, retention, or replay.
+Roll back by selecting a shipped DSH preset. Existing sessions continue through
+their Portable text; no profile or conversation migration is required.
 
-### Existing Codex Native Checkpoint replay
+### Codex Native Checkpoint replay
 
-Ordinary `openai-codex` inference can restore an already durable **Dual
+Ordinary `openai-codex` inference restores a compatible durable **Dual
 Checkpoint**. Before pi-ai converts DSH messages, the Host replaces each valid
 complete checkpoint message with a request-local marker. The provider payload
 hook then replaces that whole marker item at the same position with either the
 canonical Codex Native Checkpoint items or one ordinary user item containing
 the Portable Checkpoint. Native and Portable representations are never sent
-together.
+together. Consecutive manual compaction expands an earlier compatible Native
+Checkpoint before appending the new trigger.
 
 Native replay requires the checkpoint's schema/codec/retention generations,
 provider, exact model, hashed Codex account identity, and compatibility digest
@@ -105,14 +134,16 @@ or unconsumed marker fails before network I/O. The replay converter is pinned
 to DSH LLM / pi-ai Adapter `0.1.1-rc.2` and pi-ai `0.82.1`; another runtime pair
 uses Portable text instead. Long Context Mode is excluded from compatibility.
 
-The versioned, Host-only codec is exported as
-`dsh-codex-auth/native-checkpoint`. It preserves canonical text-only retained-user
-Responses items followed by one terminal opaque compaction item as lossless JSON,
-but rejects credentials, headers, raw turn state, and request-scoped metadata. DSH's compaction conversation projection displays and
-copies only the sibling Portable text; the opaque custom block is never
-conversation content. This replay slice does not create native state, send a
-remote compaction request, activate the custom compaction Adapter, or change
-`cordis.patch.yml`.
+The versioned Host-only codec is exported as
+`dsh-codex-auth/native-checkpoint`. It preserves canonical text-only retained-
+user Responses items followed by one terminal opaque compaction item as
+lossless JSON, but rejects credentials, headers, raw turn state, and request-
+scoped metadata. DSH's conversation projection displays and copies only the
+sibling Portable text; the opaque custom block is never rendered conversation
+content. Supported foreign adapters continue with Portable text; arbitrary
+third-party adapters that reject unknown declaration-merged blocks remain an
+experimental limitation. Native creation still requires the explicit custom
+preset and does not change `cordis.patch.yml`.
 
 ### Web Search
 
@@ -348,7 +379,7 @@ pnpm run check
 - `lib/index.js` — Auth / LLM Host plugin;
 - `lib/search.js` — Search Host plugin;
 - `lib/image.js` — Image Host plugin;
-- `lib/compaction.js` — experimental custom-preset Portable compaction Adapter;
+- `lib/compaction.js` — experimental custom-preset Dual Checkpoint compaction Adapter;
 - `lib/native-checkpoint.js` — versioned Host codec and replay compatibility contract;
 - `lib/invariant.js` — invariant companion;
 - `lib/client.js` — loader-compatible browser plugin with inline CSS Modules;

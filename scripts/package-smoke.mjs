@@ -151,7 +151,10 @@ try {
   }
 
   const presetRoot = resolve(packageRoot, 'examples/agent-presets/codex-portable')
-  await access(resolve(presetRoot, 'preset.yml'))
+  const presetMetadata = await readFile(resolve(presetRoot, 'preset.yml'), 'utf8')
+  if (!presetMetadata.includes('Dual Checkpoint')) {
+    throw new Error('package smoke: custom preset does not describe Dual Checkpoint compaction')
+  }
   const preset = await readFile(resolve(presetRoot, 'agent.cordis.yml'), 'utf8')
   if ((preset.match(/name: 'dsh-codex-auth\/compaction'/gu) ?? []).length !== 1) {
     throw new Error('package smoke: custom preset must select exactly one Codex compaction Adapter')
@@ -191,7 +194,7 @@ try {
     throw new Error('package smoke: default bundle must not activate experimental compaction')
   }
 
-  console.log(`package smoke: ${filename} exposes Host modules, Native replay codec, Portable compaction example, client, types, and unchanged bundle activation`)
+  console.log(`package smoke: ${filename} exposes Host modules, Native replay codec, Dual Checkpoint example, client, types, and unchanged bundle activation`)
 } finally {
   await rm(temporary, { recursive: true, force: true })
 }

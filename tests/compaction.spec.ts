@@ -294,7 +294,7 @@ describe('Codex Portable Checkpoint Adapter', () => {
     expect(ctx.compaction).toBeInstanceOf(BasicCompactionEngine)
     expect((ctx.compaction as CodexCompactionEngine).config.auto).toBe(false)
     expect(CodexCompactionEngine.prototype.compactNow)
-      .toBe(BasicCompactionEngine.prototype.compactNow)
+      .not.toBe(BasicCompactionEngine.prototype.compactNow)
     expect(CodexCompactionEngine.prototype.compactIfNeeded)
       .toBe(BasicCompactionEngine.prototype.compactIfNeeded)
     expect(CodexCompactionEngine.prototype.compactRegion)

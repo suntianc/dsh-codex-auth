@@ -558,38 +558,56 @@ describe('Codex Native Checkpoint replay', () => {
     const payloads: unknown[] = []
     const { ctx } = mountCodexAdapter(payloads)
     const nativeBlock = encodeCodexNativeCheckpoint(compatibleCheckpoint())
-    const frame = (middle: readonly unknown[], id: string): GenerateOptions => deepFreeze({
+    const open = `${BASIC_CHECKPOINT_PREAMBLE}\n\n<compacted-summary>`
+    const close = '</compacted-summary>'
+    const frame = (
+      middle: readonly unknown[],
+      id: string,
+      firstText = open,
+      lastText = close,
+    ): GenerateOptions => deepFreeze({
       provider: 'openai-codex',
       model: MODEL,
       system: SYSTEM,
       messages: [
         createUserMessage({
           content: [
-            {
-              type: 'text',
-              text: `${BASIC_CHECKPOINT_PREAMBLE}\n\n<compacted-summary>`,
-            },
+            { type: 'text', text: firstText },
             { type: 'text', text: 'PORTABLE CHECKPOINT' },
             ...middle,
-            { type: 'text', text: '</compacted-summary>' },
+            { type: 'text', text: lastText },
           ] as Parameters<typeof createUserMessage>[0]['content'],
           source: compactCheckpointSource(CompactionId(id)),
         }),
       ],
     })
     const cases = [
-      frame([{ type: 'reasoning', text: 'unexpected mixture' }, nativeBlock], 'cmp_mixture'),
-      frame([nativeBlock, nativeBlock], 'cmp_duplicate'),
-      frame([{ type: CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE, state: '{' }], 'cmp_corrupt'),
+      {
+        options: frame([{ type: 'reasoning', text: 'unexpected mixture' }, nativeBlock], 'cmp_mixture'),
+        portableText: PORTABLE_TEXT,
+      },
+      { options: frame([nativeBlock, nativeBlock], 'cmp_duplicate'), portableText: PORTABLE_TEXT },
+      {
+        options: frame([{ type: CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE, state: '{' }], 'cmp_corrupt'),
+        portableText: PORTABLE_TEXT,
+      },
+      {
+        options: frame([nativeBlock], 'cmp_bad_open', 'corrupted opening frame'),
+        portableText: `corrupted opening framePORTABLE CHECKPOINT${close}`,
+      },
+      {
+        options: frame([nativeBlock], 'cmp_bad_close', open, 'corrupted closing frame'),
+        portableText: `${open}PORTABLE CHECKPOINTcorrupted closing frame`,
+      },
     ]
 
-    for (const options of cases) await drain(ctx.llm.stream(options))
+    for (const { options } of cases) await drain(ctx.llm.stream(options))
 
-    expect(payloads).toHaveLength(3)
-    for (const payload of payloads as Array<{ input?: unknown[] }>) {
+    expect(payloads).toHaveLength(cases.length)
+    for (const [index, payload] of (payloads as Array<{ input?: unknown[] }>).entries()) {
       expect(payload.input).toEqual([{
         role: 'user',
-        content: [{ type: 'input_text', text: PORTABLE_TEXT }],
+        content: [{ type: 'input_text', text: cases[index]!.portableText }],
       }])
       expect(JSON.stringify(payload)).not.toContain('opaque-native-state')
       expect(JSON.stringify(payload)).not.toContain('unexpected mixture')

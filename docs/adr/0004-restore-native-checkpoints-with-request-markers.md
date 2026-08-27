@@ -1,6 +1,6 @@
 # Restore Codex Native Checkpoints with Host-only request markers
 
-Status: **accepted**
+Status: **accepted** for replay; the replay-only creation state is superseded by [ADR 0005](0005-create-dual-checkpoints-inside-basic-manual-transactions.md).
 
 An already durable Dual Checkpoint is restored by the ordinary `openai-codex` Adapter, not by a second compaction engine or a DSH core content type. The package declaration-merges `codex-native-checkpoint` into `@deepseek-ai/dsh-llm`'s `ContentBlockMap` and exports its versioned Host codec from `dsh-codex-auth/native-checkpoint`. The opaque JSON carrier records exact schema, codec and retention generations; provider/model provenance; a domain-separated account hash; a canonical compatibility digest; replay estimate and optional usage facts; and provider-owned canonical text-only retained-user Responses items ending in one opaque compaction item. Only those replacement items are forward-extensible. The enclosing schema is strict, lossless, bounded to 2 MiB, and rejects credentials, headers, raw turn state, request-local metadata, and unsafe object keys.
 

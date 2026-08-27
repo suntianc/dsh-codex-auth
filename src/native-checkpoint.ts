@@ -6,7 +6,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { isPlainJsonTree } from './json-tree.ts'
+import { isPlainJsonTree, serializedJsonBytes } from './json-tree.ts'
 import { installedPackageVersion } from './package-version.ts'
 
 /** Stable declaration-merged content tag owned by this package. */
@@ -190,7 +190,7 @@ function decodeCodexNativeCheckpointUnchecked(
     || typeof block.state !== 'string') {
     return { ok: false, reason: 'invalid content block' }
   }
-  if (serializedBytes({
+  if (serializedJsonBytes({
     type: CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
     state: block.state,
   }) > MAX_CODEX_NATIVE_CHECKPOINT_BYTES) {
@@ -391,10 +391,6 @@ function containsForbiddenMaterial(value: unknown): boolean {
       || containsForbiddenMaterial(nested)) return true
   }
   return false
-}
-
-function serializedBytes(value: unknown): number {
-  return new TextEncoder().encode(JSON.stringify(value)).byteLength
 }
 
 function installedNativeReplayVersions(): CodexNativeReplayRuntimeVersions {

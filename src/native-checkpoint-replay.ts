@@ -6,7 +6,7 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { StreamOptions } from '@earendil-works/pi-ai'
 import { freezeMessage } from '@deepseek-ai/dsh-llm'
@@ -31,9 +31,10 @@ import type {
 import { isPlainJsonTree } from './json-tree.ts'
 
 const CODEX_ROUTE = 'openai-codex'
-const BASIC_CHECKPOINT_OPEN = 'This is an automatically generated checkpoint condensing an earlier span of the conversation to free up context. Treat the captured context as established background and build on it without restating it. Continue the task directly from the messages that follow, without acknowledging this checkpoint.\n\n<compacted-summary>'
-const BASIC_CHECKPOINT_CLOSE = '</compacted-summary>'
 const MARKER_PREFIX = '[[dsh-codex-native-checkpoint:'
+/** Pinned rc.2 Basic frame digests; source text remains owned by Basic. */
+const BASIC_CHECKPOINT_OPEN_SHA256 = '7986ebcdf3457b678a1d08a59d9ec746ade700b5a5cb036c72284169103aca2d'
+const BASIC_CHECKPOINT_CLOSE_SHA256 = '396eac8b7d03e4f0b95511caeeb28c11c88c7e09d2e0d2fabe9c01f7d8e357a5'
 
 type PayloadCallback = NonNullable<StreamOptions['onPayload']>
 
@@ -278,6 +279,10 @@ function textOnlyMessage(message: Message): Message & { readonly role: 'user' } 
   return freezeMessage({ ...message, content }) as Message & { readonly role: 'user' }
 }
 
+function sha256Text(text: string): string {
+  return createHash('sha256').update(text).digest('hex')
+}
+
 function isCompleteBasicCheckpoint(message: Message): boolean {
   const source = message.source
   const sourceRecord = source as unknown as Record<string, unknown>
@@ -292,9 +297,9 @@ function isCompleteBasicCheckpoint(message: Message): boolean {
   const first = message.content[0]
   const last = message.content.at(-1)
   if (first?.type !== 'text'
-    || first.text !== BASIC_CHECKPOINT_OPEN
+    || sha256Text(first.text) !== BASIC_CHECKPOINT_OPEN_SHA256
     || last?.type !== 'text'
-    || last.text !== BASIC_CHECKPOINT_CLOSE) return false
+    || sha256Text(last.text) !== BASIC_CHECKPOINT_CLOSE_SHA256) return false
   return message.content.slice(1, -1).some(
     block => block.type === 'text' && block.text.trim().length > 0,
   )

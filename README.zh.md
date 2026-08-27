@@ -43,13 +43,34 @@ GPT Auth 设置在登录卡片与能力卡片之间提供实时生效、默认�
 压力和压缩时机；插件不会在请求里发送用于和后端协商容量的参数。超过 272K 的请求可能
 更快消耗账户配额，后端是否支持仍取决于账户，而且启用开关不会展开 DSH 已经压缩的历史。
 
-### 实验性 Portable Checkpoint 压缩 Adapter
+### 实验性 Dual Checkpoint 压缩 Adapter
 
 包额外导出 `dsh-codex-auth/compaction`，仅供用户或部署者在**自定义 Agent preset**
-中显式选择。压缩 backend 目前仍然只生成 Portable Checkpoint：
-`CodexCompactionEngine` 继承 DSH 的 `BasicCompactionEngine`，并把摘要生成委托给它，
-因此产生的仍是相同的 provider-neutral 文本 checkpoint。它**不会**生成、持久化或请求
-Codex Native Checkpoint，也不会增加远程压缩请求。
+中显式选择。`CodexCompactionEngine` 继承 DSH 的 `BasicCompactionEngine`。一次符合条件的
+手动 `/compact` 会先完成 Basic 原有、provider-neutral 的 Portable 摘要；Host 随后只在内存
+中捕获该调用最终且不含 marker 的 Codex payload 与已经解析好的登录态，再发送一次末尾带
+临时 `compaction_trigger` 的独立 Responses v2 请求。若得到有效 opaque 结果，就把它追加在
+Portable 摘要旁，由 Basic 的同一个继承事务原子提交 **Dual Checkpoint**。
+
+Portable 成功永远先发生。路由或模型不一致、前缀为空或含图片、payload 不受支持、超时、
+限流、HTTP/协议错误、状态过大或保守 shrink 预检失败时，都会只提交已经有效的 Portable
+Checkpoint；Portable 失败则不提交 checkpoint。Native 请求不会重试。进程局部、按
+account/model/endpoint/codec 隔离的 circuit breaker 会在五分钟内三次 transient 失败后
+打开十分钟，在 protocol 失败后打开一小时，并按设有上限的 HTTP 429 `Retry-After` 打开；
+HTTP 401/403、oversize-state 与 strict-shrink fallback 都不计数。它不会禁用普通推理或
+Portable 压缩。Debug 诊断只包含
+compaction ID、manual trigger、codec generation、model、eligibility/status/fallback class、
+breaker state、耗时、item/byte 数、回放估算与 usage source/counts；认证被拒绝时会提示执行
+`codex login`。诊断绝不会包含 prompt、tool、header、token、canonical item 或 encrypted
+content。
+
+Native 生成刻意只支持手动、从当前 surface 头部开始的前缀，且 Portable 调用必须走同一个
+精确 `openai-codex` 模型。自动 pressure/overflow 压缩与 `compactRegion()` 仍然只产生
+Portable Checkpoint。canonical retained-user 消息使用版本化的 64,000 Token 估算预算；
+完整 custom block 上限为 2 MiB，最终仍由 Basic 执行权威 strict-shrink 校验。手动压缩既不
+持久化也不 arm `x-codex-turn-state`。额外 v2 请求会增加延迟并消耗 Codex 配额；其 opaque
+状态不含 credential，但仍是敏感会话数据，而且 rc.2 会在 summary event 与 replacement
+message 中各保存一份。
 
 正常安装 Codex 能力包不会启用这个 Adapter。`cordis.patch.yml` 与 DSH 内置 preset
 仍然使用 stock Basic 压缩。要显式启用，可把 npm 包内最小示例的完整 `compaction`
@@ -68,17 +89,18 @@ node_modules/dsh-codex-auth/examples/agent-presets/codex-portable/
 合并进部署者维护的完整 preset，而不是用它替代 DSH 的标准能力。
 
 该实验性导出只支持 DSH / Basic compaction `0.1.1-rc.2` 与 pi-ai `0.82.1`；
-在其他版本组合上挂载会给出可操作的兼容性错误并失败。长上下文模式可以改变压力压缩的
-触发时机，但不会启用或改变该 Adapter。回滚时只需重新选择 DSH 内置 preset；已有
-Portable Checkpoint 仍是普通、provider-neutral 的会话历史。
+在其他版本组合上挂载会给出可操作的兼容性错误并失败。长上下文模式可以改变 pressure
+压缩的触发时机，但不会改变 Native 资格、retention 或回放。回滚时只需重新选择 DSH 内置
+preset；已有会话仍可通过同级 Portable 文本继续，不需要迁移 profile 或会话。
 
-### 回放已有的 Codex Native Checkpoint
+### Codex Native Checkpoint 回放
 
-普通 `openai-codex` 推理可以恢复会话中已经持久化的 **Dual Checkpoint**。在 pi-ai
+普通 `openai-codex` 推理会恢复兼容且已持久化的 **Dual Checkpoint**。在 pi-ai
 转换 DSH 消息之前，Host 会把每条完整且有效的 checkpoint 消息替换成请求局部 marker；
 provider payload hook 再在原位置把整条 marker item 替换为 canonical Codex Native
 Checkpoint items，或替换为一条只含 Portable Checkpoint 的普通 user item。Native 与
-Portable 两种表示绝不会同时发给 provider。
+Portable 两种表示绝不会同时发给 provider。连续执行手动压缩时，会先把早先兼容的 Native
+Checkpoint 展开，再在末尾追加新的 trigger。
 
 只有当 checkpoint 的 schema/codec/retention generation、provider、精确 model、哈希后的
 Codex account identity 与 compatibility digest 都匹配最终 Responses 请求时，才会执行
@@ -88,11 +110,12 @@ Native 回放。未知、损坏、超过 2 MiB、含 secret、混合格式或不
 `0.82.1`；其他 runtime 组合只使用 Portable 文本。Long Context Mode 不参与兼容性摘要。
 
 版本化 Host codec 通过 `dsh-codex-auth/native-checkpoint` 导出。它以 lossless JSON 保留
-canonical 的纯文本 retained-user Responses items，并要求最后恰有一个 opaque compaction item；
-credential、header、原始 turn state 与请求局部元数据都会被拒绝。
-DSH 的 compaction 会话投影只显示和复制同级 Portable 文本；opaque custom block 不会成为
-会话内容。本阶段不会创建 Native 状态、发送远程压缩请求、启用自定义 compaction Adapter，
-也不会修改 `cordis.patch.yml`。
+canonical 的纯文本 retained-user Responses items，并要求最后恰有一个 opaque compaction
+item；credential、header、原始 turn state 与请求局部元数据都会被拒绝。DSH 的会话投影
+只显示和复制同级 Portable 文本；opaque custom block 不会渲染为会话内容。受支持的其他
+Adapter 会继续使用 Portable 文本；任意第三方 Adapter 若拒绝 declaration-merged 未知 block，
+仍属于该实验方案的限制。Native 创建仍要求显式选择自定义 preset，也不会修改
+`cordis.patch.yml`。
 
 ### 网页搜索
 
@@ -305,7 +328,7 @@ pnpm run check
 - `lib/index.js`：认证 / LLM Host 插件；
 - `lib/search.js`：搜索 Host 插件；
 - `lib/image.js`：图片 Host 插件；
-- `lib/compaction.js`：供自定义 preset 使用的实验性 Portable 压缩 Adapter；
+- `lib/compaction.js`：供自定义 preset 使用的实验性 Dual Checkpoint 压缩 Adapter；
 - `lib/native-checkpoint.js`：版本化 Host codec 与回放兼容性契约；
 - `lib/invariant.js`：invariant companion；
 - `lib/client.js`：兼容 Loader、内联 CSS Modules 的浏览器插件；

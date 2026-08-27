@@ -10,7 +10,7 @@
  * protocol, tool calls, SSE/WebSocket transports, the model catalog — is the
  * installed pi-ai `openai-codex` provider, wrapped by the harness's own
  * `PiAiAdapter`; this package supplies the credential, route, and a narrow
- * request-scoped replay hook for already durable Native Checkpoints.
+ * request-scoped replay plus Portable-call capture for Native Checkpoints.
  *
  * The route streams over SSE by default: pi-ai prefers a WebSocket connection
  * (`wss://chatgpt.com/backend-api/codex/responses`) with a 15-second connect
@@ -25,7 +25,9 @@
  */
 
 import { builtinProviders } from '@earendil-works/pi-ai/providers/all'
-import type { ApiKeyAuth, AuthContext, CredentialStore, Provider } from '@earendil-works/pi-ai'
+import type {
+  Api, ApiKeyAuth, AuthContext, CredentialStore, Model, Provider, StreamOptions,
+} from '@earendil-works/pi-ai'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { LlmError, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
@@ -42,6 +44,7 @@ import { applyCodexContextPolicy } from './codex-context.ts'
 import type { CodexLlmSettings } from './codex-context.ts'
 import { CodexNativeCheckpointReplay } from './native-checkpoint-replay.ts'
 import type { CodexProviderPayloadCallback } from './native-checkpoint-replay.ts'
+import { codexNativeCompactionCoordinator } from './native-compaction.ts'
 
 /** The provider route this adapter registers. */
 export const CODEX_ROUTE = 'openai-codex'
@@ -160,6 +163,9 @@ function codexProvider(
   displayName: string,
   settings: () => CodexLlmSettings,
   replay: CodexNativeCheckpointReplay,
+  transport: Pick<CodexAuthAdapterOptions, 'fetchImpl' | 'timeoutMs'> & {
+    readonly streamIdleTimeoutMs: number
+  },
   configuredOnPayload?: CodexProviderPayloadCallback,
 ): Provider {
   const base = builtinProviders().find(candidate => candidate.id === CODEX_ROUTE)
@@ -174,17 +180,45 @@ function codexProvider(
     getModels: () => applyCodexContextPolicy(base.getModels(), settings()),
     // Delegated rather than copied: the catalog provider stays the receiver,
     // so an implementation holding state on itself keeps working.
-    stream: (model, context, options) => base.stream(
-      model,
-      context,
-      withReplayPayload(options, configuredOnPayload, replay),
-    ),
-    streamSimple: (model, context, options) => base.streamSimple(
-      model,
-      context,
-      withReplayPayload(options, configuredOnPayload, replay),
-    ),
+    stream: (model, context, options) => {
+      noteNativeCompactionRequest(base, model, options, transport)
+      return base.stream(
+        model,
+        context,
+        withReplayPayload(options, configuredOnPayload, replay),
+      )
+    },
+    streamSimple: (model, context, options) => {
+      noteNativeCompactionRequest(base, model, options, transport)
+      return base.streamSimple(
+        model,
+        context,
+        withReplayPayload(options, configuredOnPayload, replay),
+      )
+    },
   }
+}
+
+function noteNativeCompactionRequest(
+  provider: Provider,
+  model: Model<Api>,
+  options: StreamOptions | undefined,
+  transport: Pick<CodexAuthAdapterOptions, 'fetchImpl' | 'timeoutMs'> & {
+    readonly streamIdleTimeoutMs: number
+  },
+): void {
+  const baseUrl = model.baseUrl || provider.baseUrl
+  codexNativeCompactionCoordinator.noteProviderRequest({
+    provider: provider.id,
+    model: model.id,
+    ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(options?.sessionId === undefined ? {} : { sessionId: options.sessionId }),
+    ...(options?.headers === undefined ? {} : { headers: options.headers }),
+    ...(model.headers === undefined ? {} : { modelHeaders: model.headers }),
+    fetchImpl: transport.fetchImpl,
+    timeoutMs: transport.timeoutMs,
+    streamIdleTimeoutMs: transport.streamIdleTimeoutMs,
+  })
 }
 
 function withReplayPayload<
@@ -195,7 +229,8 @@ function withReplayPayload<
   replay: CodexNativeCheckpointReplay,
 ): Options {
   const previous = composePayloadCallbacks(configured, options?.onPayload)
-  const onPayload = replay.payloadCallback(previous)
+  const restored = replay.payloadCallback(previous)
+  const onPayload = codexNativeCompactionCoordinator.payloadCallback(restored)
   return (onPayload === undefined ? options : { ...options, onPayload }) as Options
 }
 
@@ -235,6 +270,11 @@ export class CodexAuthAdapter extends PiAiAdapter {
         options.displayName,
         options.settings,
         nativeReplay,
+        {
+          fetchImpl: options.fetchImpl,
+          timeoutMs: options.timeoutMs,
+          streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+        },
         options.onPayload,
       ),
       configuredMaxTokens: new Map(),
@@ -263,6 +303,10 @@ export class CodexAuthAdapter extends PiAiAdapter {
           )
         }
         nativeReplay.noteAccount(credential.accountId)
+        codexNativeCompactionCoordinator.noteCredential(
+          credential.accessToken,
+          credential.accountId,
+        )
         return credential.accessToken
       },
       resolveAttachments: () => ctx.get('attachments'),
@@ -278,11 +322,15 @@ export class CodexAuthAdapter extends PiAiAdapter {
     const prepared = await super.prepareCall(provider, model, signal)
     return Object.freeze({
       ...prepared,
-      stream: (options: GenerateOptions) => this.nativeReplay.stream(options, prepared.stream),
+      stream: (options: GenerateOptions) => {
+        codexNativeCompactionCoordinator.notePortableCall(options)
+        return this.nativeReplay.stream(options, prepared.stream)
+      },
     })
   }
 
   override stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    codexNativeCompactionCoordinator.notePortableCall(options)
     return this.nativeReplay.stream(options, detached => super.stream(detached))
   }
 }

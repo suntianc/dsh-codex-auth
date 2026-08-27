@@ -1,6 +1,6 @@
 # Isolate experimental Codex compaction behind a custom preset
 
-Status: **accepted**
+Status: **accepted** for activation and Basic ownership; the Portable-only creation state is superseded by [ADR 0005](0005-create-dual-checkpoints-inside-basic-manual-transactions.md).
 
 The experimental Codex compaction Adapter is exported from `dsh-codex-auth/compaction` and selected only by a user/deployer-authored custom agent preset. The normal capability-bundle patch and shipped DSH presets keep `@deepseek-ai/dsh-compaction-basic`. The custom preset replaces that row, rather than accompanying it, so exactly one Adapter owns the isolated `ctx.compaction` Interface while the stock compact command and tool-result pruner remain composed around it. This explicit opt-in is necessary because the shipped compaction row is nested inside a preset group and a bundle patch cannot safely replace it.
 
