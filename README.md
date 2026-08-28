@@ -56,13 +56,15 @@ history that DSH already compacted.
 
 The package exports `dsh-codex-auth/compaction` for an explicitly selected,
 user/deployer-authored **custom agent preset**. `CodexCompactionEngine`
-subclasses DSH's `BasicCompactionEngine`. For one eligible manual `/compact`, it
-first completes Basic's normal provider-neutral Portable summary, captures that
-call's final marker-free Codex payload and already resolved Login State in
-Host-only memory, then sends one dedicated Responses v2 request ending in a
-transient `compaction_trigger`. A valid opaque result is appended beside the
-Portable summary, and Basic commits the resulting **Dual Checkpoint** in its one
-inherited transaction.
+subclasses DSH's `BasicCompactionEngine` and wraps its manual, step-pressure,
+and provider-confirmed context-overflow entries. Every path first completes
+Basic's normal provider-neutral Portable summary, captures that call's final
+marker-free Codex payload and already resolved Login State in Host-only memory,
+then sends one dedicated Responses v2 request ending in a transient
+`compaction_trigger`. A valid opaque result is appended beside the Portable
+summary, and Basic commits the resulting **Dual Checkpoint** in its one inherited
+transaction. Range selection, pruning, balanced tool pairs, retry caps, durable
+markers, surface replacement, and cancellation remain Basic-owned.
 
 Portable success always comes first. A route/model mismatch, image or empty
 prefix, unsupported payload, timeout, rate limit, HTTP/protocol error, oversized
@@ -73,21 +75,31 @@ minutes after three transient failures in five minutes, for one hour after a
 protocol failure, and for a capped `Retry-After` after HTTP 429; HTTP 401/403
 does not count; oversize-state and strict-shrink fallbacks do not count either.
 The breaker never disables ordinary inference or Portable compaction. Debug
-diagnostics contain only compaction ID, manual trigger, codec
-generation, model, eligibility/status/fallback class, breaker state, duration,
-item/byte counts, replay estimate, and usage source/counts; an authentication
-rejection recommends `codex login`. They never include prompts, tools, headers,
-tokens, canonical items, or encrypted content.
+diagnostics contain only compaction ID, trigger, codec generation, model,
+eligibility/status/fallback class, breaker state, duration, item/byte counts,
+replay estimate, and usage source/counts; an authentication rejection recommends
+`codex login`. They never include prompts, tools, headers, tokens, turn state,
+canonical items, or encrypted content.
 
-Native generation is deliberately limited to manual, head-anchored current-
-surface prefixes whose Portable call uses the same exact `openai-codex` model.
-Automatic pressure/overflow compaction and `compactRegion()` remain
-Portable-only. Retained canonical user messages use the versioned 64,000-token
-estimate, the complete custom block is capped at 2 MiB, and Basic still performs
-the authoritative strict-shrink check. Manual compaction neither persists nor
-arms `x-codex-turn-state`. The extra v2 request adds latency and consumes Codex
-quota; its credential-free opaque state is still sensitive conversation data
-and is duplicated by rc.2 in the summary event and replacement message.
+After a successful **inline automatic** native compaction, a nonempty provider
+`x-codex-turn-state` response header becomes one process-local **Codex Turn
+Continuation**. A read-only `llm/stream` waterfall observes the original
+Agent-loop request before Runtime cloning. The continuation is sent only on the
+next request with the same session, route, model, Codex account, and Adapter
+generation; it expires after 60 seconds and is erased by the first mismatching
+eligible request, cancellation/error, route replacement, or plugin disposal.
+Portable summaries, session-title/auxiliary calls, direct maintenance,
+`compactRegion()`, and manual `/compact` neither consume nor arm it. It never
+enters a Session event, checkpoint, UI state, log, error, or telemetry value.
+
+Native generation remains limited to head-anchored current-surface prefixes
+whose Portable call uses the same exact `openai-codex` model. Explicit-region
+compaction remains Portable-only. Retained canonical user messages use the
+versioned 64,000-token estimate, the complete custom block is capped at 2 MiB,
+and Basic still performs the authoritative strict-shrink check. The extra v2
+request adds latency and consumes Codex quota; its credential-free opaque state
+is still sensitive conversation data and is duplicated by rc.2 in the summary
+event and replacement message.
 
 Installing the normal Codex Capability Bundle does not activate this Adapter.
 `cordis.patch.yml` and DSH's shipped presets continue to select stock Basic
@@ -110,7 +122,8 @@ rather than treating it as a replacement for DSH's standard capabilities.
 This experimental export supports exactly DSH / Basic compaction
 `0.1.1-rc.2` and pi-ai `0.82.1`; mounting it on another pair fails with an
 actionable compatibility error. Long Context Mode may change when pressure
-compaction runs, but does not change native eligibility, retention, or replay.
+compaction runs, but does not change native eligibility, retention, replay, or
+the one-shot turn-continuation contract.
 Roll back by selecting a shipped DSH preset. Existing sessions continue through
 their Portable text; no profile or conversation migration is required.
 

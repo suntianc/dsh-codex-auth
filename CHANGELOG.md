@@ -6,18 +6,20 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- Added an experimental, Portable-only `dsh-codex-auth/compaction` Host Adapter and a packaged custom-preset example that retains the stock compact command and tool-result pruner.
+- Added an experimental, Portable-first `dsh-codex-auth/compaction` Host Adapter and a packaged custom-preset example that retains the stock compact command and tool-result pruner.
 - Documented the Portable, Codex Native, and Dual Checkpoint vocabulary plus the custom-preset/Basic-subclass architecture decision.
 - Added the versioned `dsh-codex-auth/native-checkpoint` Host codec for lossless, bounded text-retention history ending in one opaque Responses compaction item.
+- Added Portable-first Codex Native Checkpoint creation for Basic pressure and provider-confirmed context-overflow operations, plus a 60-second one-shot Codex Turn Continuation for the next matching Agent-loop request.
 
 ### Changed
 
-- Pinned the experimental compatibility set to DSH `0.1.1-rc.2` and pi-ai `0.82.1`; the custom compaction Adapter fails loud, Native replay falls back to Portable text, and shipped presets keep creating text-only checkpoints.
+- Pinned the experimental compatibility set to DSH `0.1.1-rc.2` and pi-ai `0.82.1`; the custom compaction Adapter fails loud, Native replay falls back to Portable text, and shipped presets keep using stock Basic unless a custom preset opts in.
 - Restored compatible durable Codex Native Checkpoints during ordinary `openai-codex` inference while preserving one exact-position Portable fallback for every incompatible or malformed candidate.
+- Kept Basic authoritative for automatic trigger timing, pruning, balanced selection, retry caps, durable markers, strict shrink, surface mutation, and cancellation while the custom Adapter adds only native generation and one-shot continuity.
 
 ### Security
 
-- Kept native state and generated replay markers Host-only; credentials, sensitive headers, request/turn metadata, unsafe JSON, oversized carriers, erased representations, and marker protocol failures are rejected before provider I/O.
+- Kept native state, generated replay markers, and Codex Turn Continuations Host-only; credentials, sensitive headers, raw turn state, request metadata, unsafe JSON, oversized carriers, erased representations, and marker protocol failures never enter durable, browser, log, error, or telemetry values.
 
 ## [0.3.1] - 2026-08-27
 

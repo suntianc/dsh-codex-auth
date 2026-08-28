@@ -1,6 +1,6 @@
 # Create Dual Checkpoints inside Basic manual transactions
 
-Status: **accepted**
+Status: **accepted for the manual path**; the automatic Portable-only limitation is superseded by [ADR 0006](0006-preserve-turn-continuity-during-automatic-compaction.md).
 
 The opt-in `dsh-codex-auth/compaction` Adapter creates a Codex Native Checkpoint only during `BasicCompactionEngine.compactNow()`. The override opens a Host-only manual-operation scope and then delegates the complete transaction to `super.compactNow()`. Its inherited summarization hook must finish `super.summarize()` first. Automatic pressure/overflow entry points and explicit-region compaction remain Portable-only. This keeps Basic as the sole owner of range selection, tool pairing, durable locking, stability checks, strict shrink, event ordering, surface replacement, cancellation, and manual flush.
 

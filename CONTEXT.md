@@ -83,3 +83,7 @@ _Avoid_: Portable Checkpoint, generic DSH summary
 **Dual Checkpoint**:
 One compaction transaction that carries both a Portable Checkpoint and a Codex Native Checkpoint for their distinct replay roles; it does not alter Codex Login State or Long Context Mode.
 _Avoid_: two compactions, merged summary
+
+**Codex Turn Continuation**:
+The provider-confirmed, process-local `x-codex-turn-state` handed from one successful inline automatic Native compaction to exactly the next matching Agent-loop Codex request. It expires after 60 seconds and is never a checkpoint, Session event, setting, or browser value.
+_Avoid_: persisted turn state, replay state, Native Checkpoint

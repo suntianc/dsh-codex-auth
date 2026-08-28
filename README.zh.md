@@ -46,11 +46,13 @@ GPT Auth 设置在登录卡片与能力卡片之间提供实时生效、默认�
 ### 实验性 Dual Checkpoint 压缩 Adapter
 
 包额外导出 `dsh-codex-auth/compaction`，仅供用户或部署者在**自定义 Agent preset**
-中显式选择。`CodexCompactionEngine` 继承 DSH 的 `BasicCompactionEngine`。一次符合条件的
-手动 `/compact` 会先完成 Basic 原有、provider-neutral 的 Portable 摘要；Host 随后只在内存
-中捕获该调用最终且不含 marker 的 Codex payload 与已经解析好的登录态，再发送一次末尾带
-临时 `compaction_trigger` 的独立 Responses v2 请求。若得到有效 opaque 结果，就把它追加在
-Portable 摘要旁，由 Basic 的同一个继承事务原子提交 **Dual Checkpoint**。
+中显式选择。`CodexCompactionEngine` 继承 DSH 的 `BasicCompactionEngine`，并包装手动、
+step pressure 与 provider 已确认的 context-overflow 入口。每条路径都会先完成 Basic 原有、
+provider-neutral 的 Portable 摘要；Host 随后只在内存中捕获该调用最终且不含 marker 的
+Codex payload 与已经解析好的登录态，再发送一次末尾带临时 `compaction_trigger` 的独立
+Responses v2 请求。若得到有效 opaque 结果，就把它追加在 Portable 摘要旁，由 Basic 的
+同一个继承事务原子提交 **Dual Checkpoint**。选区、pruning、tool pair 平衡、重试上限、
+持久 marker、surface replacement 与取消语义仍全部由 Basic 拥有。
 
 Portable 成功永远先发生。路由或模型不一致、前缀为空或含图片、payload 不受支持、超时、
 限流、HTTP/协议错误、状态过大或保守 shrink 预检失败时，都会只提交已经有效的 Portable
@@ -58,19 +60,25 @@ Checkpoint；Portable 失败则不提交 checkpoint。Native 请求不会重试�
 account/model/endpoint/codec 隔离的 circuit breaker 会在五分钟内三次 transient 失败后
 打开十分钟，在 protocol 失败后打开一小时，并按设有上限的 HTTP 429 `Retry-After` 打开；
 HTTP 401/403、oversize-state 与 strict-shrink fallback 都不计数。它不会禁用普通推理或
-Portable 压缩。Debug 诊断只包含
-compaction ID、manual trigger、codec generation、model、eligibility/status/fallback class、
-breaker state、耗时、item/byte 数、回放估算与 usage source/counts；认证被拒绝时会提示执行
-`codex login`。诊断绝不会包含 prompt、tool、header、token、canonical item 或 encrypted
-content。
+Portable 压缩。Debug 诊断只包含 compaction ID、trigger、codec generation、model、
+eligibility/status/fallback class、breaker state、耗时、item/byte 数、回放估算与 usage
+source/counts；认证被拒绝时会提示执行 `codex login`。诊断绝不会包含 prompt、tool、header、
+token、turn state、canonical item 或 encrypted content。
 
-Native 生成刻意只支持手动、从当前 surface 头部开始的前缀，且 Portable 调用必须走同一个
-精确 `openai-codex` 模型。自动 pressure/overflow 压缩与 `compactRegion()` 仍然只产生
-Portable Checkpoint。canonical retained-user 消息使用版本化的 64,000 Token 估算预算；
-完整 custom block 上限为 2 MiB，最终仍由 Basic 执行权威 strict-shrink 校验。手动压缩既不
-持久化也不 arm `x-codex-turn-state`。额外 v2 请求会增加延迟并消耗 Codex 配额；其 opaque
-状态不含 credential，但仍是敏感会话数据，而且 rc.2 会在 summary event 与 replacement
-message 中各保存一份。
+一次**内联自动** Native 压缩成功后，provider 响应中非空的 `x-codex-turn-state` 会成为
+进程局部的 **Codex Turn Continuation**。只读 `llm/stream` waterfall 会在 Runtime 克隆前
+观察 Agent-loop 原始请求；continuation 只会发送给 session、route、model、Codex account
+与 Adapter generation 都相同的下一次请求。它在 60 秒后过期，并在首个不匹配的 eligible
+请求、取消/错误、route replacement 或插件卸载时清除。Portable 摘要、session-title/辅助
+调用、直接 maintenance、`compactRegion()` 与手动 `/compact` 都不会消费或 arm 它；它也
+绝不会进入 Session event、checkpoint、UI state、日志、错误或 telemetry。
+
+Native 生成仍只支持从当前 surface 头部开始、且 Portable 调用使用同一个精确
+`openai-codex` 模型的前缀；显式 region 压缩仍只产生 Portable Checkpoint。canonical
+retained-user 消息使用版本化的 64,000 Token 估算预算；完整 custom block 上限为 2 MiB，
+最终仍由 Basic 执行权威 strict-shrink 校验。额外 v2 请求会增加延迟并消耗 Codex 配额；其
+opaque 状态不含 credential，但仍是敏感会话数据，而且 rc.2 会在 summary event 与
+replacement message 中各保存一份。
 
 正常安装 Codex 能力包不会启用这个 Adapter。`cordis.patch.yml` 与 DSH 内置 preset
 仍然使用 stock Basic 压缩。要显式启用，可把 npm 包内最小示例的完整 `compaction`
@@ -90,7 +98,8 @@ node_modules/dsh-codex-auth/examples/agent-presets/codex-portable/
 
 该实验性导出只支持 DSH / Basic compaction `0.1.1-rc.2` 与 pi-ai `0.82.1`；
 在其他版本组合上挂载会给出可操作的兼容性错误并失败。长上下文模式可以改变 pressure
-压缩的触发时机，但不会改变 Native 资格、retention 或回放。回滚时只需重新选择 DSH 内置
+压缩的触发时机，但不会改变 Native 资格、retention、回放或一次性 turn-continuation 契约。
+回滚时只需重新选择 DSH 内置
 preset；已有会话仍可通过同级 Portable 文本继续，不需要迁移 profile 或会话。
 
 ### Codex Native Checkpoint 回放

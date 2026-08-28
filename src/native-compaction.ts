@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { StreamOptions } from '@earendil-works/pi-ai'
+import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import {
   CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
@@ -30,6 +32,13 @@ import {
 } from './native-compaction-breaker.ts'
 import type { NativeCompactionBreakerLease } from './native-compaction-breaker.ts'
 import {
+  codexTurnStateContinuity,
+} from './codex-turn-state.ts'
+import type {
+  CodexAdapterGeneration,
+  CodexTurnStateContinuationInput,
+} from './codex-turn-state.ts'
+import {
   CODEX_NATIVE_RETENTION_TOKEN_BUDGET,
   estimateCodexJsonTokens,
   retainRecentCodexUserMessages,
@@ -47,6 +56,9 @@ import {
 } from './json-tree.ts'
 
 const CODEX_ROUTE = 'openai-codex'
+
+type NativeCompactionTrigger = 'manual' | 'pressure' | 'context-overflow'
+type AutomaticCompactionTrigger = Exclude<NativeCompactionTrigger, 'manual'>
 
 type NativeCompactionFallback =
   | 'auth'
@@ -98,7 +110,7 @@ export type CodexNativeCompactionDiagnostic = {
   readonly codecGeneration: typeof CODEX_NATIVE_CHECKPOINT_CODEC_GENERATION
   readonly compactionId: string
   readonly model: string
-  readonly trigger: 'manual'
+  readonly trigger: NativeCompactionTrigger
 } & NativeCompactionDiagnosticDetail
 
 interface RoutedTarget {
@@ -106,13 +118,21 @@ interface RoutedTarget {
   readonly model: string
 }
 
-interface ManualOperation {
+interface AutomaticBoundary {
+  readonly agent: Agent
+  readonly trigger: AutomaticCompactionTrigger
+}
+
+interface CompactionOperation {
   readonly sessionId: string
   readonly target: RoutedTarget | undefined
   readonly callerSignal: AbortSignal
   readonly diagnostic: (diagnostic: CodexNativeCompactionDiagnostic) => void
   readonly windowId: string
+  readonly trigger: NativeCompactionTrigger
+  readonly inline: boolean
   compactionId: string | undefined
+  continuation: CodexTurnStateContinuationInput | undefined
   phase: PortablePhase | undefined
 }
 
@@ -134,6 +154,7 @@ interface CapturedProviderRequest extends CodexNativeTransportRequest {
   readonly provider: string
   readonly model: string
   readonly sessionId?: string
+  readonly adapterGeneration: CodexAdapterGeneration
 }
 
 interface ProviderRequestInput {
@@ -164,13 +185,25 @@ interface NativeRequest {
 type PayloadCallback = NonNullable<StreamOptions['onPayload']>
 
 /**
- * Host-only coordinator joining one manual Basic operation to the exact Codex
- * payload and credential resolved by its successful Portable summarization.
+ * Host-only coordinator joining one inherited Basic operation to the exact
+ * Codex payload and credential resolved by its successful Portable summary.
  */
 class CodexNativeCompactionCoordinator {
-  private readonly storage = new AsyncLocalStorage<ManualOperation>()
+  private readonly storage = new AsyncLocalStorage<CompactionOperation>()
+  private readonly boundaryStorage = new AsyncLocalStorage<AutomaticBoundary>()
 
-  /** Scope only the inherited manual transaction; automatic and region calls stay Portable-only. */
+  /** Install read-only wrappers before Basic registers its automatic listeners. */
+  installAutomaticBoundaries(ctx: Context): void {
+    ctx.on('agent/pre-step', (payload, next) => this.boundaryStorage.run(
+      { agent: payload.agent, trigger: 'pressure' },
+      next,
+    ))
+    ctx.on('agent/request-error', (payload, next) => this.boundaryStorage.run(
+      { agent: payload.agent, trigger: 'context-overflow' },
+      next,
+    ))
+  }
+
   runManual<T>(
     input: {
       readonly sessionId: string
@@ -180,13 +213,63 @@ class CodexNativeCompactionCoordinator {
     },
     task: () => Promise<T>,
   ): Promise<T> {
-    const operation: ManualOperation = {
+    return this.runOperation({ ...input, trigger: 'manual', inline: false }, task)
+  }
+
+  /** Scope pressure/overflow without taking any lifecycle work away from Basic. */
+  runAutomatic<T>(
+    input: {
+      readonly agent: Agent
+      readonly trigger: AutomaticCompactionTrigger
+      readonly target: RoutedTarget | undefined
+      readonly signal: AbortSignal
+      readonly diagnostic: (diagnostic: CodexNativeCompactionDiagnostic) => void
+    },
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const boundary = this.boundaryStorage.getStore()
+    return this.runOperation({
+      sessionId: String(input.agent.session.id),
+      target: input.target,
+      signal: input.signal,
+      diagnostic: input.diagnostic,
+      trigger: input.trigger,
+      inline: boundary?.agent === input.agent && boundary.trigger === input.trigger,
+    }, task)
+  }
+
+  /** Arm only after the inherited automatic transaction reports a Dual commit. */
+  commitAutomaticContinuation(committedNative: boolean): void {
+    const operation = this.storage.getStore()
+    const continuation = operation?.continuation
+    if (operation === undefined || continuation === undefined) return
+    operation.continuation = undefined
+    if (committedNative && operation.inline && operation.trigger !== 'manual') {
+      codexTurnStateContinuity.arm(continuation)
+    }
+  }
+
+  private runOperation<T>(
+    input: {
+      readonly sessionId: string
+      readonly target: RoutedTarget | undefined
+      readonly signal: AbortSignal
+      readonly diagnostic: (diagnostic: CodexNativeCompactionDiagnostic) => void
+      readonly trigger: NativeCompactionTrigger
+      readonly inline: boolean
+    },
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const operation: CompactionOperation = {
       sessionId: input.sessionId,
       target: input.target,
       callerSignal: input.signal,
       diagnostic: input.diagnostic,
+      trigger: input.trigger,
+      inline: input.inline,
       windowId: randomUUID(),
       compactionId: undefined,
+      continuation: undefined,
       phase: undefined,
     }
     return this.storage.run(operation, async () => {
@@ -206,6 +289,7 @@ class CodexNativeCompactionCoordinator {
   noteStrictShrink(model: string): void {
     const operation = this.storage.getStore()
     if (operation === undefined) return
+    operation.continuation = undefined
     emitDiagnostic(operation, model, {
       event: 'fallback',
       breakerState: 'closed',
@@ -221,7 +305,7 @@ class CodexNativeCompactionCoordinator {
     if (operation !== undefined) emitDiagnostic(operation, model, { event: 'result', result })
   }
 
-  /** Capture only the one inherited Portable call made inside a manual operation. */
+  /** Capture the one inherited Portable call made inside the active Basic operation. */
   async withPortableCapture<T>(
     input: readonly Message[],
     signal: AbortSignal | undefined,
@@ -229,6 +313,7 @@ class CodexNativeCompactionCoordinator {
   ): Promise<T> {
     const operation = this.storage.getStore()
     if (operation === undefined) return task()
+    operation.continuation = undefined
     if (operation.phase !== undefined) {
       throw new Error('codex native compaction: nested Portable summarization is unsupported')
     }
@@ -279,10 +364,12 @@ class CodexNativeCompactionCoordinator {
   /** Retain public provider routing inputs and the existing transport policy in memory. */
   noteProviderRequest(input: ProviderRequestInput): void {
     const phase = this.storage.getStore()?.phase
-    if (phase === undefined) return
+    const adapterGeneration = codexTurnStateContinuity.currentGeneration()
+    if (phase === undefined || adapterGeneration === undefined) return
     phase.providerRequest = {
       provider: input.provider,
       model: input.model,
+      adapterGeneration,
       ...(input.baseUrl === undefined ? {} : { baseUrl: input.baseUrl }),
       ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
       publicHeaders: capturePublicHeaders(input.modelHeaders, input.headers),
@@ -454,6 +541,18 @@ class CodexNativeCompactionCoordinator {
         replayTokens: checkpoint.replay.estimatedTokens,
       })
       lease.succeed()
+      if (operation.inline
+        && operation.trigger !== 'manual'
+        && response.turnState !== undefined) {
+        operation.continuation = {
+          sessionId: operation.sessionId,
+          provider: CODEX_ROUTE,
+          model: portableModel,
+          accountHash,
+          generation: eligible.providerRequest.adapterGeneration,
+          turnState: response.turnState,
+        }
+      }
       return block
     } catch (error) {
       operationSignal.throwIfAborted()
@@ -487,7 +586,7 @@ class CodexNativeCompactionCoordinator {
 }
 
 function eligibleCapture(
-  operation: ManualOperation,
+  operation: CompactionOperation,
   phase: PortablePhase,
   portableProvider: string,
   portableModel: string,
@@ -646,7 +745,7 @@ function normalizeWirePayload(value: unknown): Record<string, JsonValue> | undef
 }
 
 function emitDiagnostic(
-  operation: ManualOperation,
+  operation: CompactionOperation,
   model: string,
   detail: NativeCompactionDiagnosticDetail,
 ): void {
@@ -656,7 +755,7 @@ function emitDiagnostic(
       codecGeneration: CODEX_NATIVE_CHECKPOINT_CODEC_GENERATION,
       compactionId: operation.compactionId ?? 'unavailable',
       model,
-      trigger: 'manual',
+      trigger: operation.trigger,
       ...detail,
     } as CodexNativeCompactionDiagnostic)
   } catch {
@@ -671,9 +770,10 @@ function clearPhase(phase: PortablePhase): void {
   phase.payload = undefined
 }
 
-function clearOperation(operation: ManualOperation): void {
+function clearOperation(operation: CompactionOperation): void {
   if (operation.phase !== undefined) clearPhase(operation.phase)
   operation.compactionId = undefined
+  operation.continuation = undefined
   operation.phase = undefined
 }
 

@@ -2,7 +2,7 @@ import { pathToFileURL } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader, { Group } from '@deepseek-ai/cordis-plugin-loader'
 import {
@@ -15,7 +15,9 @@ import {
   type CompactionResult,
 } from '@deepseek-ai/dsh-compaction'
 import LlmRuntime, {
+  CallId,
   createAssistantMessage,
+  createToolResultMessage,
   createUserMessage,
   LlmAdapter,
 } from '@deepseek-ai/dsh-llm'
@@ -116,6 +118,60 @@ function openConversation(): Session {
   const session = closedConversation()
   session.append('turn/start', { turn: 3 })
   return session
+}
+
+/** Open tool step whose call/result pair must remain together across pressure selection. */
+function toolPairConversation(): {
+  readonly assistantSeq: number
+  readonly fullResult: string
+  readonly resultSeq: number
+  readonly session: Session
+} {
+  const session = closedConversation()
+  const callId = CallId('balanced-tool-call')
+  const fullResult = `tool-result-head:${'middle-data '.repeat(2_000)}:tool-result-tail`
+  session.append('turn/start', { turn: 3 })
+  session.append('user/message', createUserMessage({
+    content: [{ type: 'text', text: 'inspect the large tool result' }],
+    source: { kind: 'user' },
+  }), { surfaceOp: 'append' })
+  session.append('step/start', { turn: 3, step: 1 })
+  const assistant = session.append('assistant/message', {
+    turn: 3,
+    step: 1,
+    message: createAssistantMessage({
+      content: [{
+        type: 'tool-call',
+        id: callId,
+        name: 'fixture_tool',
+        arguments: '{}',
+      }],
+      source: { provider: MODEL, model: MODEL },
+    }),
+  }, { surfaceOp: 'append' })
+  session.append('tool/call', {
+    turn: 3,
+    step: 1,
+    callId,
+    name: 'fixture_tool',
+    arguments: '{}',
+  })
+  const result = session.append('tool/result', {
+    turn: 3,
+    step: 1,
+    message: createToolResultMessage({
+      callId,
+      content: [{ type: 'text', text: fullResult }],
+      isError: false,
+    }),
+  }, { surfaceOp: 'append' })
+  session.append('step/end', { turn: 3, step: 1 })
+  return {
+    assistantSeq: assistant.seq,
+    fullResult,
+    resultSeq: result.seq,
+    session,
+  }
 }
 
 /** Idle Agent facade for the public manual-compaction Interface. */
@@ -296,7 +352,7 @@ describe('Codex Portable Checkpoint Adapter', () => {
     expect(CodexCompactionEngine.prototype.compactNow)
       .not.toBe(BasicCompactionEngine.prototype.compactNow)
     expect(CodexCompactionEngine.prototype.compactIfNeeded)
-      .toBe(BasicCompactionEngine.prototype.compactIfNeeded)
+      .not.toBe(BasicCompactionEngine.prototype.compactIfNeeded)
     expect(CodexCompactionEngine.prototype.compactRegion)
       .toBe(BasicCompactionEngine.prototype.compactRegion)
   })
@@ -411,6 +467,58 @@ describe('Codex Portable Checkpoint Adapter', () => {
       expect(messageText(session.deriveMessages()[0]!)).toContain('PORTABLE CHECKPOINT')
     },
   )
+
+  it('inherits pruning and retains a balanced tool call/result tail under pressure', async () => {
+    const adapter = new PortableSummaryAdapter()
+    const ctx = trackedCompactionHost()
+    ctx.llm.registerAdapter([MODEL], adapter)
+    void new ToolResultPruner(ctx, {
+      thresholdChars: 128,
+      headChars: 32,
+      tailChars: 16,
+    })
+    applyCodexCompaction(ctx, {
+      auto: true,
+      thresholdRatio: 0.0125,
+      retainTokens: 1,
+      maxTokens: 128,
+      compactionRetries: 0,
+    })
+    const { assistantSeq, fullResult, resultSeq, session } = toolPairConversation()
+    const agent = idleAgent(session)
+
+    await expect(agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 2,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] })))
+      .resolves.toEqual({ kind: 'enter', messages: [] })
+
+    const events = session.events
+    const pruneIndex = events.findIndex(event => event.type === 'compaction/prune')
+    const startIndex = events.findIndex(event => event.type === 'compaction/start')
+    expect(pruneIndex).toBeGreaterThan(-1)
+    expect(startIndex).toBeGreaterThan(pruneIndex)
+    const original = events.find(event => event.seq === resultSeq)
+    expect(JSON.stringify(original)).toContain(fullResult)
+    const replacement = events.find(event => event.type === 'tool/result'
+      && event.seq !== resultSeq
+      && event.sourceEventSeqs?.includes(resultSeq))
+    expect(JSON.stringify(replacement)).toContain('[... tool result middle pruned ...]')
+    expect(JSON.stringify(replacement)).not.toContain(fullResult)
+    const summary = events.find(event => event.type === 'compaction/summary')
+    expect(summary?.data.shadowedSeqs).not.toContain(assistantSeq)
+    expect(summary?.data.shadowedSeqs).not.toContain(replacement?.seq)
+
+    const retained = session.deriveMessages()
+    const toolCallIndex = retained.findIndex(message =>
+      message.content.some(block => block.type === 'tool-call'))
+    expect(toolCallIndex).toBeGreaterThan(-1)
+    expect(retained[toolCallIndex + 1]?.content[0]?.type).toBe('tool-result')
+    expect(JSON.stringify(retained[toolCallIndex + 1]))
+      .toContain('[... tool result middle pruned ...]')
+  })
 
   it('preserves Basic strict-shrink rejection without replacing the surface', async () => {
     const ctx = mountCodexCompaction(

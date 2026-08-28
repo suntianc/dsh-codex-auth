@@ -100,7 +100,7 @@ export function apply(ctx: Context, config: Config): void {
         + 'dsh-codex-auth and dsh-codex are mutually exclusive, so uninstall or disable one bundle',
       )
     }
-    const registration = ctx.llm.registerAdapter([CODEX_ROUTE], new CodexAuthAdapter(ctx, {
+    const adapter = new CodexAuthAdapter(ctx, {
       auth: service,
       authJsonPath,
       credentialRef: credentialReference,
@@ -111,8 +111,12 @@ export function apply(ctx: Context, config: Config): void {
       transport: config.transport,
       websocketConnectTimeoutMs: config.websocketConnectTimeoutMs,
       timeoutMs: config.timeoutMs,
-    }))
-    announceModelPolicyChange = () => { registration.replace([CODEX_ROUTE]) }
+    })
+    const registration = ctx.llm.registerAdapter([CODEX_ROUTE], adapter)
+    announceModelPolicyChange = () => {
+      adapter.replaceRouteGeneration()
+      registration.replace([CODEX_ROUTE])
+    }
   }
   installSettingsSection(ctx, CODEX_LLM_SETTINGS_NAMESPACE, CodexLlmSettingsConfig, settingsEntry, {
     setSource: source => { currentSettings = source },

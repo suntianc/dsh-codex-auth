@@ -39,6 +39,8 @@ export interface CodexNativeTransportResponse {
   readonly artifact: CodexResponsesItem
   readonly usage?: CodexNativeCheckpointUsage
   readonly ignoredOutputItems: number
+  /** Ephemeral provider continuation; never encoded, logged, or persisted. */
+  readonly turnState?: string
 }
 
 /** One no-retry v2 request using the existing Host fetch and timeout policy. */
@@ -76,7 +78,11 @@ export async function sendCodexNativeCompaction(
   signal.throwIfAborted()
   if (!response.ok) throw httpFailure(response)
   try {
-    return await decodeNativeResponse(response, signal, request.streamIdleTimeoutMs)
+    const decoded = await decodeNativeResponse(response, signal, request.streamIdleTimeoutMs)
+    const turnState = response.headers.get('x-codex-turn-state')
+    return turnState === null || turnState.length === 0
+      ? decoded
+      : { ...decoded, turnState }
   } catch (error) {
     signal.throwIfAborted()
     if (error instanceof NativeCompactionFailure) throw error

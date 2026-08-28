@@ -10,7 +10,8 @@
  * protocol, tool calls, SSE/WebSocket transports, the model catalog — is the
  * installed pi-ai `openai-codex` provider, wrapped by the harness's own
  * `PiAiAdapter`; this package supplies the credential, route, and a narrow
- * request-scoped replay plus Portable-call capture for Native Checkpoints.
+ * request-scoped replay, Portable-call capture, and one-shot automatic
+ * compaction turn continuity for Native Checkpoints.
  *
  * The route streams over SSE by default: pi-ai prefers a WebSocket connection
  * (`wss://chatgpt.com/backend-api/codex/responses`) with a 15-second connect
@@ -45,6 +46,10 @@ import type { CodexLlmSettings } from './codex-context.ts'
 import { CodexNativeCheckpointReplay } from './native-checkpoint-replay.ts'
 import type { CodexProviderPayloadCallback } from './native-checkpoint-replay.ts'
 import { codexNativeCompactionCoordinator } from './native-compaction.ts'
+import {
+  codexTurnStateContinuity,
+} from './codex-turn-state.ts'
+import type { CodexAdapterGeneration } from './codex-turn-state.ts'
 
 /** The provider route this adapter registers. */
 export const CODEX_ROUTE = 'openai-codex'
@@ -84,6 +89,10 @@ export const REQUEST_IMAGE_MAX_BYTES = 1024 * 1024
 type CodexResolvedPiAiProviderProfile = ResolvedPiAiProviderProfile & {
   requestImagePixelBudget: number
   requestImageMaxBytes: number
+}
+
+type CodexProviderTransport = Pick<CodexAuthAdapterOptions, 'fetchImpl' | 'timeoutMs'> & {
+  readonly streamIdleTimeoutMs: number
 }
 
 /**
@@ -153,6 +162,24 @@ function harnessApiKeyAuth(name: string): ApiKeyAuth {
   }
 }
 
+/** Apply one-shot continuity and both request observers before provider dispatch. */
+function prepareCodexStreamOptions<Options extends StreamOptions | undefined>(
+  provider: Provider,
+  model: Model<Api>,
+  options: Options,
+  transport: CodexProviderTransport,
+  configuredOnPayload: CodexProviderPayloadCallback | undefined,
+  replay: CodexNativeCheckpointReplay,
+): Options {
+  const continued = codexTurnStateContinuity.applyProviderOptions(
+    options,
+    provider.id,
+    model.id,
+  )
+  noteNativeCompactionRequest(provider, model, continued, transport)
+  return withReplayPayload(continued, configuredOnPayload, replay)
+}
+
 /**
  * The installed pi-ai catalog provider for the codex route, with the harness
  * api-key method beside native OAuth and request-scoped payload restoration
@@ -163,9 +190,7 @@ function codexProvider(
   displayName: string,
   settings: () => CodexLlmSettings,
   replay: CodexNativeCheckpointReplay,
-  transport: Pick<CodexAuthAdapterOptions, 'fetchImpl' | 'timeoutMs'> & {
-    readonly streamIdleTimeoutMs: number
-  },
+  transport: CodexProviderTransport,
   configuredOnPayload?: CodexProviderPayloadCallback,
 ): Provider {
   const base = builtinProviders().find(candidate => candidate.id === CODEX_ROUTE)
@@ -180,22 +205,16 @@ function codexProvider(
     getModels: () => applyCodexContextPolicy(base.getModels(), settings()),
     // Delegated rather than copied: the catalog provider stays the receiver,
     // so an implementation holding state on itself keeps working.
-    stream: (model, context, options) => {
-      noteNativeCompactionRequest(base, model, options, transport)
-      return base.stream(
-        model,
-        context,
-        withReplayPayload(options, configuredOnPayload, replay),
-      )
-    },
-    streamSimple: (model, context, options) => {
-      noteNativeCompactionRequest(base, model, options, transport)
-      return base.streamSimple(
-        model,
-        context,
-        withReplayPayload(options, configuredOnPayload, replay),
-      )
-    },
+    stream: (model, context, options) => base.stream(
+      model,
+      context,
+      prepareCodexStreamOptions(base, model, options, transport, configuredOnPayload, replay),
+    ),
+    streamSimple: (model, context, options) => base.streamSimple(
+      model,
+      context,
+      prepareCodexStreamOptions(base, model, options, transport, configuredOnPayload, replay),
+    ),
   }
 }
 
@@ -203,9 +222,7 @@ function noteNativeCompactionRequest(
   provider: Provider,
   model: Model<Api>,
   options: StreamOptions | undefined,
-  transport: Pick<CodexAuthAdapterOptions, 'fetchImpl' | 'timeoutMs'> & {
-    readonly streamIdleTimeoutMs: number
-  },
+  transport: CodexProviderTransport,
 ): void {
   const baseUrl = model.baseUrl || provider.baseUrl
   codexNativeCompactionCoordinator.noteProviderRequest({
@@ -255,6 +272,7 @@ function composePayloadCallbacks(
  */
 export class CodexAuthAdapter extends PiAiAdapter {
   private readonly nativeReplay: CodexNativeCheckpointReplay
+  private adapterGeneration: CodexAdapterGeneration
 
   constructor(ctx: Context, options: CodexAuthAdapterOptions) {
     const nativeReplay = new CodexNativeCheckpointReplay()
@@ -303,6 +321,7 @@ export class CodexAuthAdapter extends PiAiAdapter {
           )
         }
         nativeReplay.noteAccount(credential.accountId)
+        codexTurnStateContinuity.noteAccount(credential.accountId)
         codexNativeCompactionCoordinator.noteCredential(
           credential.accessToken,
           credential.accountId,
@@ -312,6 +331,20 @@ export class CodexAuthAdapter extends PiAiAdapter {
       resolveAttachments: () => ctx.get('attachments'),
     })
     this.nativeReplay = nativeReplay
+    this.adapterGeneration = codexTurnStateContinuity.createGeneration()
+    ctx.on('llm/stream', (request, next) =>
+      codexTurnStateContinuity.observeLlmStream(request, next))
+    ctx.effect(
+      () => () => codexTurnStateContinuity.retireGeneration(this.adapterGeneration),
+      'llm-codex-auth: turn-state cleanup',
+    )
+  }
+
+  /** Discard prepared continuity whenever the route registration is replaced. */
+  replaceRouteGeneration(): void {
+    const previous = this.adapterGeneration
+    this.adapterGeneration = codexTurnStateContinuity.createGeneration()
+    codexTurnStateContinuity.retireGeneration(previous)
   }
 
   override async prepareCall(
@@ -319,19 +352,26 @@ export class CodexAuthAdapter extends PiAiAdapter {
     model: string,
     signal?: AbortSignal,
   ): Promise<PreparedAdapterCall> {
+    const generation = this.adapterGeneration
     const prepared = await super.prepareCall(provider, model, signal)
     return Object.freeze({
       ...prepared,
-      stream: (options: GenerateOptions) => {
-        codexNativeCompactionCoordinator.notePortableCall(options)
-        return this.nativeReplay.stream(options, prepared.stream)
-      },
+      stream: (options: GenerateOptions) => codexTurnStateContinuity.withAdapterGeneration(
+        generation,
+        () => {
+          codexNativeCompactionCoordinator.notePortableCall(options)
+          return this.nativeReplay.stream(options, prepared.stream)
+        },
+      ),
     })
   }
 
   override stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    codexNativeCompactionCoordinator.notePortableCall(options)
-    return this.nativeReplay.stream(options, detached => super.stream(detached))
+    const generation = this.adapterGeneration
+    return codexTurnStateContinuity.withAdapterGeneration(generation, () => {
+      codexNativeCompactionCoordinator.notePortableCall(options)
+      return this.nativeReplay.stream(options, detached => super.stream(detached))
+    })
   }
 }
 

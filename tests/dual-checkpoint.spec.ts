@@ -1,13 +1,17 @@
 import { zstdDecompressSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import type { BasicCompactionConfig } from '@deepseek-ai/dsh-compaction-basic'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import LlmRuntime, {
   createAssistantMessage,
+  CONTEXT_WINDOW_EXCEEDED_CODE,
   createUserMessage,
+  deepFreeze,
+  isAgentLoopRequest,
+  markAgentLoopRequest,
 } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
@@ -63,25 +67,36 @@ function eventStreamText(events: readonly unknown[]): string {
   return `${events.map(event => `data: ${JSON.stringify(event)}`).join('\n\n')}\n\ndata: [DONE]\n\n`
 }
 
-function eventStream(events: readonly unknown[]): Response {
+function eventStream(
+  events: readonly unknown[],
+  headers: Readonly<Record<string, string>> = {},
+): Response {
   return new Response(eventStreamText(events), {
     status: 200,
-    headers: { 'content-type': 'text/event-stream' },
+    headers: { 'content-type': 'text/event-stream', ...headers },
   })
 }
 
-function delayedEventStream(events: readonly unknown[], delayMs: number): Response {
+function delayedEventStream(
+  events: readonly unknown[],
+  delayMs: number,
+  headers: Readonly<Record<string, string>> = {},
+): Response {
   const bytes = new TextEncoder().encode(eventStreamText(events))
+  let timer: ReturnType<typeof setTimeout> | undefined
   return new Response(new ReadableStream<Uint8Array>({
     start(controller) {
-      setTimeout(() => {
+      timer = setTimeout(() => {
         controller.enqueue(bytes)
         controller.close()
       }, delayMs)
     },
+    cancel() {
+      if (timer !== undefined) clearTimeout(timer)
+    },
   }), {
     status: 200,
-    headers: { 'content-type': 'text/event-stream' },
+    headers: { 'content-type': 'text/event-stream', ...headers },
   })
 }
 
@@ -168,6 +183,7 @@ function compactionResponse(
   encryptedContent = 'opaque-remote-checkpoint',
   delayMs = 0,
   withUsage = true,
+  turnState?: string,
 ): Response {
   const events = [
     {
@@ -208,7 +224,10 @@ function compactionResponse(
       },
     },
   ]
-  return delayMs > 0 ? delayedEventStream(events, delayMs) : eventStream(events)
+  const headers = turnState === undefined ? {} : { 'x-codex-turn-state': turnState }
+  return delayMs > 0
+    ? delayedEventStream(events, delayMs, headers)
+    : eventStream(events, headers)
 }
 
 interface CapturedRequest {
@@ -220,6 +239,8 @@ interface CapturedRequest {
 
 interface DualHostOptions {
   readonly accountId?: string
+  readonly credential?: CodexAuthAdapterOptions['auth']['credential']
+  readonly longContextEnabled?: boolean
   readonly nativeReply?: (attempt: number, init?: RequestInit) => Response | Promise<Response>
   readonly portableReply?: (attempt: number) => Response | Promise<Response>
   readonly onPayload?: CodexAuthAdapterOptions['onPayload']
@@ -228,7 +249,9 @@ interface DualHostOptions {
 }
 
 function mountDualCheckpointHost(options: DualHostOptions = {}): {
+  readonly adapter: CodexAuthAdapter
   readonly ctx: Context
+  readonly replaceRoute: () => void
   readonly requests: CapturedRequest[]
 } {
   const ctx = new Context()
@@ -269,29 +292,37 @@ function mountDualCheckpointHost(options: DualHostOptions = {}): {
   const accountId = options.accountId ?? ACCOUNT_ID
   const adapter = new CodexAuthAdapter(ctx, {
     auth: {
-      credential: () => Promise.resolve({
+      credential: options.credential ?? (() => Promise.resolve({
         accessToken: fakeAccessToken(accountId),
         accountId,
-      }),
+      })),
     },
     authJsonPath: '/nonexistent/auth.json',
     credentialRef: credentialRef('CODEX_CHATGPT_TOKEN'),
     refreshLeadMs: 5 * 60 * 1000,
     fetchImpl: fetchMock,
     displayName: 'OpenAI Codex (chatgpt)',
-    settings: () => ({ longContextEnabled: false }),
+    settings: () => ({ longContextEnabled: options.longContextEnabled ?? false }),
     transport: 'sse',
     websocketConnectTimeoutMs: 1_000,
     timeoutMs: options.timeoutMs ?? 5_000,
     ...(options.onPayload === undefined ? {} : { onPayload: options.onPayload }),
   })
-  ctx.llm.registerAdapter(['openai-codex'], adapter)
+  const registration = ctx.llm.registerAdapter(['openai-codex'], adapter)
   applyCodexCompaction(ctx, {
     auto: false,
     maxTokens: 128,
     ...options.compactionConfig,
   })
-  return { ctx, requests }
+  return {
+    adapter,
+    ctx,
+    replaceRoute: () => {
+      adapter.replaceRouteGeneration()
+      registration.replace(['openai-codex'])
+    },
+    requests,
+  }
 }
 
 function closedConversation(id = 'dual-checkpoint'): Session {
@@ -553,6 +584,34 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(JSON.stringify(replayBody)).not.toContain('compaction_trigger')
   })
 
+  it('never arms a manual compact turn state for a later loop request', async () => {
+    const rawTurnState = 'turn-state-manual-secret'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_manual_turn_state_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-manual-turn-state-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const session = closedConversation('dual-manual-turn-state')
+    await ctx.compaction.compactNow(idleAgent(session), new AbortController().signal)
+
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))))
+
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native', 'ordinary'])
+    expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
   it('isolates concurrent manual compactions by session', async () => {
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })
@@ -653,36 +712,895 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(durableNativeBlocks).toHaveLength(1)
   })
 
-  it('keeps automatic and explicit-region compaction Portable-only', async () => {
+  it('hands automatic pressure turn state to exactly the next matching loop request', async () => {
+    const rawTurnState = 'turn-state-pressure-secret'
     const { ctx, requests } = mountDualCheckpointHost({
-      accountId: 'acct_manual_only_fixture',
+      accountId: 'acct_pressure_continuity_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-pressure-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
     })
-    const automaticSession = openConversation('dual-automatic')
-    const automatic = await ctx.compaction.compactIfNeeded(
-      idleAgent(automaticSession),
+    const debug = vi.spyOn(ctx.logger, 'debug').mockImplementation(() => undefined)
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
+    const session = openConversation('dual-pressure-continuity')
+    const agent = idleAgent(session)
+
+    await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(session.events.slice(-4).map(event => event.type)).toEqual([
+      'compaction/start',
+      'compaction/summary',
+      'user/message',
+      'compaction/end',
+    ])
+    const checkpoint = session.deriveMessages().find(message =>
+      isCompactCheckpointSource(message.source))
+    expect(checkpoint?.content.some(
+      block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    )).toBe(true)
+
+    await drain(ctx.llm.stream({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      purpose: 'session-title',
+    }))
+    expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
+
+    const loopRequest = () => markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))
+    await drain(ctx.llm.stream(loopRequest()))
+    await drain(ctx.llm.stream(loopRequest()))
+
+    const ordinary = requests.filter(request => request.kind === 'ordinary')
+    expect(ordinary).toHaveLength(3)
+    expect(ordinary.map(request => request.headers.get('x-codex-turn-state'))).toEqual([
+      null,
+      rawTurnState,
+      null,
+    ])
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    const diagnostics = JSON.stringify([debug.mock.calls, warn.mock.calls])
+    expect(diagnostics).toContain('pressure')
+    expect(diagnostics).not.toContain(rawTurnState)
+  })
+
+  it('changes only automatic trigger timing when Long Context Mode is enabled', async () => {
+    const compactionConfig: BasicCompactionConfig = {
+      auto: true,
+      thresholdRatio: 0.05,
+      retainTokens: 32,
+      compactionRetries: 0,
+    }
+    const standard = mountDualCheckpointHost({
+      accountId: 'acct_context_policy_fixture',
+      compactionConfig,
+    })
+    const standardSession = openConversation('dual-standard-context')
+    const standardAgent = idleAgent(standardSession)
+    await agentEvents(standard.ctx, standardAgent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+    expect(standard.requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    const standardBlock = standardSession.deriveMessages().flatMap(message => message.content)
+      .find(block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+    const standardCheckpoint = decodeCodexNativeCheckpoint(standardBlock)
+    expect(standardCheckpoint.ok).toBe(true)
+    if (!standardCheckpoint.ok) throw new Error(standardCheckpoint.reason)
+    await standard.ctx.fiber.dispose()
+    context = undefined
+
+    const long = mountDualCheckpointHost({
+      accountId: 'acct_context_policy_fixture',
+      longContextEnabled: true,
+      compactionConfig,
+    })
+    const longSession = openConversation('dual-long-context')
+    const longAgent = idleAgent(longSession)
+    await agentEvents(long.ctx, longAgent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    expect(long.requests).toEqual([])
+    expect(longSession.events.some(event => event.type.startsWith('compaction/'))).toBe(false)
+
+    await agentEvents(long.ctx, longAgent).waterfall('agent/request-error', {
+      turn: 3,
+      step: 1,
+      provider: 'openai-codex',
+      failure: {
+        message: 'provider-confirmed context overflow',
+        code: CONTEXT_WINDOW_EXCEEDED_CODE,
+      },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve(undefined))
+    expect(long.requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    const longBlock = longSession.deriveMessages().flatMap(message => message.content)
+      .find(block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+    const longCheckpoint = decodeCodexNativeCheckpoint(longBlock)
+    expect(longCheckpoint.ok).toBe(true)
+    if (!longCheckpoint.ok) throw new Error(longCheckpoint.reason)
+    expect({
+      codec: longCheckpoint.checkpoint.codec,
+      retention: longCheckpoint.checkpoint.retention,
+      estimator: longCheckpoint.checkpoint.replay.estimator,
+      compatibilityDigest: longCheckpoint.checkpoint.compatibilityDigest,
+    }).toEqual({
+      codec: standardCheckpoint.checkpoint.codec,
+      retention: standardCheckpoint.checkpoint.retention,
+      estimator: standardCheckpoint.checkpoint.replay.estimator,
+      compatibilityDigest: standardCheckpoint.checkpoint.compatibilityDigest,
+    })
+  })
+
+  it('uses waterfall loop identity after Runtime clones away the process-local mark', async () => {
+    const rawTurnState = 'turn-state-cloned-request-secret'
+    const { adapter, ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_cloned_request_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-cloned-request-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-cloned-request')
+    const agent = idleAgent(session)
+    await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    let adapterSawLoopMark: boolean | undefined
+    const prepareCall = adapter.prepareCall.bind(adapter)
+    vi.spyOn(adapter, 'prepareCall').mockImplementation(async (provider, model, signal) => {
+      const prepared = await prepareCall(provider, model, signal)
+      return Object.freeze({
+        ...prepared,
+        stream: (options) => {
+          adapterSawLoopMark = isAgentLoopRequest(options)
+          return prepared.stream(options)
+        },
+      })
+    })
+    const foreignReplay = createAssistantMessage({
+      content: [{ type: 'text', text: 'foreign replay fixture' }],
+      source: {
+        provider: 'foreign-provider',
+        model: 'foreign-model',
+        replayState: { response: { id: 'foreign-response' } },
+      },
+    })
+    const original = markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: [...session.deriveMessages(), foreignReplay],
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))
+    expect(isAgentLoopRequest(original)).toBe(true)
+
+    await drain(ctx.llm.stream(original))
+
+    expect(adapterSawLoopMark).toBe(false)
+    expect(requests.at(-1)?.headers.get('x-codex-turn-state')).toBe(rawTurnState)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('keeps concurrent automatic turn-state continuations isolated by session', async () => {
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_concurrent_continuity_fixture',
+      nativeReply: (_attempt, init) => {
+        const sessionId = new Headers(init?.headers).get('session-id')!
+        return compactionResponse(
+          `opaque-${sessionId}`,
+          0,
+          true,
+          `turn-state-${sessionId}`,
+        )
+      },
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const first = openConversation('dual-continuity-first')
+    const second = openConversation('dual-continuity-second')
+    const runPressure = (session: Session) => {
+      const agent = idleAgent(session)
+      return agentEvents(ctx, agent).waterfall('agent/pre-step', {
+        messages: [],
+        turn: 3,
+        step: 1,
+        signal: new AbortController().signal,
+      }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+    }
+    await Promise.all([runPressure(first), runPressure(second)])
+
+    const loopRequest = (session: Session) => markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))
+    await drain(ctx.llm.stream(loopRequest(second)))
+    const secondRequest = requests.at(-1)!
+    await drain(ctx.llm.stream(loopRequest(first)))
+    const firstRequest = requests.at(-1)!
+    await drain(ctx.llm.stream(loopRequest(second)))
+    const secondReplay = requests.at(-1)!
+
+    expect(secondRequest.headers.get('x-codex-turn-state'))
+      .toBe(`turn-state-${second.id}`)
+    expect(firstRequest.headers.get('x-codex-turn-state'))
+      .toBe(`turn-state-${first.id}`)
+    expect(secondReplay.headers.has('x-codex-turn-state')).toBe(false)
+    expect(JSON.stringify(first.events)).not.toContain('turn-state-')
+    expect(JSON.stringify(second.events)).not.toContain('turn-state-')
+  })
+
+  it('atomically hands one continuation to one of two concurrent matching requests', async () => {
+    const rawTurnState = 'turn-state-concurrent-request-secret'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_concurrent_request_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-concurrent-request-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-concurrent-request')
+    const agent = idleAgent(session)
+    await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    const request = () => markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))
+    await Promise.all([
+      drain(ctx.llm.stream(request())),
+      drain(ctx.llm.stream(request())),
+    ])
+
+    const headers = requests.filter(captured => captured.kind === 'ordinary')
+      .map(captured => captured.headers.get('x-codex-turn-state'))
+    expect(headers).toHaveLength(2)
+    expect(headers.filter(value => value === rawTurnState)).toHaveLength(1)
+    expect(headers.filter(value => value === null)).toHaveLength(1)
+    expect(headers).not.toContain('')
+  })
+
+  it('discards automatic turn state when pressure compaction is cancelled', async () => {
+    const rawTurnState = 'turn-state-cancelled-pressure-secret'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_cancelled_pressure_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-cancelled-pressure-checkpoint',
+        50,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-cancelled-pressure')
+    const agent = idleAgent(session)
+    const controller = new AbortController()
+    const dispatched = agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: controller.signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+    setTimeout(() => controller.abort(new Error('cancelled pressure fixture')), 5)
+    await dispatched
+
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(session.events.some(event => event.type === 'compaction/summary')).toBe(false)
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))))
+    expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('erases continuation before awaiting a stalled request iterator teardown', async () => {
+    const rawTurnState = 'turn-state-stalled-teardown-secret'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_stalled_teardown_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-stalled-teardown-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-stalled-teardown')
+    const agent = idleAgent(session)
+    await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    let intercepted = false
+    let announceReturn!: () => void
+    let releaseReturn!: () => void
+    const returnStarted = new Promise<void>(resolve => { announceReturn = resolve })
+    const returnReleased = new Promise<void>(resolve => { releaseReturn = resolve })
+    ctx.on('llm/stream', (_request, next) => {
+      if (intercepted) return next()
+      intercepted = true
+      return {
+        [Symbol.asyncIterator]() {
+          return {
+            next: () => Promise.resolve({
+              done: false as const,
+              value: { type: 'block-start' as const, index: 0, blockType: 'text' as const },
+            }),
+            return: async () => {
+              announceReturn()
+              await returnReleased
+              return { done: true as const, value: undefined }
+            },
+          }
+        },
+      }
+    })
+    const interceptedStream = ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    })))[Symbol.asyncIterator]()
+    await interceptedStream.next()
+    const closing = interceptedStream.return?.()
+    await returnStarted
+
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))))
+    expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
+
+    releaseReturn()
+    await closing
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('discards armed turn state when the eligible loop request aborts before dispatch', async () => {
+    const rawTurnState = 'turn-state-aborted-request-secret'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_aborted_request_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-aborted-request-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-aborted-request')
+    const agent = idleAgent(session)
+    await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    const aborted = new AbortController()
+    aborted.abort(new Error('aborted loop fixture'))
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: aborted.signal,
+    }))))
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))))
+    expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('discards armed turn state when the eligible loop request fails authentication', async () => {
+    const rawTurnState = 'turn-state-request-error-secret'
+    const accountId = 'acct_request_error_fixture'
+    let authenticated = true
+    const { ctx, requests } = mountDualCheckpointHost({
+      credential: () => Promise.resolve(authenticated
+        ? { accessToken: fakeAccessToken(accountId), accountId }
+        : undefined),
+      nativeReply: () => compactionResponse(
+        'opaque-request-error-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-request-error')
+    const agent = idleAgent(session)
+    await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    authenticated = false
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))))
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+
+    authenticated = true
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))))
+    expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('discards turn state when pressure remains over threshold after a native commit', async () => {
+    const rawTurnState = 'turn-state-pressure-error-secret'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_pressure_error_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-pressure-error-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.01,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-pressure-error')
+    const agent = idleAgent(session)
+    await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(session.events.some(event => event.type === 'compaction/summary')).toBe(true)
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))))
+    expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('discards pressure turn state on the first mismatching eligible loop request', async () => {
+    const rawTurnState = 'turn-state-model-mismatch-secret'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_model_mismatch_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-model-mismatch-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-model-mismatch')
+    const agent = idleAgent(session)
+    await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    const loopRequest = (model: string) => markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))
+    await drain(ctx.llm.stream(loopRequest('gpt-5.6-luna')))
+    await drain(ctx.llm.stream(loopRequest(MODEL)))
+
+    const ordinary = requests.filter(request => request.kind === 'ordinary')
+    expect(ordinary).toHaveLength(2)
+    expect(ordinary.every(request =>
+      !request.headers.has('x-codex-turn-state'))).toBe(true)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('discards pressure turn state when the resolved Codex account changes', async () => {
+    const firstAccount = 'acct_continuity_first_fixture'
+    const secondAccount = 'acct_continuity_second_fixture'
+    let accountId = firstAccount
+    const rawTurnState = 'turn-state-account-mismatch-secret'
+    const { ctx, requests } = mountDualCheckpointHost({
+      credential: () => Promise.resolve({
+        accessToken: fakeAccessToken(accountId),
+        accountId,
+      }),
+      nativeReply: () => compactionResponse(
+        'opaque-account-mismatch-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-account-mismatch')
+    const agent = idleAgent(session)
+    await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    const loopRequest = () => markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))
+    accountId = secondAccount
+    await drain(ctx.llm.stream(loopRequest()))
+    accountId = firstAccount
+    await drain(ctx.llm.stream(loopRequest()))
+
+    const ordinary = requests.filter(request => request.kind === 'ordinary')
+    expect(ordinary).toHaveLength(2)
+    expect(ordinary.every(request =>
+      !request.headers.has('x-codex-turn-state'))).toBe(true)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('expires pressure turn state after sixty seconds', async () => {
+    let now = 1_800_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const rawTurnState = 'turn-state-expiry-secret'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_expiry_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-expiry-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-expiry')
+    const agent = idleAgent(session)
+    await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    now += 60_001
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))))
+
+    expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('discards pressure turn state when the Codex Adapter generation is replaced', async () => {
+    const rawTurnState = 'turn-state-generation-secret'
+    const { ctx, replaceRoute, requests } = mountDualCheckpointHost({
+      accountId: 'acct_generation_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-generation-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-generation')
+    const agent = idleAgent(session)
+    await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+
+    replaceRoute()
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))))
+
+    expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('discards pressure turn state across Host disposal and Adapter remount', async () => {
+    const rawTurnState = 'turn-state-hmr-disposal-secret'
+    const accountId = 'acct_hmr_disposal_fixture'
+    const first = mountDualCheckpointHost({
+      accountId,
+      nativeReply: () => compactionResponse(
+        'opaque-hmr-disposal-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 0,
+      },
+    })
+    const session = openConversation('dual-hmr-disposal')
+    const agent = idleAgent(session)
+    await agentEvents(first.ctx, agent).waterfall('agent/pre-step', {
+      messages: [],
+      turn: 3,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
+    expect(first.requests.map(request => request.kind)).toEqual(['portable', 'native'])
+
+    await first.ctx.fiber.dispose()
+    context = undefined
+    const replacement = mountDualCheckpointHost({ accountId })
+    await drain(replacement.ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))))
+
+    expect(replacement.requests).toHaveLength(1)
+    expect(replacement.requests[0]?.headers.has('x-codex-turn-state')).toBe(false)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('does not arm turn state for a direct automatic maintenance call', async () => {
+    const rawTurnState = 'turn-state-direct-maintenance-secret'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_direct_maintenance_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-direct-maintenance-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+    })
+    const session = openConversation('dual-direct-maintenance')
+    const result = await ctx.compaction.compactIfNeeded(
+      idleAgent(session),
       'context-overflow',
       new AbortController().signal,
     )
-    expect(automatic).not.toBeNull()
+    expect(result?.summary.some(
+      block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    )).toBe(true)
 
-    const regionSession = openConversation('dual-region')
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal: new AbortController().signal,
+    }))))
+
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native', 'ordinary'])
+    expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('uses Basic overflow retry proof and cap before one turn-state-bearing retry', async () => {
+    const rawTurnState = 'turn-state-overflow-secret'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_overflow_continuity_fixture',
+      nativeReply: () => compactionResponse(
+        'opaque-overflow-checkpoint',
+        0,
+        true,
+        rawTurnState,
+      ),
+      compactionConfig: { auto: true, maxOverflowRetries: 1 },
+    })
+    const session = openConversation('dual-overflow-continuity')
+    const agent = idleAgent(session)
+    const signal = new AbortController().signal
+    const overflow = () => agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 3,
+      step: 1,
+      provider: 'openai-codex',
+      failure: {
+        message: 'provider-confirmed context overflow',
+        code: CONTEXT_WINDOW_EXCEEDED_CODE,
+      },
+      retryPolicy: undefined,
+      signal,
+    }, () => Promise.resolve(undefined))
+
+    await expect(overflow()).resolves.toEqual({ kind: 'retry' })
+    await expect(overflow()).resolves.toBeUndefined()
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(session.events.slice(-4).map(event => event.type)).toEqual([
+      'compaction/start',
+      'compaction/summary',
+      'user/message',
+      'compaction/end',
+    ])
+
+    await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+      signal,
+    }))))
+
+    expect(requests.at(-1)?.headers.get('x-codex-turn-state')).toBe(rawTurnState)
+    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+  })
+
+  it('keeps explicit-region compaction Portable-only', async () => {
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_region_portable_fixture',
+    })
+    const session = openConversation('dual-region')
     const region = await ctx.compaction.compactRegion(
-      regionSession.surface.nodes[0]!,
-      regionSession.surface.nodes.at(-1)!,
-      idleAgent(regionSession),
+      session.surface.nodes[0]!,
+      session.surface.nodes.at(-1)!,
+      idleAgent(session),
       new AbortController().signal,
     )
     expect(region).not.toBeNull()
 
-    expect(requests.map(request => request.kind)).toEqual(['portable', 'portable'])
-    for (const session of [automaticSession, regionSession]) {
-      const checkpoint = session.deriveMessages().find(message =>
-        isCompactCheckpointSource(message.source))
-      expect(messageText(checkpoint!)).toContain(PORTABLE_SUMMARY)
-      expect(checkpoint?.content.some(
-        block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
-      )).toBe(false)
-    }
+    expect(requests.map(request => request.kind)).toEqual(['portable'])
+    const checkpoint = session.deriveMessages().find(message =>
+      isCompactCheckpointSource(message.source))
+    expect(messageText(checkpoint!)).toContain(PORTABLE_SUMMARY)
+    expect(checkpoint?.content.some(
+      block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    )).toBe(false)
   })
 
   it.each([

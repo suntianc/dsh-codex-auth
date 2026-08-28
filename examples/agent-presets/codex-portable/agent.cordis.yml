@@ -1,7 +1,9 @@
 # Minimal agent-preset example for experimental Dual Checkpoint compaction.
-# Manual /compact is Portable-first and attempts one Codex Native Checkpoint;
-# automatic and explicit-region compaction remain Portable-only. Copy this
-# complete group into a user/deployer preset that supplies tools/persona.
+# Manual and automatic pressure/overflow paths are Portable-first and may add
+# one Codex Native Checkpoint; only successful inline automatic compaction may
+# hand one-shot turn continuity to the next matching loop request. Explicit
+# regions remain Portable-only. Copy this complete group into a user/deployer
+# preset that supplies tools/persona.
 # Do not load compaction-basic beside this Adapter: ctx.compaction has one owner.
 - id: compaction
   name: cordis:group

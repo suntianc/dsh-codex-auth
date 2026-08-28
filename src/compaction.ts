@@ -1,9 +1,9 @@
 /**
  * Experimental Dual Checkpoint Adapter for custom Codex agent presets.
  *
- * Manual native generation deepens only BasicCompactionEngine's public manual
- * entry and protected summarization Seam; every compaction decision and durable
- * mutation remains owned by the inherited Basic lifecycle.
+ * Native generation deepens BasicCompactionEngine's public manual and automatic
+ * entries plus its protected summarization Seam; every compaction decision and
+ * durable mutation remains owned by the inherited Basic lifecycle.
  *
  * @module dsh-codex-auth/compaction
  */
@@ -119,6 +119,7 @@ export const Config = BasicCompactionEngine.Config
 export type Config = BasicCompactionConfig
 
 type ManualCommandId = Parameters<BasicCompactionEngine['compactNow']>[2]
+type AutomaticCompactionTrigger = Parameters<BasicCompactionEngine['compactIfNeeded']>[1]
 
 function currentRoutedTarget(agent: Agent): { provider: string; model: string } | undefined {
   const latest = agent.session.requestHeader()?.config
@@ -232,6 +233,21 @@ function logNativeDiagnostic(
   )
 }
 
+function classifyCommit(result: { readonly summary: readonly ContentBlock[] } | null): {
+  readonly committedNative: boolean
+  readonly diagnostic: 'dual-committed' | 'no-commit' | 'portable-committed'
+} {
+  const committedNative = result?.summary.some(
+    block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+  ) ?? false
+  return {
+    committedNative,
+    diagnostic: result === null
+      ? 'no-commit'
+      : committedNative ? 'dual-committed' : 'portable-committed',
+  }
+}
+
 function dualSummaryClearlyShrinks(
   input: PortableSummarizationInput,
   summary: readonly ContentBlock[],
@@ -250,7 +266,7 @@ function dualSummaryClearlyShrinks(
 
 /**
  * Basic-derived Adapter that preserves Basic's transaction while augmenting one
- * eligible manual Portable summary with a request-scoped Native Checkpoint.
+ * eligible manual or automatic Portable summary with a Native Checkpoint.
  */
 export class CodexCompactionEngine extends BasicCompactionEngine {
   constructor(ctx: Context, config: Config = {}) {
@@ -273,17 +289,38 @@ export class CodexCompactionEngine extends BasicCompactionEngine {
     }, async () => {
       try {
         const result = await super.compactNow(agent, signal, sourceCommandId)
-        const committedNative = result?.summary.some(
-          block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
-        ) ?? false
-        codexNativeCompactionCoordinator.noteResult(
-          diagnosticModel,
-          result === null
-            ? 'no-commit'
-            : committedNative ? 'dual-committed' : 'portable-committed',
-        )
+        const commit = classifyCommit(result)
+        codexNativeCompactionCoordinator.noteResult(diagnosticModel, commit.diagnostic)
         return result
       } catch (error) {
+        codexNativeCompactionCoordinator.noteResult(diagnosticModel, 'failed')
+        throw error
+      }
+    })
+  }
+
+  override compactIfNeeded(
+    agent: Agent,
+    trigger: AutomaticCompactionTrigger,
+    signal: AbortSignal,
+  ): Promise<Awaited<ReturnType<BasicCompactionEngine['compactIfNeeded']>>> {
+    const target = currentRoutedTarget(agent)
+    const diagnosticModel = target?.model ?? 'unrouted'
+    return codexNativeCompactionCoordinator.runAutomatic({
+      agent,
+      trigger,
+      target,
+      signal,
+      diagnostic: diagnostic => logNativeDiagnostic(this.ctx, diagnostic),
+    }, async () => {
+      try {
+        const result = await super.compactIfNeeded(agent, trigger, signal)
+        const commit = classifyCommit(result)
+        codexNativeCompactionCoordinator.commitAutomaticContinuation(commit.committedNative)
+        codexNativeCompactionCoordinator.noteResult(diagnosticModel, commit.diagnostic)
+        return result
+      } catch (error) {
+        codexNativeCompactionCoordinator.commitAutomaticContinuation(false)
         codexNativeCompactionCoordinator.noteResult(diagnosticModel, 'failed')
         throw error
       }
@@ -328,5 +365,6 @@ export class CodexCompactionEngine extends BasicCompactionEngine {
 
 /** Mount the experimental Adapter inside a user-authored custom preset realm. */
 export function apply(ctx: Context, config: Config = {}): void {
+  codexNativeCompactionCoordinator.installAutomaticBoundaries(ctx)
   void new CodexCompactionEngine(ctx, config)
 }
