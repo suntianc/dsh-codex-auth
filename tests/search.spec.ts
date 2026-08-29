@@ -2,6 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { WebRuntime } from '@deepseek-ai/dsh-web'
 import { describe, expect, it, vi } from 'vitest'
+import { mountCustomCompaction } from './support/compaction-fixture.ts'
 import {
   CODEX_SEARCH_ENDPOINT, CODEX_SEARCH_PROVIDER_ID, CodexSearchProvider,
   type CodexSearchSettings,
@@ -39,7 +40,10 @@ function provider(
 }
 
 describe('Global Codex Search Provider', () => {
-  it('dispatches the official standalone-search contract through WebRuntime', async () => {
+  it.each([
+    ['inactive', false],
+    ['active', true],
+  ] as const)('dispatches the same standalone-search contract with custom compaction %s', async (_label, compactionActive) => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe(CODEX_SEARCH_ENDPOINT)
       expect(init?.method).toBe('POST')
@@ -74,6 +78,9 @@ describe('Global Codex Search Provider', () => {
       }), { status: 200 })
     })
     const ctx = new Context()
+    if (compactionActive) {
+      mountCustomCompaction(ctx)
+    }
     const web = new WebRuntime(ctx)
     web.registerSearchProvider(provider(fetchMock))
 
@@ -86,6 +93,7 @@ describe('Global Codex Search Provider', () => {
     })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(web.search).toBeTypeOf('function')
+    await ctx.fiber.dispose()
   })
 
   it('applies enabled state live without a registration gap', async () => {

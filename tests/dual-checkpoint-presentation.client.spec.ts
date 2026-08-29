@@ -18,6 +18,7 @@ const CONVERSATION_URL = '/plugins/conversation/client.js'
 const TRAJECTORY_ID = '@deepseek-ai/dsh-client-ui-trajectory'
 const TRAJECTORY_URL = '/plugins/trajectory/client.js'
 const win = globalThis as DshWindow
+const extractMarkdownPlainText = vi.fn((value: string) => value)
 
 interface StockClientExports extends Record<string, unknown> {
   apply(ctx: unknown): void
@@ -33,6 +34,7 @@ afterEach(() => {
   delete win.__ModuleLoader__
   for (const element of document.querySelectorAll('style[data-plugin]')) element.remove()
   vi.restoreAllMocks()
+  extractMarkdownPlainText.mockClear()
 })
 
 function staticHook<Value>(value: Value) {
@@ -72,7 +74,7 @@ function runtimeModule(): Record<string, unknown> {
 
 function primitivesModule(): Record<string, unknown> {
   return new Proxy({
-    extractMarkdownPlainText: (value: string) => value,
+    extractMarkdownPlainText,
     MarkdownText: ({ text }: { text: string }) => createElement('span', null, text),
     JsonTree: ({ data }: { data: unknown }) => createElement('pre', null, JSON.stringify(data)),
     Tooltip: ({ children }: { children: unknown }) => children,
@@ -186,7 +188,7 @@ function nativeCheckpointBlock() {
       accountHash: `sha256:${'a'.repeat(64)}`,
     },
     compatibilityDigest: `sha256:${'b'.repeat(64)}`,
-    replay: { estimator: 'codex-v2-json-bytes-div-4-v1', estimatedTokens: 1 },
+    replay: { estimator: 'codex-v2-retained-json-plus-opaque-base64-v1', estimatedTokens: 1 },
     replacementItems: [{
       type: 'compaction',
       encrypted_content: 'opaque-presentation-state',
@@ -356,6 +358,11 @@ describe('Dual Checkpoint stock client presentation', () => {
 
     expect(conversation.container.textContent).toContain('PORTABLE CONVERSATION SUMMARY')
     expect(trajectory.container.textContent).toContain('PORTABLE TRAJECTORY SUMMARY')
+    const copyProjection = JSON.stringify(extractMarkdownPlainText.mock.calls)
+    expect(copyProjection).toContain('PORTABLE')
+    expect(copyProjection).not.toContain('opaque-presentation-state')
+    expect(copyProjection).not.toContain('encrypted_content')
+    expect(copyProjection).not.toContain('codex-native-checkpoint')
     for (const rendered of [conversation, trajectory]) {
       expect(rendered.container.textContent).not.toContain('opaque-presentation-state')
       expect(rendered.container.textContent).not.toContain('encrypted_content')

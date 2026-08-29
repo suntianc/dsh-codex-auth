@@ -69,6 +69,8 @@
     "lib/types/**/*.d.ts.map",
     "cordis.patch.yml",
     "examples/agent-presets/codex-portable/*.yml",
+    "docs/design.md",
+    "docs/adr/*.md",
     "CHANGELOG.md",
     "README.md",
     "README.zh.md",
@@ -78,12 +80,13 @@
     "build": "node scripts/clean.mjs && tsc -p tsconfig.build.host.json && tsc -p tsconfig.build.client.json && tsdown",
     "bundle": "tsdown",
     "check": "pnpm run lint && pnpm run typecheck && pnpm test && pnpm run build && pnpm run package:smoke && pnpm run publint",
-    "lint": "oxlint src tests build scripts tsdown.config.ts vitest.config.ts",
+    "lint": "oxlint src tests build scripts tsdown.config.ts vitest.config.ts vitest.live.config.ts",
     "package:smoke": "node scripts/package-smoke.mjs",
     "prepare": "tsdown",
     "prepack": "pnpm run build",
     "publint": "publint",
     "test": "vitest run",
+    "test:live:native-compaction": "node scripts/run-native-compaction-live.mjs",
     "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "dsh": {

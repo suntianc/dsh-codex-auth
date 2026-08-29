@@ -22,7 +22,7 @@ export const CODEX_NATIVE_CHECKPOINT_RETENTION_POLICY = 'codex-v2-retained-messa
 /** Initial retained-history policy generation. */
 export const CODEX_NATIVE_CHECKPOINT_RETENTION_GENERATION = 1 as const
 /** Replay estimate identity pinned by the parent specification. */
-export const CODEX_NATIVE_CHECKPOINT_ESTIMATOR = 'codex-v2-json-bytes-div-4-v1' as const
+export const CODEX_NATIVE_CHECKPOINT_ESTIMATOR = 'codex-v2-retained-json-plus-opaque-base64-v1' as const
 /** Serialized custom-block ceiling, including its JSON carrier. */
 export const MAX_CODEX_NATIVE_CHECKPOINT_BYTES = 2 * 1024 * 1024
 /** Exact runtime pair whose rc.2 message and pi payload conversion this replay uses. */

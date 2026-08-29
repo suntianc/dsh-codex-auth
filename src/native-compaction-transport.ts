@@ -63,12 +63,12 @@ export async function sendCodexNativeCompaction(
     : AbortSignal.any([signal, headerTimeout.signal])
   let response: Response
   try {
-    response = await request.fetchImpl(codexResponsesUrl(request.baseUrl), {
+    response = await awaitWithSignal(request.fetchImpl(codexResponsesUrl(request.baseUrl), {
       method: 'POST',
       headers: buildCompactHeaders(request, credential, operation),
       body: JSON.stringify(body),
       signal: fetchSignal,
-    })
+    }), fetchSignal)
   } catch {
     signal.throwIfAborted()
     throw new NativeCompactionFailure('transient')
@@ -88,6 +88,29 @@ export async function sendCodexNativeCompaction(
     if (error instanceof NativeCompactionFailure) throw error
     throw new NativeCompactionFailure('protocol')
   }
+}
+
+function awaitWithSignal<T>(value: PromiseLike<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted()
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    const finish = (complete: () => void): void => {
+      if (settled) return
+      settled = true
+      signal.removeEventListener('abort', onAbort)
+      complete()
+    }
+    const onAbort = () => finish(() => reject(signal.reason))
+    signal.addEventListener('abort', onAbort, { once: true })
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    void Promise.resolve(value).then(
+      result => finish(() => resolve(result)),
+      error => finish(() => reject(error)),
+    )
+  })
 }
 
 export function codexResponsesUrl(baseUrl?: string): string {
@@ -208,7 +231,7 @@ async function decodeNativeResponse(
     buffer += decoder.decode()
     if (buffer.trim().length > 0) consumeSseEvents(`${buffer}\n\n`, acceptEvent)
   } catch (error) {
-    await reader.cancel(error).catch(() => undefined)
+    void reader.cancel(error).catch(() => undefined)
     signal.throwIfAborted()
     if (error instanceof NativeCompactionFailure) throw error
     throw new NativeCompactionFailure('transient')
@@ -226,38 +249,26 @@ async function decodeNativeResponse(
   }
 }
 
-function readWithIdleTimeout(
+async function readWithIdleTimeout(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   signal: AbortSignal,
   timeoutMs: number,
 ): Promise<ReadableStreamReadResult<Uint8Array>> {
   signal.throwIfAborted()
-  if (timeoutMs <= 0) return reader.read()
-  return new Promise((resolve, reject) => {
-    let settled = false
-    let timer: ReturnType<typeof setTimeout>
-    const onAbort = () => settle(() => reject(signal.reason))
-    const settle = (complete: () => void): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      signal.removeEventListener('abort', onAbort)
-      complete()
-    }
-    timer = setTimeout(
-      () => settle(() => reject(new NativeCompactionFailure('transient'))),
-      timeoutMs,
+  if (timeoutMs <= 0) return awaitWithSignal(reader.read(), signal)
+  const idleTimeout = new AbortController()
+  const timer = setTimeout(
+    () => idleTimeout.abort(new NativeCompactionFailure('transient')),
+    timeoutMs,
+  )
+  try {
+    return await awaitWithSignal(
+      reader.read(),
+      AbortSignal.any([signal, idleTimeout.signal]),
     )
-    signal.addEventListener('abort', onAbort, { once: true })
-    if (signal.aborted) {
-      onAbort()
-      return
-    }
-    void reader.read().then(
-      value => settle(() => resolve(value)),
-      error => settle(() => reject(error)),
-    )
-  })
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function consumeSseEvents(buffer: string, accept: (data: string) => void): string {

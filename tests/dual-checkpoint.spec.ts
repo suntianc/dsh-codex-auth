@@ -1,20 +1,26 @@
+import { dirname, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { zstdDecompressSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import Include from '@deepseek-ai/cordis-plugin-include'
+import Loader, { Group } from '@deepseek-ai/cordis-plugin-loader'
 import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import type { BasicCompactionConfig } from '@deepseek-ai/dsh-compaction-basic'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import LlmRuntime, {
+  CallId,
   createAssistantMessage,
   CONTEXT_WINDOW_EXCEEDED_CODE,
+  createToolResultMessage,
   createUserMessage,
   deepFreeze,
   isAgentLoopRequest,
   markAgentLoopRequest,
 } from '@deepseek-ai/dsh-llm'
-import type { Message } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
   Session,
   SessionId,
@@ -23,9 +29,13 @@ import SessionStore, {
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import { CodexAuthAdapter } from '../src/codex-auth-adapter.ts'
 import type { CodexAuthAdapterOptions } from '../src/codex-auth-adapter.ts'
-import { apply as applyCodexCompaction } from '../src/compaction.ts'
+import {
+  apply as applyCodexCompaction,
+  CodexCompactionEngine,
+} from '../src/compaction.ts'
 import {
   CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+  CODEX_NATIVE_CHECKPOINT_ESTIMATOR,
   decodeCodexNativeCheckpoint,
 } from '../src/native-checkpoint.ts'
 
@@ -240,7 +250,7 @@ interface CapturedRequest {
 
 interface DualHostOptions {
   readonly accountId?: string
-  readonly compactionBackend?: 'codex' | 'basic'
+  readonly compactionBackend?: 'codex' | 'basic' | 'none'
   readonly credential?: CodexAuthAdapterOptions['auth']['credential']
   readonly longContextEnabled?: boolean
   readonly nativeReply?: (attempt: number, init?: RequestInit) => Response | Promise<Response>
@@ -318,7 +328,7 @@ function mountDualCheckpointHost(options: DualHostOptions = {}): {
   }
   if (options.compactionBackend === 'basic') {
     void new BasicCompactionEngine(ctx, compactionConfig)
-  } else {
+  } else if (options.compactionBackend !== 'none') {
     applyCodexCompaction(ctx, compactionConfig)
   }
   return {
@@ -414,6 +424,21 @@ function idleAgent(session: Session): Agent {
   } as unknown as Agent
 }
 
+function exclusiveIdleAgent(session: Session): Agent {
+  let maintenanceActive = false
+  return {
+    session,
+    options: { provider: 'openai-codex', model: MODEL },
+    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T> {
+      if (maintenanceActive) throw new Error('fixture maintenance is active')
+      maintenanceActive = true
+      return task(new AbortController().signal).finally(() => {
+        maintenanceActive = false
+      })
+    },
+  } as unknown as Agent
+}
+
 function messageText(message: Message): string {
   return message.content.map(block => block.type === 'text' ? block.text : '').join('')
 }
@@ -458,15 +483,15 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       expect.any(Number),
       expect.any(Number),
       'reported',
-      '1000',
-      '55',
-      '400',
-      'unavailable',
-      '21',
     )
     const responseDiagnostic = debug.mock.calls.find(
       call => String(call[0]).includes('event=response'),
     )!
+    expect(String(responseDiagnostic[0])).toContain('usageAvailability=%s')
+    expect(String(responseDiagnostic[0])).not.toMatch(
+      /(?:input|output|cacheRead|cacheWrite|reasoning)Tokens/u,
+    )
+    expect(responseDiagnostic.slice(11)).toEqual(['reported'])
     expect(responseDiagnostic[10]).toBe(
       new TextEncoder().encode('opaque-remote-checkpoint').byteLength,
     )
@@ -496,6 +521,13 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     ])
 
     const summaryEvent = transaction.find(event => event.type === 'compaction/summary')
+    expect(summaryEvent?.type === 'compaction/summary'
+      ? summaryEvent.data.usage
+      : undefined).toEqual({
+      inputTokens: 100,
+      outputTokens: 8,
+      cacheReadTokens: 20,
+    })
     const checkpointEvent = transaction.find(
       (event): event is SessionEvent<'user/message'> => event.type === 'user/message'
         && isCompactCheckpointSource(event.data.source),
@@ -522,6 +554,12 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       cacheReadTokens: 400,
       reasoningTokens: 21,
     })
+    const retainedItems = decoded.checkpoint.replacementItems.slice(0, -1)
+    expect(retainedItems.map(item => JSON.stringify(item))).toEqual([
+      expect.stringContaining('request turn 1'),
+      expect.stringContaining('request turn 2'),
+    ])
+    expect(JSON.stringify(retainedItems)).not.toContain(HISTORY)
     expect(decoded.checkpoint.replacementItems.at(-1)).toMatchObject({
       type: 'compaction',
       id: 'cmp_remote_fixture',
@@ -591,6 +629,224 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(JSON.stringify(replayBody)).not.toContain('compaction_trigger')
   })
 
+  it('loads the packaged custom preset as the sole Adapter for manual, pressure, and overflow Dual flows', async () => {
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_packaged_preset_fixture',
+      compactionBackend: 'none',
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    type CompactCommandHandler = (invocation: {
+      readonly agent: Agent
+      readonly commandId: string
+      readonly rawInput: string
+      readonly signal: AbortSignal
+    }) => Promise<{ readonly kind: string; readonly text: string }>
+    let compactCommand: CompactCommandHandler | undefined
+    ctx.provide('commands', {
+      register(definition: { readonly name: string; readonly handler: CompactCommandHandler }) {
+        if (definition.name === 'compact') compactCommand = definition.handler
+        return () => undefined
+      },
+    })
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.include = Include
+    ctx.loader.builtins.group = Group
+    ctx.loader.internal = {
+      version: 'v2',
+      async import(specifier: string) {
+        if (specifier === 'dsh-codex-auth/compaction') return import('../src/compaction.ts')
+        if (specifier === '@deepseek-ai/dsh-command-compact') {
+          return import('@deepseek-ai/dsh-command-compact')
+        }
+        if (specifier === '@deepseek-ai/dsh-compaction-tool-result-pruner') {
+          return import('@deepseek-ai/dsh-compaction-tool-result-pruner')
+        }
+        throw new Error(`unexpected Loader import: ${specifier}`)
+      },
+    } as unknown as NonNullable<typeof ctx.loader.internal>
+    const presetPath = resolve('examples/agent-presets/codex-portable/agent.cordis.yml')
+    ctx.baseUrl = pathToFileURL(dirname(presetPath)).href + '/'
+    await ctx.loader.create({
+      name: 'cordis:include',
+      config: { path: pathToFileURL(presetPath).href },
+    })
+    await ctx.loader.await()
+
+    const active = [...ctx.loader.entries()].filter(entry => entry.fiber !== undefined)
+    const compactionEntries = active.filter(
+      entry => entry.options.name === 'dsh-codex-auth/compaction',
+    )
+    expect(compactionEntries).toHaveLength(1)
+    expect(active.some(
+      entry => entry.options.name === '@deepseek-ai/dsh-compaction-basic',
+    )).toBe(false)
+    const compaction = compactionEntries[0]?.ctx.get('compaction')
+    expect(compaction).toBeInstanceOf(CodexCompactionEngine)
+    if (!(compaction instanceof CodexCompactionEngine)) {
+      throw new Error('packaged custom preset did not mount CodexCompactionEngine')
+    }
+    const commandEntry = active.find(
+      entry => entry.options.name === '@deepseek-ai/dsh-command-compact',
+    )
+    const prunerEntry = active.find(
+      entry => entry.options.name === '@deepseek-ai/dsh-compaction-tool-result-pruner',
+    )
+    expect(commandEntry).toBeDefined()
+    expect(compactCommand).toBeTypeOf('function')
+    const pruner = prunerEntry?.ctx.get('toolResultPruner') as {
+      pruneContent: (content: ContentBlock[]) => ContentBlock[] | null
+    } | undefined
+    expect(pruner?.pruneContent([{ type: 'text', text: 'p'.repeat(9_000) }]))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('[... tool result middle pruned ...]'),
+        }),
+      ]))
+
+    const manual = closedConversation('dual-packaged-preset-manual')
+    const pressure = Session.create(SessionId('dual-packaged-preset-pressure'))
+    for (let turn = 1; turn <= 12; turn += 1) {
+      pressure.append('turn/start', { turn })
+      pressure.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: `pressure request ${turn}` }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+      pressure.append('step/start', { turn, step: 1 })
+      if (turn === 1) {
+        pressure.append('request/header', {
+          header: { config: { provider: 'openai-codex', model: MODEL } },
+          reason: 'initial',
+        })
+      }
+      pressure.append('assistant/message', {
+        turn,
+        step: 1,
+        message: createAssistantMessage({
+          content: [{ type: 'text', text: `pressure answer ${turn}:${'p'.repeat(100_000)}` }],
+          source: { provider: 'openai-codex', model: MODEL },
+        }),
+      }, { surfaceOp: 'append' })
+      pressure.append('step/end', { turn, step: 1 })
+      pressure.append('turn/end', { turn, reason: { kind: 'completed' } })
+    }
+    pressure.append('turn/start', { turn: 13 })
+    const overflow = openConversation('dual-packaged-preset-overflow')
+
+    if (compactCommand === undefined) throw new Error('stock compact command was not registered')
+    await expect(compactCommand({
+      agent: idleAgent(manual),
+      commandId: 'packaged-preset-compact-command',
+      rawInput: '',
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({ kind: 'success' })
+    await compaction.compactIfNeeded(
+      idleAgent(pressure),
+      'pressure',
+      new AbortController().signal,
+    )
+    await compaction.compactIfNeeded(
+      idleAgent(overflow),
+      'context-overflow',
+      new AbortController().signal,
+    )
+
+    expect(requests.map(request => request.kind)).toEqual([
+      'portable', 'native',
+      'portable', 'native',
+      'portable', 'native',
+    ])
+    for (const session of [manual, pressure, overflow]) {
+      expect(session.deriveMessages().some(message => message.content.some(
+        block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+      ))).toBe(true)
+    }
+  })
+
+  it('leaves ordinary Codex text, tools, reasoning, images, and SSE unchanged while the custom Adapter is mounted', async () => {
+    const callId = CallId('ordinary-regression-tool-call')
+    const messages: Message[] = [
+      createUserMessage({
+        content: [{ type: 'text', text: 'ordinary request before any native compaction' }],
+        source: { kind: 'user' },
+      }),
+      createAssistantMessage({
+        content: [
+          { type: 'reasoning', text: 'retained reasoning fixture' },
+          {
+            type: 'tool-call',
+            id: callId,
+            name: 'fixture_tool',
+            arguments: '{"value":1}',
+          },
+        ],
+        source: { provider: 'openai-codex', model: MODEL },
+      }),
+      createToolResultMessage({
+        callId,
+        content: [{ type: 'text', text: 'fixture tool result' }],
+        isError: false,
+      }),
+    ]
+    const run = async (compactionBackend: 'codex' | 'none') => {
+      const host = mountDualCheckpointHost({
+        accountId: 'acct_ordinary_regression_fixture',
+        compactionBackend,
+        onPayload: payload => ({
+          ...(payload as Record<string, unknown>),
+          input: [
+            ...((payload as { input?: unknown[] }).input ?? []),
+            {
+              type: 'message',
+              role: 'user',
+              content: [{
+                type: 'input_image',
+                image_url: 'data:image/png;base64,ordinary-regression-fixture',
+              }],
+            },
+          ],
+        }),
+      })
+      const chunks: unknown[] = []
+      for await (const chunk of host.ctx.llm.stream({
+        provider: 'openai-codex',
+        model: MODEL,
+        system: 'ordinary system fixture',
+        tools: [{
+          name: 'fixture_tool',
+          description: 'ordinary regression fixture',
+          parameters: {
+            type: 'object',
+            properties: { value: { type: 'number' } },
+            required: ['value'],
+          },
+        }],
+        messages,
+        sessionId: SessionId('ordinary-regression-session'),
+      })) chunks.push(chunk)
+      const result = {
+        chunks,
+        kinds: host.requests.map(request => request.kind),
+        payload: host.requests[0]!.body,
+      }
+      await host.ctx.fiber.dispose()
+      context = undefined
+      return result
+    }
+
+    const inactive = await run('none')
+    const active = await run('codex')
+
+    expect(inactive.kinds).toEqual(['ordinary'])
+    expect(active.kinds).toEqual(inactive.kinds)
+    expect(active.payload).toEqual(inactive.payload)
+    expect(active.chunks).toEqual(inactive.chunks)
+    expect(JSON.stringify(active.payload)).toContain('fixture_tool')
+    expect(JSON.stringify(active.payload)).toContain('retained reasoning fixture')
+    expect(JSON.stringify(active.payload)).toContain('input_image')
+    expect(JSON.stringify(active.payload)).not.toContain('compaction_trigger')
+  })
+
   it('replays Native after JSON restore and from a public SessionStore fork', async () => {
     const first = mountDualCheckpointHost()
     vi.spyOn(first.ctx.sessions, 'flush').mockResolvedValue(true)
@@ -641,6 +897,77 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     }
     expect(JSON.stringify(resumed.events)).toContain('opaque-remote-checkpoint')
     expect(JSON.stringify(fork.events)).toContain('opaque-remote-checkpoint')
+    detach()
+  })
+
+  it('expands a restored checkpoint when compacting a public fork again', async () => {
+    const first = mountDualCheckpointHost({
+      accountId: 'acct_restart_repeated_fixture',
+      nativeReply: () => compactionResponse('opaque-before-restart'),
+    })
+    vi.spyOn(first.ctx.sessions, 'flush').mockResolvedValue(true)
+    const source = closedConversation('dual-repeated-before-restart')
+    await first.ctx.compaction.compactNow(idleAgent(source), new AbortController().signal)
+    const persisted = JSON.parse(JSON.stringify({
+      events: source.events,
+      header: source.header,
+    })) as { events: SessionEvent[]; header: typeof source.header }
+
+    await first.ctx.fiber.dispose()
+    context = undefined
+    const resumedHost = mountDualCheckpointHost({
+      accountId: 'acct_restart_repeated_fixture',
+      nativeReply: () => compactionResponse('opaque-after-restart'),
+    })
+    vi.spyOn(resumedHost.ctx.sessions, 'flush').mockResolvedValue(true)
+    const resumed = Session.fromRestore(source.id, persisted.events, persisted.header)
+    const detach = resumedHost.ctx.sessions.enter(resumed)
+    resumedHost.ctx.sessions.announce(resumed)
+    const fork = resumedHost.ctx.sessions.fork(
+      resumed,
+      undefined,
+      SessionId('dual-repeated-after-restart-fork'),
+    )
+    fork.append('turn/start', { turn: 3 })
+    fork.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'new facts in the restored fork' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    fork.append('step/start', { turn: 3, step: 1 })
+    fork.append('assistant/message', {
+      turn: 3,
+      step: 1,
+      message: createAssistantMessage({
+        content: [{ type: 'text', text: 'new restored answer '.repeat(4_000) }],
+        source: { provider: 'openai-codex', model: MODEL },
+      }),
+    }, { surfaceOp: 'append' })
+    fork.append('step/end', { turn: 3, step: 1 })
+    fork.append('turn/end', { turn: 3, reason: { kind: 'completed' } })
+
+    await resumedHost.ctx.compaction.compactNow(
+      idleAgent(fork),
+      new AbortController().signal,
+    )
+
+    expect(resumedHost.requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    for (const request of resumedHost.requests) {
+      const body = JSON.stringify(request.body)
+      expect(body).toContain('opaque-before-restart')
+      expect(body).not.toContain(PORTABLE_SUMMARY)
+      expect(body).not.toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+    }
+    const checkpointMessage = fork.deriveMessages().find(message =>
+      isCompactCheckpointSource(message.source))
+    const nativeBlock = checkpointMessage?.content.find(
+      block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    )
+    const decoded = decodeCodexNativeCheckpoint(nativeBlock)
+    expect(decoded.ok).toBe(true)
+    if (!decoded.ok) throw new Error(decoded.reason)
+    expect(JSON.stringify(decoded.checkpoint.replacementItems)).toContain('opaque-after-restart')
+    expect(JSON.stringify(decoded.checkpoint.replacementItems)).not.toContain('opaque-before-restart')
+    expect(JSON.stringify(resumed.events)).toContain('opaque-before-restart')
     detach()
   })
 
@@ -758,6 +1085,36 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     }
   })
 
+  it('inherits same-session maintenance serialization and rejects a duplicate native compaction', async () => {
+    let releaseNative!: () => void
+    let markArrived!: () => void
+    const nativeGate = new Promise<void>(resolve => { releaseNative = resolve })
+    const arrived = new Promise<void>(resolve => { markArrived = resolve })
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_same_session_serialization_fixture',
+      nativeReply: () => {
+        markArrived()
+        return nativeGate.then(() => compactionResponse())
+      },
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const session = closedConversation('dual-same-session-serialization')
+    const agent = exclusiveIdleAgent(session)
+
+    const active = ctx.compaction.compactNow(agent, new AbortController().signal)
+    await arrived
+    await expect(ctx.compaction.compactNow(agent, new AbortController().signal))
+      .rejects.toThrow(/idle agent/iu)
+    releaseNative()
+    await expect(active).resolves.not.toBeNull()
+
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(session.events.filter(event => event.type === 'compaction/summary')).toHaveLength(1)
+    expect(session.deriveMessages().filter(message => message.content.some(
+      block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    ))).toHaveLength(1)
+  })
+
   it('expands an earlier Native Checkpoint before a consecutive v2 trigger', async () => {
     const { ctx, requests } = mountDualCheckpointHost({
       accountId: 'acct_consecutive_fixture',
@@ -802,6 +1159,63 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const durableNativeBlocks = session.deriveMessages().flatMap(message =>
       message.content.filter(block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE))
     expect(durableNativeBlocks).toHaveLength(1)
+  })
+
+  it('uses an incompatible earlier checkpoint as Portable input and still creates a new Native checkpoint', async () => {
+    let accountId = 'acct_repeated_original_fixture'
+    const { ctx, requests } = mountDualCheckpointHost({
+      credential: () => Promise.resolve({
+        accessToken: fakeAccessToken(accountId),
+        accountId,
+      }),
+      nativeReply: attempt => compactionResponse(
+        attempt === 1 ? 'opaque-before-account-change' : 'opaque-after-account-change',
+      ),
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const session = closedConversation('dual-repeated-incompatible-account')
+    await ctx.compaction.compactNow(idleAgent(session), new AbortController().signal)
+    session.append('turn/start', { turn: 3 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'new facts after the account change' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    session.append('step/start', { turn: 3, step: 1 })
+    session.append('assistant/message', {
+      turn: 3,
+      step: 1,
+      message: createAssistantMessage({
+        content: [{ type: 'text', text: 'new answer after account change '.repeat(3_000) }],
+        source: { provider: 'openai-codex', model: MODEL },
+      }),
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 3, step: 1 })
+    session.append('turn/end', { turn: 3, reason: { kind: 'completed' } })
+    accountId = 'acct_repeated_replacement_fixture'
+
+    await ctx.compaction.compactNow(idleAgent(session), new AbortController().signal)
+
+    expect(requests.map(request => request.kind)).toEqual([
+      'portable', 'native', 'portable', 'native',
+    ])
+    for (const request of requests.slice(2)) {
+      const body = JSON.stringify(request.body)
+      expect(body).toContain(PORTABLE_SUMMARY)
+      expect(body).not.toContain('opaque-before-account-change')
+      expect(body).not.toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+    }
+    const checkpointMessage = session.deriveMessages().find(message =>
+      isCompactCheckpointSource(message.source))
+    const nativeBlock = checkpointMessage?.content.find(
+      block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    )
+    const decoded = decodeCodexNativeCheckpoint(nativeBlock)
+    expect(decoded.ok).toBe(true)
+    if (!decoded.ok) throw new Error(decoded.reason)
+    expect(JSON.stringify(decoded.checkpoint.replacementItems))
+      .toContain('opaque-after-account-change')
+    expect(JSON.stringify(decoded.checkpoint.replacementItems))
+      .not.toContain('opaque-before-account-change')
   })
 
   it('hands automatic pressure turn state to exactly the next matching loop request', async () => {
@@ -876,6 +1290,93 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const diagnostics = JSON.stringify([debug.mock.calls, warn.mock.calls])
     expect(diagnostics).toContain('pressure')
     expect(diagnostics).not.toContain(rawTurnState)
+  })
+
+  it('keeps the later DSH tail after a prefix checkpoint and replays it in order', async () => {
+    const tailText = 'CURRENT TURN TAIL MUST REMAIN AFTER THE CHECKPOINT'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_prefix_tail_fixture',
+      nativeReply: () => compactionResponse('opaque-prefix-tail-checkpoint'),
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 128,
+        compactionRetries: 0,
+      },
+    })
+    const session = closedConversation('dual-prefix-tail')
+    session.append('turn/start', { turn: 3 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: tailText }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+
+    const result = await ctx.compaction.compactIfNeeded(
+      idleAgent(session),
+      'pressure',
+      new AbortController().signal,
+    )
+
+    expect(result).not.toBeNull()
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(JSON.stringify(requests[1]!.body)).not.toContain(tailText)
+    const messages = session.deriveMessages()
+    const checkpointIndex = messages.findIndex(message => message.content.some(
+      block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    ))
+    const tailIndex = messages.findIndex(message => messageText(message).includes(tailText))
+    expect(checkpointIndex).toBeGreaterThanOrEqual(0)
+    expect(tailIndex).toBeGreaterThan(checkpointIndex)
+
+    await drain(ctx.llm.stream({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages,
+      sessionId: session.id,
+    }))
+    const replayInput = JSON.stringify(requests.at(-1)!.body.input)
+    expect(replayInput.indexOf('opaque-prefix-tail-checkpoint')).toBeGreaterThanOrEqual(0)
+    expect(replayInput.indexOf(tailText))
+      .toBeGreaterThan(replayInput.indexOf('opaque-prefix-tail-checkpoint'))
+  })
+
+  it('reports Basic bounded pressure failure without a second native retry policy', async () => {
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_bounded_pressure_fixture',
+      compactionConfig: {
+        auto: true,
+        thresholdRatio: 0.05,
+        retainTokens: 32,
+        compactionRetries: 1,
+      },
+    })
+    const session = closedConversation('dual-bounded-pressure')
+    session.append('turn/start', { turn: 3 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'one indivisible recent pressure group' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    session.append('step/start', { turn: 3, step: 1 })
+    session.append('assistant/message', {
+      turn: 3,
+      step: 1,
+      message: createAssistantMessage({
+        content: [{ type: 'text', text: 'q'.repeat(1_100_000) }],
+        source: { provider: 'openai-codex', model: MODEL },
+      }),
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 3, step: 1 })
+    session.append('turn/end', { turn: 3, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 4 })
+
+    await expect(ctx.compaction.compactIfNeeded(
+      idleAgent(session),
+      'pressure',
+      new AbortController().signal,
+    )).rejects.toThrow(/after 2 compaction attempts/iu)
+
+    expect(requests.filter(request => request.kind === 'native')).toHaveLength(2)
+    expect(requests.filter(request => request.kind === 'portable')).toHaveLength(2)
   })
 
   it('changes only automatic trigger timing when Long Context Mode is enabled', async () => {
@@ -953,6 +1454,51 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     })
   })
 
+  it('keeps native activation, v2 payload, checkpoint, and replay invariant under Long Context Mode', async () => {
+    const run = async (longContextEnabled: boolean) => {
+      const host = mountDualCheckpointHost({
+        accountId: 'acct_long_context_invariance_fixture',
+        longContextEnabled,
+        nativeReply: () => compactionResponse('opaque-long-context-invariant'),
+      })
+      vi.spyOn(host.ctx.sessions, 'flush').mockResolvedValue(true)
+      const session = closedConversation('dual-long-context-invariance')
+      await host.ctx.compaction.compactNow(
+        idleAgent(session),
+        new AbortController().signal,
+      )
+      await drain(host.ctx.llm.stream({
+        provider: 'openai-codex',
+        model: MODEL,
+        messages: session.deriveMessages(),
+        sessionId: session.id,
+      }))
+      const nativeBlock = session.deriveMessages().flatMap(message => message.content)
+        .find(block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+      const checkpoint = decodeCodexNativeCheckpoint(nativeBlock)
+      expect(checkpoint.ok).toBe(true)
+      if (!checkpoint.ok) throw new Error(checkpoint.reason)
+      const result = {
+        kinds: host.requests.map(request => request.kind),
+        nativePayload: host.requests[1]!.body,
+        checkpoint: checkpoint.checkpoint,
+        replayPayload: host.requests[2]!.body,
+      }
+      await host.ctx.fiber.dispose()
+      context = undefined
+      return result
+    }
+
+    const standard = await run(false)
+    const long = await run(true)
+
+    expect(standard.kinds).toEqual(['portable', 'native', 'ordinary'])
+    expect(long.kinds).toEqual(standard.kinds)
+    expect(long.nativePayload).toEqual(standard.nativePayload)
+    expect(long.checkpoint).toEqual(standard.checkpoint)
+    expect(long.replayPayload).toEqual(standard.replayPayload)
+  })
+
   it('uses waterfall loop identity after Runtime clones away the process-local mark', async () => {
     const rawTurnState = 'turn-state-cloned-request-secret'
     const { adapter, ctx, requests } = mountDualCheckpointHost({
@@ -985,7 +1531,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       const prepared = await prepareCall(provider, model, signal)
       return Object.freeze({
         ...prepared,
-        stream: (options) => {
+        stream: (options: Parameters<typeof prepared.stream>[0]) => {
           adapterSawLoopMark = isAgentLoopRequest(options)
           return prepared.stream(options)
         },
@@ -1800,6 +2346,49 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(JSON.stringify(requests[1]!.body)).not.toContain('must-not-copy')
   })
 
+  it('falls back to Portable when a native response never returns headers', async () => {
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_header_timeout_fixture',
+      timeoutMs: 5,
+      nativeReply: () => new Promise<Response>(() => undefined),
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const session = closedConversation('dual-header-timeout')
+
+    await expect(ctx.compaction.compactNow(
+      idleAgent(session),
+      new AbortController().signal,
+    )).resolves.not.toBeNull()
+
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(session.deriveMessages().some(message => message.content.some(
+      block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    ))).toBe(false)
+  })
+
+  it('falls back on a native network rejection without exposing its error content', async () => {
+    const rawNetworkError = 'raw network fixture content must stay private'
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_network_failure_fixture',
+      nativeReply: () => Promise.reject(new Error(rawNetworkError)),
+    })
+    const debug = vi.spyOn(ctx.logger, 'debug').mockImplementation(() => undefined)
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const session = closedConversation('dual-network-failure')
+
+    await expect(ctx.compaction.compactNow(
+      idleAgent(session),
+      new AbortController().signal,
+    )).resolves.not.toBeNull()
+
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(JSON.stringify([debug.mock.calls, warn.mock.calls])).not.toContain(rawNetworkError)
+    expect(session.deriveMessages().some(message => message.content.some(
+      block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    ))).toBe(false)
+  })
+
   it('applies the request timeout only to headers while an active SSE body continues', async () => {
     const { ctx, requests } = mountDualCheckpointHost({
       accountId: 'acct_timeout_policy_fixture',
@@ -1836,6 +2425,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
             start() {
               // The idle watchdog, not the fixture, must terminate this stream.
             },
+            cancel: () => new Promise<void>(() => undefined),
           }), {
             status: 200,
             headers: { 'content-type': 'text/event-stream' },
@@ -1897,6 +2487,25 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
         newestUser.future_user_field = { preserved: true }
         const part = (newestUser.content as Record<string, unknown>[])[0]!
         part.future_part_field = ['preserved']
+        input.splice(Math.max(0, input.length - 1), 0,
+          {
+            type: 'reasoning',
+            id: 'retention-reasoning-item',
+            encrypted_content: 'REASONING MUST BE REPRESENTED ONLY BY THE ARTIFACT',
+          },
+          {
+            type: 'function_call',
+            id: 'retention-tool-call',
+            call_id: 'retention-tool-call',
+            name: 'fixture_tool',
+            arguments: '{}',
+          },
+          {
+            type: 'function_call_output',
+            call_id: 'retention-tool-call',
+            output: 'TOOL OUTPUT MUST BE REPRESENTED ONLY BY THE ARTIFACT',
+          },
+        )
         return body
       },
     })
@@ -1919,18 +2528,57 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     if (!decoded.ok) throw new Error(decoded.reason)
     const retained = decoded.checkpoint.replacementItems.slice(0, -1)
     expect(retained).toHaveLength(1)
-    expect(Math.ceil(new TextEncoder().encode(JSON.stringify(retained)).byteLength / 4))
-      .toBeLessThanOrEqual(64_000)
+    expect(retained.reduce(
+      (total, item) => total
+        + Math.ceil(new TextEncoder().encode(JSON.stringify(item)).byteLength / 4),
+      0,
+    )).toBeLessThanOrEqual(64_000)
     expect(retained[0]).toMatchObject({
       future_user_field: { preserved: true },
       content: [{ future_part_field: ['preserved'] }],
     })
+    expect(JSON.stringify(retained)).not.toContain('REASONING MUST BE REPRESENTED')
+    expect(JSON.stringify(retained)).not.toContain('TOOL OUTPUT MUST BE REPRESENTED')
     const retainedText = ((retained[0]!.content as { text: string }[])[0]!).text
     expect(retainedText.startsWith('prefix-that-must-be-truncated')).toBe(true)
     expect(retainedText.endsWith('🙂')).toBe(true)
     const finalCodeUnit = retainedText.charCodeAt(retainedText.length - 1)
     expect(finalCodeUnit >= 0xD800 && finalCodeUnit <= 0xDBFF).toBe(false)
     expect(decoded.checkpoint.replacementItems.at(-1)?.type).toBe('compaction')
+  })
+
+  it('applies the pinned opaque base64 heuristic to the replay estimate', async () => {
+    const { ctx } = mountDualCheckpointHost({
+      accountId: 'acct_replay_estimator_fixture',
+      nativeReply: attempt => compactionResponse(
+        attempt === 1 ? 'a'.repeat(800) : 'b'.repeat(868),
+      ),
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const sessions = [
+      closedConversation('dual-estimator-below-overhead'),
+      closedConversation('dual-estimator-one-byte-visible'),
+    ]
+
+    for (const session of sessions) {
+      await ctx.compaction.compactNow(idleAgent(session), new AbortController().signal)
+    }
+
+    const replayEstimates = sessions.map((session) => {
+      const checkpointMessage = session.deriveMessages().find(message =>
+        isCompactCheckpointSource(message.source))
+      const nativeBlock = checkpointMessage?.content.find(
+        block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+      )
+      const decoded = decodeCodexNativeCheckpoint(nativeBlock)
+      expect(decoded.ok).toBe(true)
+      if (!decoded.ok) throw new Error(decoded.reason)
+      return decoded.checkpoint.replay
+    })
+    expect(CODEX_NATIVE_CHECKPOINT_ESTIMATOR)
+      .toBe('codex-v2-retained-json-plus-opaque-base64-v1')
+    expect(replayEstimates[1]!.estimatedTokens - replayEstimates[0]!.estimatedTokens)
+      .toBe(1)
   })
 
   it('falls back atomically to Portable and opens after three transient native failures', async () => {
@@ -2039,6 +2687,76 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(flush).toHaveBeenCalledOnce()
   })
 
+  it('aborts and releases an active native request when the Adapter realm is disposed', async () => {
+    let markArrived!: () => void
+    const arrived = new Promise<void>(resolve => { markArrived = resolve })
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_native_disposal_fixture',
+      nativeReply: () => {
+        markArrived()
+        return new Promise<Response>(() => undefined)
+      },
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const session = closedConversation('dual-native-disposal')
+    const operation = ctx.compaction.compactNow(
+      idleAgent(session),
+      new AbortController().signal,
+    )
+    const outcome = operation.then(
+      () => 'resolved' as const,
+      () => 'rejected' as const,
+    )
+    await arrived
+
+    await ctx.fiber.dispose()
+    context = undefined
+
+    expect(await Promise.race([
+      outcome,
+      new Promise<'pending'>(resolve => setTimeout(() => resolve('pending'), 50)),
+    ])).toBe('rejected')
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(session.events.some(event => event.type === 'compaction/summary')).toBe(false)
+    expect(session.deriveMessages().some(message => message.content.some(
+      block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    ))).toBe(false)
+  })
+
+  it('detaches a stalled native response body when the Adapter realm is disposed', async () => {
+    let markBodyStarted!: () => void
+    const bodyStarted = new Promise<void>(resolve => { markBodyStarted = resolve })
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_native_body_disposal_fixture',
+      nativeReply: () => new Response(new ReadableStream<Uint8Array>({
+        start() { markBodyStarted() },
+        cancel: () => new Promise<void>(() => undefined),
+      }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      }),
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const operation = ctx.compaction.compactNow(
+      idleAgent(closedConversation('dual-native-body-disposal')),
+      new AbortController().signal,
+    )
+    const outcome = operation.then(
+      () => 'resolved' as const,
+      () => 'rejected' as const,
+    )
+    await bodyStarted
+
+    await ctx.fiber.dispose()
+    context = undefined
+
+    expect(await Promise.race([
+      outcome,
+      new Promise<'pending'>(resolve => setTimeout(() => resolve('pending'), 100)),
+    ])).toBe('rejected')
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+  })
+
   it('reports strict-shrink fallback for a nonshrinking artifact', async () => {
     const { ctx, requests } = mountDualCheckpointHost({
       accountId: 'acct_nonshrinking_fixture',
@@ -2133,6 +2851,102 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     }
   })
 
+  it('releases a cancelled half-open lease for the next public compaction probe', async () => {
+    vi.useFakeTimers()
+    let markProbeStarted!: () => void
+    const probeStarted = new Promise<void>((resolve) => {
+      markProbeStarted = resolve
+    })
+    try {
+      const { ctx, requests } = mountDualCheckpointHost({
+        accountId: 'acct_cancelled_half_open_fixture',
+        nativeReply: (attempt) => {
+          if (attempt === 1) return protocolFailureResponse('zero-artifacts')
+          if (attempt === 2) {
+            markProbeStarted()
+            return new Promise<Response>(() => undefined)
+          }
+          return compactionResponse('opaque-after-cancelled-half-open')
+        },
+      })
+      vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+      await ctx.compaction.compactNow(
+        idleAgent(closedConversation('dual-cancelled-half-open-open')),
+        new AbortController().signal,
+      )
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+
+      const controller = new AbortController()
+      const cancelled = ctx.compaction.compactNow(
+        idleAgent(closedConversation('dual-cancelled-half-open-probe')),
+        controller.signal,
+      )
+      await probeStarted
+      controller.abort(new Error('cancel the half-open probe'))
+      await expect(cancelled).rejects.toThrow('cancel the half-open probe')
+
+      await expect(ctx.compaction.compactNow(
+        idleAgent(closedConversation('dual-after-cancelled-half-open')),
+        new AbortController().signal,
+      )).resolves.not.toBeNull()
+      expect(requests.map(request => request.kind)).toEqual([
+        'portable', 'native',
+        'portable', 'native',
+        'portable', 'native',
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('permits only one concurrent half-open native probe', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(50_000)
+    let releaseProbe!: () => void
+    let markProbeArrived!: () => void
+    const probeGate = new Promise<void>(resolve => { releaseProbe = resolve })
+    const probeArrived = new Promise<void>(resolve => { markProbeArrived = resolve })
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_half_open_probe_fixture',
+      nativeReply: attempt => {
+        if (attempt === 1) return protocolFailureResponse('zero-artifacts')
+        markProbeArrived()
+        return probeGate.then(() => compactionResponse())
+      },
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    try {
+      await ctx.compaction.compactNow(
+        idleAgent(closedConversation('dual-half-open-initial-failure')),
+        new AbortController().signal,
+      )
+      clock.mockReturnValue(50_000 + 60 * 60 * 1000 + 1)
+      const probe = closedConversation('dual-half-open-probe')
+      const blocked = closedConversation('dual-half-open-blocked')
+      const activeProbe = ctx.compaction.compactNow(
+        idleAgent(probe),
+        new AbortController().signal,
+      )
+      await probeArrived
+      await ctx.compaction.compactNow(
+        idleAgent(blocked),
+        new AbortController().signal,
+      )
+      releaseProbe()
+      await activeProbe
+
+      expect(requests.filter(request => request.kind === 'portable')).toHaveLength(3)
+      expect(requests.filter(request => request.kind === 'native')).toHaveLength(2)
+      expect(probe.deriveMessages().some(message => message.content.some(
+        block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+      ))).toBe(true)
+      expect(blocked.deriveMessages().some(message => message.content.some(
+        block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+      ))).toBe(false)
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
   it.each([
     'zero-artifacts',
     'multiple-artifacts',
@@ -2156,6 +2970,43 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
 
     expect(requests.filter(request => request.kind === 'portable')).toHaveLength(2)
     expect(requests.filter(request => request.kind === 'native')).toHaveLength(1)
+  })
+
+  it('opens immediately when the final Portable payload has an unsupported protocol shape', async () => {
+    let portableCalls = 0
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: 'acct_unsupported_payload_fixture',
+      onPayload: payload => {
+        portableCalls += 1
+        return portableCalls === 1
+          ? { ...(payload as Record<string, unknown>), tool_choice: 'required' }
+          : payload
+      },
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      await ctx.compaction.compactNow(
+        idleAgent(closedConversation(`dual-unsupported-payload-${attempt}`)),
+        new AbortController().signal,
+      )
+    }
+
+    await drain(ctx.llm.stream({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'ordinary inference while native circuit is open' }],
+        source: { kind: 'user' },
+      })],
+      sessionId: SessionId('ordinary-while-native-circuit-open'),
+    }))
+
+    expect(requests.map(request => request.kind)).toEqual([
+      'portable', 'portable', 'ordinary',
+    ])
+    expect(requests[0]?.body.tool_choice).toBe('required')
+    expect(requests[1]?.body.tool_choice).toBe('auto')
   })
 
   it.each([401, 403])('does not count HTTP %i authentication failures in the breaker', async (status) => {

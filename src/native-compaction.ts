@@ -20,7 +20,6 @@ import {
 } from './native-checkpoint.ts'
 import type {
   CodexNativeCheckpointBlock,
-  CodexNativeCheckpointUsage,
   CodexNativeCheckpointV1,
   CodexResponsesItem,
   JsonValue,
@@ -40,7 +39,7 @@ import type {
 } from './codex-turn-state.ts'
 import {
   CODEX_NATIVE_RETENTION_TOKEN_BUDGET,
-  estimateCodexJsonTokens,
+  estimateCodexReplayTokens,
   retainRecentCodexUserMessages,
 } from './native-compaction-retention.ts'
 import {
@@ -87,7 +86,7 @@ type NativeCompactionDiagnosticDetail =
     readonly ignoredOutputItems: number
     readonly artifactBytes: number
     readonly opaqueBytes: number
-    readonly usage: { readonly source: 'unavailable' } | CodexNativeCheckpointUsage
+    readonly usageAvailability: 'estimated' | 'reported' | 'unavailable'
   }
   | {
     readonly event: 'candidate'
@@ -426,19 +425,6 @@ class CodexNativeCompactionCoordinator {
         event: 'eligibility',
         eligibility: 'eligible',
       })
-      const nativeRequest = deriveNativeRequest(
-        eligible.payload,
-        portableModel,
-        eligible.instructionText,
-      )
-      if (nativeRequest === undefined) {
-        emitDiagnostic(operation, portableModel, {
-          event: 'fallback',
-          breakerState: 'not-acquired',
-          reason: 'unsupported-payload',
-        })
-        return undefined
-      }
       const accountHash = hashCodexAccountIdentity(eligible.credential.accountId)
       lease = nativeCompactionBreaker.acquire(nativeCompactionBreakerKey(
         accountHash,
@@ -450,6 +436,20 @@ class CodexNativeCompactionCoordinator {
           event: 'fallback',
           breakerState: 'open',
           reason: 'circuit-open',
+        })
+        return undefined
+      }
+      const nativeRequest = deriveNativeRequest(
+        eligible.payload,
+        portableModel,
+        eligible.instructionText,
+      )
+      if (nativeRequest === undefined) {
+        const breakerState = lease.fail(new NativeCompactionFailure('protocol'))
+        emitDiagnostic(operation, portableModel, {
+          event: 'fallback',
+          breakerState,
+          reason: 'unsupported-payload',
         })
         return undefined
       }
@@ -476,7 +476,7 @@ class CodexNativeCompactionCoordinator {
         ignoredOutputItems: response.ignoredOutputItems,
         artifactBytes: serializedJsonBytes(response.artifact),
         opaqueBytes: utf8ByteLength(opaqueContent),
-        usage: response.usage ?? { source: 'unavailable' },
+        usageAvailability: response.usage?.source ?? 'unavailable',
       })
       const retained = retainRecentCodexUserMessages(
         nativeRequest.body.input as JsonValue[],
@@ -515,7 +515,7 @@ class CodexNativeCompactionCoordinator {
         }),
         replay: {
           estimator: CODEX_NATIVE_CHECKPOINT_ESTIMATOR,
-          estimatedTokens: estimateCodexJsonTokens(replacementItems),
+          estimatedTokens: estimateCodexReplayTokens(retained, response.artifact),
         },
         ...(response.usage === undefined ? {} : { usage: response.usage }),
         replacementItems,
@@ -556,7 +556,10 @@ class CodexNativeCompactionCoordinator {
       }
       return block
     } catch (error) {
-      operationSignal.throwIfAborted()
+      if (operationSignal.aborted) {
+        lease?.ignore()
+        operationSignal.throwIfAborted()
+      }
       const failure = error instanceof NativeCompactionFailure
         ? error
         : new NativeCompactionFailure('protocol')

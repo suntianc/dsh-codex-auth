@@ -53,7 +53,7 @@ const VALID_CHECKPOINT: CodexNativeCheckpointV1 = {
   },
   compatibilityDigest: `sha256:${'b'.repeat(64)}`,
   replay: {
-    estimator: 'codex-v2-json-bytes-div-4-v1',
+    estimator: 'codex-v2-retained-json-plus-opaque-base64-v1',
     estimatedTokens: 321,
   },
   usage: {

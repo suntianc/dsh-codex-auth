@@ -2,12 +2,13 @@
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
-import { CallId } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { describe, expect, it, vi } from 'vitest'
+import { mountCustomCompaction } from './support/compaction-fixture.ts'
 import {
   CODEX_IMAGE_EDIT_ENDPOINT, CODEX_IMAGE_GENERATION_ENDPOINT, createCodexImageTools,
   type CodexImageSettings, type CodexImageToolOptions,
@@ -51,7 +52,10 @@ function fakeAgent(events: unknown[] = [], overrides: Partial<Agent['options']> 
   } as unknown as Agent
 }
 
-function bench(overrides: Partial<CodexImageToolOptions> = {}) {
+function bench(
+  overrides: Partial<CodexImageToolOptions> = {},
+  compactionActive = false,
+) {
   const saved: SaveImageAttachment[] = []
   const refs = new Map<string, { ref: ImageAttachmentRef; data: Uint8Array }>()
   let nextId = 1
@@ -97,9 +101,12 @@ function bench(overrides: Partial<CodexImageToolOptions> = {}) {
   }
   const ctx = new Context()
   new SystemPrompt(ctx, {})
+  if (compactionActive) {
+    mountCustomCompaction(ctx)
+  }
   const tools = new ToolRuntime(ctx)
   for (const tool of createCodexImageTools(options)) tools.register(tool)
-  return { attachments, fetchImpl, fs, options, refs, saved, tools }
+  return { attachments, ctx, fetchImpl, fs, options, refs, saved, tools }
 }
 
 async function execute(
@@ -119,15 +126,18 @@ async function execute(
 }
 
 describe('generate_image', () => {
-  it('dispatches one generation, persists it, and renders a durable ImageBlock', async () => {
-    const b = bench()
+  it.each([
+    ['inactive', false],
+    ['active', true],
+  ] as const)('dispatches the same generation contract with custom compaction %s', async (_label, compactionActive) => {
+    const fixture = bench({}, compactionActive)
 
-    const result = await execute(b.tools, 'generate_image', { prompt: 'a red fox' })
+    const result = await execute(fixture.tools, 'generate_image', { prompt: 'a red fox' })
 
     expect(result.isError).toBe(false)
     if (result.isError) return
-    expect(b.fetchImpl).toHaveBeenCalledTimes(1)
-    const [input, init] = b.fetchImpl.mock.calls[0] ?? []
+    expect(fixture.fetchImpl).toHaveBeenCalledTimes(1)
+    const [input, init] = fixture.fetchImpl.mock.calls[0] ?? []
     expect(String(input)).toBe(CODEX_IMAGE_GENERATION_ENDPOINT)
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer access-secret')
     expect(new Headers(init?.headers).get('chatgpt-account-id')).toBe('acct-1')
@@ -139,8 +149,8 @@ describe('generate_image', () => {
       quality: 'auto',
       size: 'auto',
     })
-    expect(b.attachments.validateImage).toHaveBeenCalledTimes(1)
-    expect(b.attachments.saveImage).toHaveBeenCalledTimes(1)
+    expect(fixture.attachments.validateImage).toHaveBeenCalledTimes(1)
+    expect(fixture.attachments.saveImage).toHaveBeenCalledTimes(1)
     expect(result.value).toMatchObject({
       operation: 'generate',
       images: [{ handle: 'image:att-1', attachment: { attachmentId: 'att-1' } }],
@@ -151,6 +161,7 @@ describe('generate_image', () => {
       { type: 'image', attachment: expect.objectContaining({ attachmentId: 'att-1' }) },
     ]))
     expect(result.meta).toEqual(result.value)
+    await fixture.ctx.fiber.dispose()
   })
 
   it('promotes explicit workspace references and dispatches the edit endpoint', async () => {

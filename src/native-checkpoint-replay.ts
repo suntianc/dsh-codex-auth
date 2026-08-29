@@ -182,13 +182,12 @@ export class CodexNativeCheckpointReplay {
         yield result.value
       }
     } finally {
-      try {
-        if (iterator?.return !== undefined) {
-          await this.storage.run(scope, () => iterator!.return!())
-        }
-      } finally {
-        scope.accountHash = undefined
-        scope.entries.clear()
+      // Retire sensitive replay material before upstream iterator teardown, which
+      // may be slow or ignore cancellation after the consumer returns early.
+      scope.accountHash = undefined
+      scope.entries.clear()
+      if (iterator?.return !== undefined) {
+        await this.storage.run(scope, () => iterator!.return!())
       }
     }
   }

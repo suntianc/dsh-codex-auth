@@ -17,6 +17,7 @@ import {
   readAuthFile, refreshTooOld, refreshTokens, writeAuthFile, CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_URL,
 } from '../src/codex-auth.ts'
 import type { CodexAuthFile } from '../src/codex-auth.ts'
+import { mountCustomCompaction } from './support/compaction-fixture.ts'
 import {
   CodexAuthAdapter, MAX_REQUEST_IMAGE_BYTES, REQUEST_IMAGE_MAX_BYTES, REQUEST_IMAGE_PIXEL_BUDGET,
   resolveCodexAccessToken,
@@ -293,8 +294,14 @@ describe('Auth / LLM row configuration', () => {
 })
 
 describe('CodexAuthAdapter route profile', () => {
-  it('passes the configured transport and timeouts into the pi-ai profile', () => {
+  it.each([
+    ['inactive', false],
+    ['active', true],
+  ] as const)('keeps WebSocket/auto transport metadata unchanged with custom compaction %s', (_label, compactionActive) => {
     const ctx = new Context()
+    if (compactionActive) {
+      mountCustomCompaction(ctx)
+    }
     const service = new CodexAuthService(ctx, {
       authJsonPath: '/nonexistent/auth.json',
       codexCommand: 'definitely-not-codex',
@@ -308,14 +315,14 @@ describe('CodexAuthAdapter route profile', () => {
       fetchImpl: fetch,
       displayName: 'OpenAI Codex (chatgpt)',
       settings: () => ({ longContextEnabled: false }),
-      transport: 'auto',
+      transport: 'websocket',
       websocketConnectTimeoutMs: 3_000,
       timeoutMs: 60_000,
     })
     const options = piAiAdapterCalls.at(-1)
     const profile = options?.profiles().get('openai-codex') as Record<string, unknown> | undefined
     expect(profile).toMatchObject({
-      transport: 'auto',
+      transport: 'websocket',
       websocketConnectTimeoutMs: 3_000,
       timeoutMs: 60_000,
       maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES,
@@ -324,8 +331,14 @@ describe('CodexAuthAdapter route profile', () => {
     })
   })
 
-  it('applies the live 1M policy only to supported GPT-5.6 model descriptors', () => {
+  it.each([
+    ['inactive', false],
+    ['active', true],
+  ] as const)('keeps live model metadata policy unchanged with custom compaction %s', (_label, compactionActive) => {
     const ctx = new Context()
+    if (compactionActive) {
+      mountCustomCompaction(ctx)
+    }
     const service = new CodexAuthService(ctx, {
       authJsonPath: '/nonexistent/auth.json',
       codexCommand: 'definitely-not-codex',
@@ -441,7 +454,13 @@ describe('CodexAuthService authenticated operation boundary', () => {
     if (flight instanceof Promise) await flight
   }
 
-  it('coalesces concurrent refreshes and returns account-scoped credentials', async () => {
+  it.each([
+    ['inactive', false],
+    ['active', true],
+  ] as const)('coalesces the same auth refresh with custom compaction %s', async (_label, compactionActive) => {
+    if (compactionActive) {
+      mountCustomCompaction(ctx)
+    }
     const expiring = fakeJwt(Math.floor(Date.now() / 1000) + 30, 'acct-1')
     const refreshed = fakeJwt(Math.floor(Date.now() / 1000) + 3600, 'acct-1', 'plus')
     await writeFile(authPath, JSON.stringify({

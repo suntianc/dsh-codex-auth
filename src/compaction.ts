@@ -169,32 +169,15 @@ function logNativeDiagnostic(
     return
   }
   if (diagnostic.event === 'response') {
-    const unavailable = 'unavailable'
-    const usageValues = diagnostic.usage.source !== 'unavailable'
-      ? [
-          String(diagnostic.usage.inputTokens),
-          String(diagnostic.usage.outputTokens),
-          diagnostic.usage.cacheReadTokens === undefined
-            ? unavailable
-            : String(diagnostic.usage.cacheReadTokens),
-          diagnostic.usage.cacheWriteTokens === undefined
-            ? unavailable
-            : String(diagnostic.usage.cacheWriteTokens),
-          diagnostic.usage.reasoningTokens === undefined
-            ? unavailable
-            : String(diagnostic.usage.reasoningTokens),
-        ] as const
-      : [unavailable, unavailable, unavailable, unavailable, unavailable] as const
     ctx.logger.debug(
-      'codex-compaction: event=response compactionId=%s trigger=%s codec=%s codecGeneration=%d model=%s durationMs=%d outputItems=%d ignoredOutputItems=%d artifactBytes=%d opaqueBytes=%d usageSource=%s inputTokens=%s outputTokens=%s cacheReadTokens=%s cacheWriteTokens=%s reasoningTokens=%s',
+      'codex-compaction: event=response compactionId=%s trigger=%s codec=%s codecGeneration=%d model=%s durationMs=%d outputItems=%d ignoredOutputItems=%d artifactBytes=%d opaqueBytes=%d usageAvailability=%s',
       ...identity,
       diagnostic.durationMs,
       diagnostic.outputItems,
       diagnostic.ignoredOutputItems,
       diagnostic.artifactBytes,
       diagnostic.opaqueBytes,
-      diagnostic.usage.source,
-      ...usageValues,
+      diagnostic.usageAvailability,
     )
     return
   }
@@ -269,9 +252,21 @@ function dualSummaryClearlyShrinks(
  * eligible manual or automatic Portable summary with a Native Checkpoint.
  */
 export class CodexCompactionEngine extends BasicCompactionEngine {
+  private readonly lifecycleController = new AbortController()
+
   constructor(ctx: Context, config: Config = {}) {
     assertCodexCompactionCompatibility()
     super(ctx, config)
+    ctx.effect(
+      () => () => this.lifecycleController.abort(
+        new Error('codex native compaction: Adapter realm disposed'),
+      ),
+      'codex-compaction: active request cleanup',
+    )
+  }
+
+  private operationSignal(signal: AbortSignal): AbortSignal {
+    return AbortSignal.any([signal, this.lifecycleController.signal])
   }
 
   override compactNow(
@@ -279,16 +274,17 @@ export class CodexCompactionEngine extends BasicCompactionEngine {
     signal: AbortSignal,
     sourceCommandId?: ManualCommandId,
   ): Promise<Awaited<ReturnType<BasicCompactionEngine['compactNow']>>> {
+    const operationSignal = this.operationSignal(signal)
     const target = currentRoutedTarget(agent)
     const diagnosticModel = target?.model ?? 'unrouted'
     return codexNativeCompactionCoordinator.runManual({
       sessionId: String(agent.session.id),
       target,
-      signal,
+      signal: operationSignal,
       diagnostic: diagnostic => logNativeDiagnostic(this.ctx, diagnostic),
     }, async () => {
       try {
-        const result = await super.compactNow(agent, signal, sourceCommandId)
+        const result = await super.compactNow(agent, operationSignal, sourceCommandId)
         const commit = classifyCommit(result)
         codexNativeCompactionCoordinator.noteResult(diagnosticModel, commit.diagnostic)
         return result
@@ -304,17 +300,18 @@ export class CodexCompactionEngine extends BasicCompactionEngine {
     trigger: AutomaticCompactionTrigger,
     signal: AbortSignal,
   ): Promise<Awaited<ReturnType<BasicCompactionEngine['compactIfNeeded']>>> {
+    const operationSignal = this.operationSignal(signal)
     const target = currentRoutedTarget(agent)
     const diagnosticModel = target?.model ?? 'unrouted'
     return codexNativeCompactionCoordinator.runAutomatic({
       agent,
       trigger,
       target,
-      signal,
+      signal: operationSignal,
       diagnostic: diagnostic => logNativeDiagnostic(this.ctx, diagnostic),
     }, async () => {
       try {
-        const result = await super.compactIfNeeded(agent, trigger, signal)
+        const result = await super.compactIfNeeded(agent, trigger, operationSignal)
         const commit = classifyCommit(result)
         codexNativeCompactionCoordinator.commitAutomaticContinuation(commit.committedNative)
         codexNativeCompactionCoordinator.noteResult(diagnosticModel, commit.diagnostic)

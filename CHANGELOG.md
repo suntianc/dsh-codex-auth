@@ -17,6 +17,9 @@ All notable changes to this project are documented in this file.
 - Restored compatible durable Codex Native Checkpoints during ordinary `openai-codex` inference while preserving one exact-position Portable fallback for every incompatible or malformed candidate.
 - Kept Basic authoritative for automatic trigger timing, pruning, balanced selection, retry caps, durable markers, strict shrink, surface mutation, and cancellation while the custom Adapter adds only native generation and one-shot continuity.
 - Preserved immutable Dual Checkpoints across JSON restore, public forks, stock-Basic rollback, and round trips through the shipped foreign Adapters; final payload callbacks and Adapter generation changes now reselect Native or Portable without rewriting Session state.
+- Made Native v2 failure degradation predictable: unsupported final Portable shapes now open the protocol breaker, half-open remains single-probe, active direct requests abort on Adapter disposal, ordinary inference stays independent, and logs expose usage availability without provider token values or merging Native usage into rc.2 aggregate accounting.
+- Completed repeated compaction semantics with ordered expansion of compatible earlier checkpoints, Portable contribution from incompatible checkpoints, later-tail preservation, Basic-owned bounded pressure behavior, and the versioned retained-JSON plus opaque-base64 replay estimator under the 64,000-token retained-prefix policy.
+- Completed experimental delivery verification with custom-preset manual/pressure/overflow coverage, stock client non-copyability checks, packed design/ADR documentation, strengthened tarball smoke checks, and a CI-refusing double-confirmed live v2/continuation/restart/repetition harness that remains outside normal `test` and `check`.
 
 ### Security
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /** Packaged-artifact smoke: exported Host modules, browser bundle, and patch rows. */
 import { execFileSync } from 'node:child_process'
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { access, mkdir, mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import semver from 'semver'
 
@@ -16,7 +17,7 @@ const EXPERIMENTAL_DSH_PEERS = [
 const PI_AI_VERSION = '0.82.1'
 const SEMVER_OPTIONS = { includePrerelease: true }
 const sourceRoot = resolve(import.meta.dirname, '..')
-const temporary = await mkdtemp(resolve(sourceRoot, '.package-smoke-'))
+const temporary = await mkdtemp(resolve(tmpdir(), 'dsh-codex-auth-package-smoke-'))
 try {
   const output = execFileSync('npm', [
     'pack', '--json', '--ignore-scripts', '--pack-destination', temporary,
@@ -29,6 +30,7 @@ try {
   const packed = JSON.parse(output.slice(jsonStart < 0 ? 0 : jsonStart + 1))
   const filename = packed?.[0]?.filename
   if (typeof filename !== 'string') throw new Error('package smoke: npm pack returned no artifact')
+  const packedPaths = new Set((packed?.[0]?.files ?? []).map(file => file.path))
   execFileSync('tar', ['-xzf', resolve(temporary, filename), '-C', temporary])
 
   const packageRoot = resolve(temporary, 'package')
@@ -37,6 +39,46 @@ try {
   if (!changelog.includes(`## [${String(manifest.version)}]`)) {
     throw new Error(`package smoke: CHANGELOG.md lacks release ${String(manifest.version)}`)
   }
+  const requiredDocumentation = [
+    'docs/design.md',
+    'docs/adr/0003-isolate-experimental-codex-compaction.md',
+    'docs/adr/0004-restore-native-checkpoints-with-request-markers.md',
+    'docs/adr/0005-create-dual-checkpoints-inside-basic-manual-transactions.md',
+    'docs/adr/0006-preserve-turn-continuity-during-automatic-compaction.md',
+    'docs/adr/0007-preserve-dual-checkpoints-across-session-lifecycles.md',
+  ]
+  for (const documentation of requiredDocumentation) {
+    if (!packedPaths.has(documentation)) {
+      throw new Error(`package smoke: npm manifest lacks ${documentation}`)
+    }
+    await access(resolve(packageRoot, documentation))
+  }
+  for (const path of packedPaths) {
+    if (path.startsWith('src/')
+      || path.startsWith('tests/')
+      || path.startsWith('scripts/')
+      || path.startsWith('docs/research/')) {
+      throw new Error(`package smoke: forbidden source-only path ${path}`)
+    }
+  }
+
+  // Keep the packed module outside the repository and expose only dependencies
+  // declared for package consumers. An undeclared, deep, or dev-only import can
+  // no longer resolve accidentally through this checkout's parent node_modules.
+  const isolatedNodeModules = resolve(temporary, 'node_modules')
+  await mkdir(isolatedNodeModules, { recursive: true })
+  const consumerDependencies = {
+    ...manifest.dependencies,
+    ...manifest.peerDependencies,
+  }
+  for (const dependency of Object.keys(consumerDependencies)) {
+    const installed = resolve(sourceRoot, 'node_modules', dependency)
+    await access(installed)
+    const linked = resolve(isolatedNodeModules, dependency)
+    await mkdir(dirname(linked), { recursive: true })
+    await symlink(installed, linked, 'junction')
+  }
+
   for (const section of ['peerDependencies', 'devDependencies']) {
     const required = section === 'peerDependencies'
       ? DSH_BASELINE
@@ -194,7 +236,7 @@ try {
     throw new Error('package smoke: default bundle must not activate experimental compaction')
   }
 
-  console.log(`package smoke: ${filename} exposes Host modules, Native replay codec, Dual Checkpoint example, client, types, and unchanged bundle activation`)
+  console.log(`package smoke: ${filename} exposes Host modules, Native replay codec, Dual Checkpoint example, design/ADRs, client, types, and unchanged bundle activation`)
 } finally {
   await rm(temporary, { recursive: true, force: true })
 }

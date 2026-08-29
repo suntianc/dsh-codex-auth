@@ -15,7 +15,7 @@ export function retainRecentCodexUserMessages(
     const item = input[index]
     if (item === undefined || !isRetainableUserItem(item)) continue
     const cloned = structuredClone(item) as CodexResponsesItem
-    if (estimateCodexJsonTokens([...retainedNewestFirst, cloned]) <= budgetTokens) {
+    if (estimateRetainedTokens([...retainedNewestFirst, cloned]) <= budgetTokens) {
       retainedNewestFirst.push(cloned)
       continue
     }
@@ -26,9 +26,36 @@ export function retainRecentCodexUserMessages(
   return retainedNewestFirst.reverse()
 }
 
-/** Versioned native replay estimate: canonical JSON UTF-8 bytes divided by four. */
+/** Canonical JSON UTF-8 estimate used for retained text-only items. */
 export function estimateCodexJsonTokens(value: unknown): number {
   return Math.ceil(serializedJsonBytes(value) / 4)
+}
+
+function estimateRetainedTokens(items: readonly CodexResponsesItem[]): number {
+  return items.reduce(
+    (total, item) => total + estimateCodexJsonTokens(item),
+    0,
+  )
+}
+
+/**
+ * Versioned replay estimate matching Codex's pinned model-visible compaction
+ * heuristic: retained items use canonical JSON, while opaque base64 first pays
+ * the provider's 650-byte envelope deduction before four-bytes-per-token.
+ */
+export function estimateCodexReplayTokens(
+  retainedItems: readonly CodexResponsesItem[],
+  artifact: CodexResponsesItem,
+): number {
+  const retainedTokens = estimateRetainedTokens(retainedItems)
+  const encodedLength = typeof artifact.encrypted_content === 'string'
+    ? artifact.encrypted_content.length
+    : 0
+  const opaqueModelVisibleBytes = Math.max(
+    Math.floor(encodedLength * 3 / 4) - 650,
+    0,
+  )
+  return retainedTokens + Math.ceil(opaqueModelVisibleBytes / 4)
 }
 
 function truncateUserItem(
@@ -51,7 +78,7 @@ function truncateUserItem(
     const length = Math.floor((low + high) / 2)
     const candidate = retainItemTextPrefix(item, length)
     if (candidate !== undefined
-      && estimateCodexJsonTokens([...newerItems, candidate]) <= budgetTokens) {
+      && estimateRetainedTokens([...newerItems, candidate]) <= budgetTokens) {
       accepted = candidate
       low = length + 1
     } else {

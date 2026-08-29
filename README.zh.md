@@ -58,12 +58,16 @@ Portable 成功永远先发生。路由或模型不一致、前缀为空或含�
 限流、HTTP/协议错误、状态过大或保守 shrink 预检失败时，都会只提交已经有效的 Portable
 Checkpoint；Portable 失败则不提交 checkpoint。Native 请求不会重试。进程局部、按
 account/model/endpoint/codec 隔离的 circuit breaker 会在五分钟内三次 transient 失败后
-打开十分钟，在 protocol 失败后打开一小时，并按设有上限的 HTTP 429 `Retry-After` 打开；
-HTTP 401/403、oversize-state 与 strict-shrink fallback 都不计数。它不会禁用普通推理或
-Portable 压缩。Debug 诊断只包含 compaction ID、trigger、codec generation、model、
-eligibility/status/fallback class、breaker state、耗时、item/byte 数、回放估算与 usage
-source/counts；认证被拒绝时会提示执行 `codex login`。诊断绝不会包含 prompt、tool、header、
-token、turn state、canonical item 或 encrypted content。
+打开十分钟，在 protocol 或最终 payload shape 不受支持时打开一小时，并按设有上限的
+HTTP 429 `Retry-After` 打开；half-open 只允许一个探测。HTTP 401/403、oversize-state 与
+strict-shrink fallback 都不计数。它不会禁用普通推理或 Portable 压缩。插件卸载会中止活跃
+Native 工作，并释放请求局部的 credential、payload、marker、canonical item 与 continuation。
+
+Debug 诊断只包含 compaction ID、trigger、codec generation、model、eligibility/status/fallback
+class、breaker state、耗时、item/byte 数、回放估算与 usage 是否可用；认证被拒绝时会提示执行
+`codex login`。诊断绝不会包含 prompt、tool、header、token、turn state、canonical item、
+encrypted content 或 provider 报告的 Token 数值。Native usage 数值可以作为诊断 metadata
+保存在敏感 checkpoint 内，但 rc.2 的聚合 Token 记账仍只使用 Portable 摘要调用。
 
 一次**内联自动** Native 压缩成功后，provider 响应中非空的 `x-codex-turn-state` 会成为
 进程局部的 **Codex Turn Continuation**。只读 `llm/stream` waterfall 会在 Runtime 克隆前
@@ -74,11 +78,14 @@ token、turn state、canonical item 或 encrypted content。
 绝不会进入 Session event、checkpoint、UI state、日志、错误或 telemetry。
 
 Native 生成仍只支持从当前 surface 头部开始、且 Portable 调用使用同一个精确
-`openai-codex` 模型的前缀；显式 region 压缩仍只产生 Portable Checkpoint。canonical
-retained-user 消息使用版本化的 64,000 Token 估算预算；完整 custom block 上限为 2 MiB，
-最终仍由 Basic 执行权威 strict-shrink 校验。额外 v2 请求会增加延迟并消耗 Codex 配额；其
-opaque 状态不含 credential，但仍是敏感会话数据，而且 rc.2 会在 summary event 与
-replacement message 中各保存一份。
+`openai-codex` 模型的前缀；显式 region 与选区内含图片的压缩仍只产生 Portable
+Checkpoint，选定前缀之后的图片和其他消息继续留在 DSH tail。canonical 纯文本 user group
+按从新到旧顺序在版本化的 64,000 Token JSON 预算内保留，边界处最多保留一个 Unicode-safe
+文本前缀。回放估算对 opaque 内容单独采用固定 Codex 规则：base64 解码长度减去 650-byte
+envelope allowance；该值不冒充 DSH 的 provider-neutral pressure price。完整 custom block
+上限为 2 MiB，最终仍由 Basic 执行权威 strict-shrink 校验。额外 v2 请求会增加延迟并消耗
+Codex 配额；其 opaque 状态不含 credential，但仍是敏感会话数据，而且 rc.2 会在 summary
+event 与 replacement message 中各保存一份。
 
 正常安装 Codex 能力包不会启用这个 Adapter。`cordis.patch.yml` 与 DSH 内置 preset
 仍然使用 stock Basic 压缩。要显式启用，可把 npm 包内最小示例的完整 `compaction`
@@ -98,9 +105,24 @@ node_modules/dsh-codex-auth/examples/agent-presets/codex-portable/
 
 该实验性导出只支持 DSH / Basic compaction `0.1.1-rc.2` 与 pi-ai `0.82.1`；
 在其他版本组合上挂载会给出可操作的兼容性错误并失败。长上下文模式可以改变 pressure
-压缩的触发时机，但不会改变 Native 资格、retention、回放或一次性 turn-continuation 契约。
-回滚时只需重新选择 DSH 内置
-preset；已有会话仍可通过同级 Portable 文本继续，不需要迁移 profile 或会话。
+压缩的触发时机，但不会改变 Native activation、codec、retention、v2 payload、回放兼容性
+或一次性 turn-continuation 契约。回滚时只需重新选择 DSH 内置 preset；已有会话仍可通过
+同级 Portable 文本继续，不需要迁移 profile 或会话。当 DSH 提供受支持的 provider-native
+checkpoint Seam 时，应迁移到该 Seam，并删除本包的 carrier、请求 side channel、直接
+transport、兼容性固定与自定义 Basic replacement；Portable Checkpoint 继续作为恢复路径。
+
+仓库包含会消耗真实 Codex 配额的 live harness，但普通测试、`pnpm run check` 与 CI 都不会
+运行它。它会拒绝 `CI`，并要求已有 Codex Login State 以及两个显式确认变量：
+
+```sh
+DSH_CODEX_NATIVE_LIVE=1 \
+DSH_CODEX_NATIVE_LIVE_CONFIRM=I_UNDERSTAND_CODEX_LIVE_QUOTA \
+pnpm run test:live:native-compaction
+```
+
+它验证真实 v2 创建、同进程一次性 turn continuation 与 Native 回放、重启/恢复回放、重复压缩
+和诊断脱敏。没有另行授权
+消耗 live Codex 配额时不要运行；实现过程和普通验证不会触达这一边界。
 
 ### Codex Native Checkpoint 回放
 
@@ -109,8 +131,11 @@ preset；已有会话仍可通过同级 Portable 文本继续，不需要迁移 
 provider payload hook 再在原位置把整条 marker item 替换为 canonical Codex Native
 Checkpoint items，或替换为一条只含 Portable Checkpoint 的普通 user item。Native 与
 Portable 两种表示绝不会同时发给 provider。持久化 block 可安全经过 JSON 存储、
-`Session.fromRestore()` 与 `SessionStore.fork()`；重启恢复及 fork 都不需要改写 Session。
-连续执行手动压缩时，会先展开早先兼容的 Native Checkpoint，再追加新的 trigger。
+`Session.fromRestore()` 与 `SessionStore.fork()`；重启恢复及 fork 后都能继续回放和再次压缩，
+不需要改写 Session。追加新 trigger 之前，选定前缀中的每个兼容 checkpoint 都会在原 item
+位置展开；不兼容 checkpoint 只贡献自己的 Portable message，因此仍可生成新的有效 Native
+checkpoint 来替换该前缀。所有后续 tail message 与重复 pressure 的收敛或有界失败继续由
+Basic 负责。
 
 只有当 checkpoint 的 schema/codec/retention generation、provider、精确 model、哈希后的
 Codex account identity、instructions、tools、parallel/tool-choice controls、reasoning、text
