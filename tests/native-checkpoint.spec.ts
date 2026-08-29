@@ -1,11 +1,19 @@
 import { zstdDecompressSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import {
+  defaultProviderAuthContext,
+  InMemoryCredentialStore,
+} from '@earendil-works/pi-ai'
+import { builtinProviders } from '@earendil-works/pi-ai/providers/all'
 
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { compactCheckpointSource, CompactionId } from '@deepseek-ai/dsh-compaction'
-import LlmRuntime, { createUserMessage, deepFreeze } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, deepFreeze, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
+import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
+import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
+import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import { CodexAuthAdapter } from '../src/codex-auth-adapter.ts'
 import type { CodexAuthAdapterOptions } from '../src/codex-auth-adapter.ts'
 import {
@@ -59,6 +67,8 @@ const VALID_CHECKPOINT: CodexNativeCheckpointV1 = {
       type: 'message',
       role: 'user',
       content: [{ type: 'input_text', text: 'retained user history' }],
+      author: 'provider',
+      token_count: 7,
       future_provider_field: { nested: ['kept', 7, true, null] },
     },
     {
@@ -74,11 +84,18 @@ describe('Codex Native Checkpoint codec', () => {
     const block = encodeCodexNativeCheckpoint(VALID_CHECKPOINT)
 
     expect(block.type).toBe(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+    expect(block).toHaveProperty('text', '')
     expect(JSON.parse(block.state)).toEqual(VALID_CHECKPOINT)
     const decoded = decodeCodexNativeCheckpoint(block)
     expect(decoded.ok).toBe(true)
     if (!decoded.ok) throw new Error(decoded.reason)
     expect(decoded.checkpoint).toEqual(VALID_CHECKPOINT)
+  })
+
+  it('rejects a nonempty generic-presentation field on the opaque block', () => {
+    const block = encodeCodexNativeCheckpoint(VALID_CHECKPOINT)
+
+    expect(decodeCodexNativeCheckpoint({ ...block, text: 'opaque-native-state' }).ok).toBe(false)
   })
 
   it('rejects credential-bearing fields outside the exact opaque block envelope', () => {
@@ -254,6 +271,70 @@ describe('Codex Native Checkpoint codec', () => {
         turn_state: 'secret',
       }],
     })],
+    ['namespaced request id', JSON.stringify({
+      ...VALID_CHECKPOINT,
+      replacementItems: [{
+        type: 'compaction',
+        encrypted_content: 'opaque-native-state',
+        x_request_id: 'provider-routing-id',
+      }],
+    })],
+    ['namespaced raw account id', JSON.stringify({
+      ...VALID_CHECKPOINT,
+      replacementItems: [{
+        type: 'compaction',
+        encrypted_content: 'opaque-native-state',
+        chatgpt_account_id: 'raw-account-id',
+      }],
+    })],
+    ['namespaced auth token', JSON.stringify({
+      ...VALID_CHECKPOINT,
+      replacementItems: [{
+        type: 'compaction',
+        encrypted_content: 'opaque-native-state',
+        x_auth_token: 'plain-secret-token',
+      }],
+    })],
+    ['wrapped refresh token', JSON.stringify({
+      ...VALID_CHECKPOINT,
+      replacementItems: [{
+        type: 'compaction',
+        encrypted_content: 'opaque-native-state',
+        x_refresh_token_value: 'plain-secret-token',
+      }],
+    })],
+    ['namespaced credential object', JSON.stringify({
+      ...VALID_CHECKPOINT,
+      replacementItems: [{
+        type: 'compaction',
+        encrypted_content: 'opaque-native-state',
+        provider_credentials_snapshot: { value: 'plain-secret-token' },
+      }],
+    })],
+    ['discriminated authorization wrapper', JSON.stringify({
+      ...VALID_CHECKPOINT,
+      replacementItems: [{
+        type: 'compaction',
+        encrypted_content: 'opaque-native-state',
+        metadata: { name: 'authorization', value: 'Basic raw-secret' },
+      }],
+    })],
+    ['discriminated access-token wrapper', JSON.stringify({
+      ...VALID_CHECKPOINT,
+      replacementItems: [{
+        type: 'compaction',
+        encrypted_content: 'opaque-native-state',
+        metadata: { type: 'access_token', value: 'plain-token' },
+      }],
+    })],
+    ['authorization tuple wrapper', JSON.stringify({
+      ...VALID_CHECKPOINT,
+      replacementItems: [{
+        type: 'compaction',
+        encrypted_content: 'opaque-native-state',
+        metadata: [['authorization', 'Basic raw-secret']],
+      }],
+    })],
     ['an empty non-canonical replacement item', JSON.stringify({
       ...VALID_CHECKPOINT,
       replacementItems: [{}],
@@ -401,6 +482,48 @@ function mountCodexAdapter(
   return { ctx: context, adapter, release, fetchMock }
 }
 
+function registerDeepSeekAdapter(ctx: Context): { readonly provider: string; readonly model: string } {
+  const provider = 'deepseek-official'
+  const model = 'deepseek-chat'
+  const connection = resolveAdapterOptions({
+    baseURL: 'https://deepseek.invalid/v1',
+    models: [{ id: model }],
+  })
+  ctx.llm.registerAdapter([provider], new DeepSeekAdapter({
+    options: () => connection,
+    resolveApiKey: () => Promise.resolve('deepseek-test-key'),
+    resolveUserId: () => 'anonymous-test-user' as never,
+  }))
+  return { provider, model }
+}
+
+function registerPiAiAdapter(ctx: Context): { readonly provider: string; readonly model: string } {
+  const piProvider = builtinProviders().find(candidate => candidate.id === 'openai')
+  if (piProvider === undefined) throw new Error('pi-ai fixture has no openai provider')
+  const model = piProvider.getModels()[0]?.id
+  if (model === undefined) throw new Error('pi-ai openai fixture has no model')
+  const profile: ResolvedPiAiProviderProfile = {
+    provider: piProvider.id,
+    displayName: 'Foreign pi-ai fixture',
+    streamIdleTimeoutMs: 5_000,
+    maxRequestImageBytes: 20 * 1024 * 1024,
+    requestImagePixelBudget: 640_000,
+    requestImageMaxBytes: 20 * 1024 * 1024,
+    retryPolicy: resolveRetryPolicy(undefined, 'foreign pi-ai fixture'),
+    piProvider,
+    configuredMaxTokens: new Map(),
+  }
+  ctx.llm.registerAdapter([profile.provider], new PiAiAdapter({
+    profiles: () => new Map([[profile.provider, profile]]),
+    resolveApiKey: () => Promise.resolve('openai-test-key'),
+    auth: {
+      credentials: new InMemoryCredentialStore(),
+      authContext: defaultProviderAuthContext(),
+    },
+  }))
+  return { provider: profile.provider, model }
+}
+
 function compatibleCheckpoint(): CodexNativeCheckpointV1 {
   return {
     ...VALID_CHECKPOINT,
@@ -449,6 +572,35 @@ function replayOptions(checkpoint = compatibleCheckpoint()): GenerateOptions {
       }),
     ],
   })
+}
+
+function replayOptionsWithRawCheckpointState(
+  state: string | ((checkpoint: Record<string, unknown>) => void),
+): GenerateOptions {
+  const options = replayOptions()
+  const checkpoint = options.messages[1]!
+  const content = checkpoint.content.map((block) => {
+    if (block.type !== CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE) return block
+    if (typeof state === 'string') return { ...block, state }
+    const parsed = JSON.parse(block.state) as Record<string, unknown>
+    state(parsed)
+    return { ...block, state: JSON.stringify(parsed) }
+  })
+  return deepFreeze({
+    ...options,
+    messages: [
+      options.messages[0]!,
+      { ...checkpoint, content },
+      options.messages[2]!,
+    ],
+  }) as GenerateOptions
+}
+
+function portableUserPayloadItem(): Record<string, unknown> {
+  return {
+    role: 'user',
+    content: [{ type: 'input_text', text: PORTABLE_TEXT }],
+  }
 }
 
 async function drain(stream: AsyncIterable<unknown>): Promise<void> {
@@ -502,6 +654,33 @@ describe('Codex Native Checkpoint replay', () => {
     expect(payloads).toHaveLength(1)
     expect(JSON.stringify(payloads[0])).toContain('opaque-native-state')
     expect(JSON.stringify(payloads[0])).not.toContain(PORTABLE_TEXT)
+  })
+
+  it.each([
+    ['shipped direct DeepSeek Adapter', registerDeepSeekAdapter],
+    ['shipped PiAiAdapter', registerPiAiAdapter],
+  ] as const)('sends Portable through the %s and keeps Native for a Codex round trip', async (
+    _label,
+    registerForeign,
+  ) => {
+    const payloads: unknown[] = []
+    const { ctx } = mountCodexAdapter(payloads)
+    const route = registerForeign(ctx)
+    const codex = replayOptions()
+
+    await drain(ctx.llm.stream(deepFreeze({
+      ...codex,
+      provider: route.provider,
+      model: route.model,
+    })))
+    await drain(ctx.llm.stream(codex))
+
+    expect(payloads).toHaveLength(2)
+    expect(JSON.stringify(payloads[0])).toContain('PORTABLE CHECKPOINT')
+    expect(JSON.stringify(payloads[0])).not.toContain('opaque-native-state')
+    expect(JSON.stringify(payloads[0])).not.toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+    expect(JSON.stringify(payloads[1])).toContain('opaque-native-state')
+    expect(JSON.stringify(payloads[1])).not.toContain(PORTABLE_TEXT)
   })
 
   it('splices multiple native checkpoints in order while preserving intervening and tail items', async () => {
@@ -612,6 +791,31 @@ describe('Codex Native Checkpoint replay', () => {
       expect(JSON.stringify(payload)).not.toContain('opaque-native-state')
       expect(JSON.stringify(payload)).not.toContain('unexpected mixture')
     }
+  })
+
+  it.each([
+    ['corrupt JSON', () => replayOptionsWithRawCheckpointState('{')],
+    ['unknown schema version', () => replayOptionsWithRawCheckpointState((checkpoint) => {
+      checkpoint.schemaVersion = 2
+    })],
+    ['unknown codec generation', () => replayOptionsWithRawCheckpointState((checkpoint) => {
+      const codec = checkpoint.codec as Record<string, unknown>
+      codec.generation = 2
+    })],
+    ['unknown retention generation', () => replayOptionsWithRawCheckpointState((checkpoint) => {
+      const retention = checkpoint.retention as Record<string, unknown>
+      retention.generation = 2
+    })],
+  ] as const)('uses Portable fallback for %s', async (_label, options) => {
+    const payloads: unknown[] = []
+    const { ctx } = mountCodexAdapter(payloads)
+
+    await drain(ctx.llm.stream(options()))
+
+    expect(payloads).toHaveLength(1)
+    expect(JSON.stringify(payloads[0])).toContain('PORTABLE CHECKPOINT')
+    expect(JSON.stringify(payloads[0])).not.toContain('opaque-native-state')
+    expect(JSON.stringify(payloads[0])).not.toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
   })
 
   it('preserves ordinary marker-like text that was not generated for the request', async () => {
@@ -764,22 +968,97 @@ describe('Codex Native Checkpoint replay', () => {
     expect(JSON.stringify(payloads[0])).not.toContain(PORTABLE_TEXT)
   })
 
-  it('fails before fetch when the prior callback changes native compatibility controls', async () => {
+  it('restores Native when the final callback makes initially incompatible controls exact', async () => {
     const payloads: unknown[] = []
+    const checkpoint = {
+      ...compatibleCheckpoint(),
+      compatibilityDigest: codexNativeCheckpointCompatibilityDigest({
+        provider: 'openai-codex',
+        model: MODEL,
+        accountHash: ACCOUNT_HASH,
+        instructions: SYSTEM,
+        tools: null,
+        parallelToolCalls: true,
+        toolChoice: 'auto',
+        reasoning: null,
+        text: { verbosity: 'high' },
+        serviceTier: null,
+      }),
+    } satisfies CodexNativeCheckpointV1
     const callback = (payload: unknown) => {
       const body = payload as Record<string, unknown>
       body.text = { verbosity: 'high' }
+    }
+    const { ctx } = mountCodexAdapter(payloads, callback)
+
+    await drain(ctx.llm.stream(replayOptions(checkpoint)))
+
+    expect(payloads).toHaveLength(1)
+    expect(JSON.stringify(payloads[0])).toContain('opaque-native-state')
+    expect(JSON.stringify(payloads[0])).not.toContain(PORTABLE_TEXT)
+  })
+
+  it('restores Native when the final callback corrects the routed model', async () => {
+    const payloads: unknown[] = []
+    const callback = (payload: unknown) => {
+      const body = payload as Record<string, unknown>
+      body.model = MODEL
+    }
+    const { ctx } = mountCodexAdapter(payloads, callback)
+    const options = {
+      ...replayOptions(),
+      model: 'gpt-5.6-luna',
+    }
+
+    await drain(ctx.llm.stream(options))
+
+    expect(payloads).toHaveLength(1)
+    expect(JSON.stringify(payloads[0])).toContain('opaque-native-state')
+    expect(JSON.stringify(payloads[0])).not.toContain(PORTABLE_TEXT)
+  })
+
+  it('keeps Native when final callbacks add excluded request-scoped routing facts', async () => {
+    const payloads: unknown[] = []
+    const callback = (payload: unknown) => ({
+      ...(payload as Record<string, unknown>),
+      request_id: 'req_transient',
+      prompt_cache_key: 'cache_transient',
+      transient_headers: { 'x-request-id': 'header_transient' },
+      turn_state: 'turn_transient',
+      long_context_mode: true,
+    })
+    const { ctx } = mountCodexAdapter(payloads, callback)
+
+    await drain(ctx.llm.stream(replayOptions()))
+
+    expect(payloads).toHaveLength(1)
+    expect(JSON.stringify(payloads[0])).toContain('opaque-native-state')
+    expect(JSON.stringify(payloads[0])).not.toContain(PORTABLE_TEXT)
+  })
+
+  it.each([
+    ['model', (body: Record<string, unknown>) => { body.model = 'gpt-different' }],
+    ['instructions', (body: Record<string, unknown>) => { body.instructions = 'changed system' }],
+    ['tools', (body: Record<string, unknown>) => { body.tools = [{ type: 'function', name: 'changed' }] }],
+    ['parallel tool calls', (body: Record<string, unknown>) => { body.parallel_tool_calls = false }],
+    ['tool choice', (body: Record<string, unknown>) => { body.tool_choice = 'required' }],
+    ['reasoning', (body: Record<string, unknown>) => { body.reasoning = { effort: 'high' } }],
+    ['text configuration', (body: Record<string, unknown>) => { body.text = { verbosity: 'high' } }],
+    ['service tier', (body: Record<string, unknown>) => { body.service_tier = 'flex' }],
+  ])('substitutes Portable before fetch when the final callback changes %s', async (_field, change) => {
+    const payloads: unknown[] = []
+    const callback = (payload: unknown) => {
+      change(payload as Record<string, unknown>)
       return undefined
     }
     const { ctx } = mountCodexAdapter(payloads, callback)
 
-    const chunks = await collect(ctx.llm.stream(replayOptions()))
+    await drain(ctx.llm.stream(replayOptions()))
 
-    expect(payloads).toHaveLength(0)
-    expect(chunks.at(-1)).toEqual(expect.objectContaining({
-      type: 'finish',
-      reason: expect.objectContaining({ kind: 'error' }),
-    }))
+    expect(payloads).toHaveLength(1)
+    expect(JSON.stringify(payloads[0])).toContain('PORTABLE CHECKPOINT')
+    expect(JSON.stringify(payloads[0])).not.toContain('opaque-native-state')
+    expect(JSON.stringify(payloads[0])).not.toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
   })
 
   it('rejects multipart Portable text reintroduced beside Native items', async () => {
@@ -795,7 +1074,6 @@ describe('Codex Native Checkpoint replay', () => {
             role: 'user',
             content: [
               { type: 'input_text', text: PORTABLE_TEXT.slice(0, split) },
-              { type: 'input_image', image_url: 'data:image/png;base64,fixture' },
               { type: 'input_text', text: PORTABLE_TEXT.slice(split) },
             ],
           },
@@ -825,6 +1103,97 @@ describe('Codex Native Checkpoint replay', () => {
     const { ctx } = mountCodexAdapter(payloads, callback)
 
     const chunks = await collect(ctx.llm.stream(replayOptions()))
+
+    expect(payloads).toHaveLength(0)
+    expect(chunks.at(-1)).toEqual(expect.objectContaining({
+      type: 'finish',
+      reason: expect.objectContaining({ kind: 'error' }),
+    }))
+  })
+
+  it('preserves an ordinary user quotation that merely contains Portable text', async () => {
+    const payloads: unknown[] = []
+    const callback = (payload: unknown) => {
+      const body = payload as Record<string, unknown> & { input: unknown[] }
+      return {
+        ...body,
+        input: [...body.input, {
+          role: 'user',
+          content: [{ type: 'input_text', text: `quoted checkpoint:\n${PORTABLE_TEXT}` }],
+        }],
+      }
+    }
+    const { ctx } = mountCodexAdapter(payloads, callback)
+
+    await drain(ctx.llm.stream(replayOptions()))
+
+    expect(payloads).toHaveLength(1)
+    expect(JSON.stringify(payloads[0])).toContain('quoted checkpoint')
+    expect(JSON.stringify(payloads[0])).toContain('opaque-native-state')
+  })
+
+  it('preserves mixed user content that includes Portable text beside an image', async () => {
+    const payloads: unknown[] = []
+    const callback = (payload: unknown) => {
+      const body = payload as Record<string, unknown> & { input: unknown[] }
+      return {
+        ...body,
+        input: [...body.input, {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: PORTABLE_TEXT },
+            { type: 'input_image', image_url: 'data:image/png;base64,fixture' },
+          ],
+        }],
+      }
+    }
+    const { ctx } = mountCodexAdapter(payloads, callback)
+
+    await drain(ctx.llm.stream(replayOptions()))
+
+    expect(payloads).toHaveLength(1)
+    expect(JSON.stringify(payloads[0])).toContain('input_image')
+    expect(JSON.stringify(payloads[0])).toContain('opaque-native-state')
+  })
+
+  it('rejects a duplicate Native artifact added beside Native replay', async () => {
+    const payloads: unknown[] = []
+    const nativeArtifact = compatibleCheckpoint().replacementItems.at(-1)
+    if (nativeArtifact === undefined) throw new Error('fixture has no Native artifact')
+    const callback = (payload: unknown) => {
+      const body = payload as Record<string, unknown> & { input: unknown[] }
+      return {
+        ...body,
+        input: [...body.input, structuredClone(nativeArtifact)],
+      }
+    }
+    const { ctx } = mountCodexAdapter(payloads, callback)
+
+    const chunks = await collect(ctx.llm.stream(replayOptions()))
+
+    expect(payloads).toHaveLength(0)
+    expect(chunks.at(-1)).toEqual(expect.objectContaining({
+      type: 'finish',
+      reason: expect.objectContaining({ kind: 'error' }),
+    }))
+  })
+
+  it('rejects a duplicate Portable representation added beside Portable fallback', async () => {
+    const payloads: unknown[] = []
+    const checkpoint = {
+      ...compatibleCheckpoint(),
+      compatibilityDigest: `sha256:${'c'.repeat(64)}`,
+    } satisfies CodexNativeCheckpointV1
+    const callback = (payload: unknown) => {
+      const body = payload as Record<string, unknown> & { input: unknown[] }
+      return {
+        ...body,
+        input: [...body.input, portableUserPayloadItem()],
+      }
+    }
+    const { ctx } = mountCodexAdapter(payloads, callback)
+
+    const chunks = await collect(ctx.llm.stream(replayOptions(checkpoint)))
 
     expect(payloads).toHaveLength(0)
     expect(chunks.at(-1)).toEqual(expect.objectContaining({
@@ -886,13 +1255,43 @@ describe('Codex Native Checkpoint replay', () => {
     }))
   })
 
-  it('keeps the ctx.llm.prepareCall Adapter generation while ctx.llm.stream uses its replacement', async () => {
+  it('downgrades an in-flight replay plan when its Adapter generation changes', async () => {
+    const payloads: unknown[] = []
+    let callbackArrived!: () => void
+    let releaseCallback!: () => void
+    const arrived = new Promise<void>(resolve => { callbackArrived = resolve })
+    const gate = new Promise<void>(resolve => { releaseCallback = resolve })
+    const callback = async () => {
+      callbackArrived()
+      await gate
+      return undefined
+    }
+    const { ctx, adapter } = mountCodexAdapter(payloads, callback)
+    const options = replayOptions()
+    const running = drain(ctx.llm.stream(options))
+    await arrived
+
+    adapter.replaceRouteGeneration()
+    releaseCallback()
+    await running
+    await drain(ctx.llm.stream(options))
+
+    expect(payloads).toHaveLength(2)
+    expect(JSON.stringify(payloads[0])).toContain('PORTABLE CHECKPOINT')
+    expect(JSON.stringify(payloads[0])).not.toContain('opaque-native-state')
+    expect(JSON.stringify(payloads[1])).toContain('opaque-native-state')
+    expect(JSON.stringify(payloads[1])).not.toContain(PORTABLE_TEXT)
+    expect(JSON.stringify(options)).toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+  })
+
+  it('invalidates stale prepared replay state while a replacement keeps the durable Native checkpoint', async () => {
     const payloads: unknown[] = []
     const generation = (name: string): NonNullable<CodexAuthAdapterOptions['onPayload']> => (
       payload => ({ ...(payload as Record<string, unknown>), adapterGeneration: name })
     )
-    const { ctx, release, fetchMock } = mountCodexAdapter(payloads, generation('prepared'))
+    const { ctx, adapter, release, fetchMock } = mountCodexAdapter(payloads, generation('prepared'))
     const prepared = await ctx.llm.prepareCall({ provider: 'openai-codex', model: MODEL })
+    adapter.replaceRouteGeneration()
     release()
     const replacement = createCodexAdapter(ctx, fetchMock, generation('direct'))
     ctx.llm.registerAdapter(['openai-codex'], replacement)
@@ -905,11 +1304,11 @@ describe('Codex Native Checkpoint replay', () => {
 
     expect(payloads).toHaveLength(2)
     expect(payloads[0]).toEqual(expect.objectContaining({ adapterGeneration: 'prepared' }))
+    expect(JSON.stringify(payloads[0])).toContain('PORTABLE CHECKPOINT')
+    expect(JSON.stringify(payloads[0])).not.toContain('opaque-native-state')
     expect(payloads[1]).toEqual(expect.objectContaining({ adapterGeneration: 'direct' }))
-    for (const payload of payloads) {
-      expect(JSON.stringify(payload)).toContain('opaque-native-state')
-      expect(JSON.stringify(payload)).not.toContain(PORTABLE_TEXT)
-    }
+    expect(JSON.stringify(payloads[1])).toContain('opaque-native-state')
+    expect(JSON.stringify(payloads[1])).not.toContain(PORTABLE_TEXT)
   })
 
   it.each([

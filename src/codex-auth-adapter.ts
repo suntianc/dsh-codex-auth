@@ -335,16 +335,21 @@ export class CodexAuthAdapter extends PiAiAdapter {
     ctx.on('llm/stream', (request, next) =>
       codexTurnStateContinuity.observeLlmStream(request, next))
     ctx.effect(
-      () => () => codexTurnStateContinuity.retireGeneration(this.adapterGeneration),
-      'llm-codex-auth: turn-state cleanup',
+      () => () => this.retireProcessLocalState(this.adapterGeneration),
+      'llm-codex-auth: process-local replay cleanup',
     )
   }
 
-  /** Discard prepared continuity whenever the route registration is replaced. */
+  private retireProcessLocalState(generation: CodexAdapterGeneration): void {
+    codexTurnStateContinuity.retireGeneration(generation)
+    this.nativeReplay.invalidate()
+  }
+
+  /** Discard prepared continuation and Native replay plans on route replacement. */
   replaceRouteGeneration(): void {
     const previous = this.adapterGeneration
     this.adapterGeneration = codexTurnStateContinuity.createGeneration()
-    codexTurnStateContinuity.retireGeneration(previous)
+    this.retireProcessLocalState(previous)
   }
 
   override async prepareCall(
@@ -353,6 +358,7 @@ export class CodexAuthAdapter extends PiAiAdapter {
     signal?: AbortSignal,
   ): Promise<PreparedAdapterCall> {
     const generation = this.adapterGeneration
+    const replayGeneration = this.nativeReplay.captureGeneration()
     const prepared = await super.prepareCall(provider, model, signal)
     return Object.freeze({
       ...prepared,
@@ -360,7 +366,7 @@ export class CodexAuthAdapter extends PiAiAdapter {
         generation,
         () => {
           codexNativeCompactionCoordinator.notePortableCall(options)
-          return this.nativeReplay.stream(options, prepared.stream)
+          return this.nativeReplay.stream(options, prepared.stream, replayGeneration)
         },
       ),
     })

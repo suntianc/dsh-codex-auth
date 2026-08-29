@@ -522,6 +522,7 @@ class CodexNativeCompactionCoordinator {
       }
       const checkpointBytes = serializedJsonBytes({
         type: CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+        text: '',
         state: JSON.stringify(checkpoint),
       })
       if (checkpointBytes > MAX_CODEX_NATIVE_CHECKPOINT_BYTES) {

@@ -2,6 +2,7 @@ import { zstdDecompressSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
+import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import type { BasicCompactionConfig } from '@deepseek-ai/dsh-compaction-basic'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
@@ -239,6 +240,7 @@ interface CapturedRequest {
 
 interface DualHostOptions {
   readonly accountId?: string
+  readonly compactionBackend?: 'codex' | 'basic'
   readonly credential?: CodexAuthAdapterOptions['auth']['credential']
   readonly longContextEnabled?: boolean
   readonly nativeReply?: (attempt: number, init?: RequestInit) => Response | Promise<Response>
@@ -309,11 +311,16 @@ function mountDualCheckpointHost(options: DualHostOptions = {}): {
     ...(options.onPayload === undefined ? {} : { onPayload: options.onPayload }),
   })
   const registration = ctx.llm.registerAdapter(['openai-codex'], adapter)
-  applyCodexCompaction(ctx, {
+  const compactionConfig = {
     auto: false,
     maxTokens: 128,
     ...options.compactionConfig,
-  })
+  }
+  if (options.compactionBackend === 'basic') {
+    void new BasicCompactionEngine(ctx, compactionConfig)
+  } else {
+    applyCodexCompaction(ctx, compactionConfig)
+  }
   return {
     adapter,
     ctx,
@@ -582,6 +589,91 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(JSON.stringify(replayBody)).not.toContain(PORTABLE_SUMMARY)
     expect(JSON.stringify(replayBody)).not.toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
     expect(JSON.stringify(replayBody)).not.toContain('compaction_trigger')
+  })
+
+  it('replays Native after JSON restore and from a public SessionStore fork', async () => {
+    const first = mountDualCheckpointHost()
+    vi.spyOn(first.ctx.sessions, 'flush').mockResolvedValue(true)
+    const source = closedConversation('dual-persisted-source')
+    await first.ctx.compaction.compactNow(idleAgent(source), new AbortController().signal)
+
+    const durableJson = JSON.stringify({ events: source.events, header: source.header })
+    expect(durableJson).toContain('opaque-remote-checkpoint')
+    expect(durableJson).not.toContain(fakeAccessToken(ACCOUNT_ID))
+    expect(durableJson).not.toContain(ACCOUNT_ID)
+    expect(durableJson.toLowerCase()).not.toContain('authorization')
+    expect(durableJson).not.toContain('x-codex-turn-state')
+    const persisted = JSON.parse(durableJson) as {
+      events: SessionEvent[]
+      header: typeof source.header
+    }
+
+    await first.ctx.fiber.dispose()
+    context = undefined
+    const resumedHost = mountDualCheckpointHost()
+    const resumed = Session.fromRestore(source.id, persisted.events, persisted.header)
+    const detach = resumedHost.ctx.sessions.enter(resumed)
+    resumedHost.ctx.sessions.announce(resumed)
+    const fork = resumedHost.ctx.sessions.fork(
+      resumed,
+      undefined,
+      SessionId('dual-persisted-fork'),
+    )
+
+    await drain(resumedHost.ctx.llm.stream({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: resumed.deriveMessages(),
+      sessionId: resumed.id,
+    }))
+    await drain(resumedHost.ctx.llm.stream({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: fork.deriveMessages(),
+      sessionId: fork.id,
+    }))
+
+    expect(resumedHost.requests).toHaveLength(2)
+    for (const request of resumedHost.requests) {
+      expect(JSON.stringify(request.body)).toContain('opaque-remote-checkpoint')
+      expect(JSON.stringify(request.body)).not.toContain(PORTABLE_SUMMARY)
+      expect(JSON.stringify(request.body)).not.toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+    }
+    expect(JSON.stringify(resumed.events)).toContain('opaque-remote-checkpoint')
+    expect(JSON.stringify(fork.events)).toContain('opaque-remote-checkpoint')
+    detach()
+  })
+
+  it('keeps a persisted Dual Checkpoint usable after rolling back to stock Basic', async () => {
+    const first = mountDualCheckpointHost()
+    vi.spyOn(first.ctx.sessions, 'flush').mockResolvedValue(true)
+    const source = closedConversation('dual-stock-rollback')
+    await first.ctx.compaction.compactNow(idleAgent(source), new AbortController().signal)
+    const persisted = JSON.parse(JSON.stringify({
+      events: source.events,
+      header: source.header,
+    })) as { events: SessionEvent[]; header: typeof source.header }
+
+    await first.ctx.fiber.dispose()
+    context = undefined
+    const rollback = mountDualCheckpointHost({
+      accountId: 'acct_after_stock_rollback',
+      compactionBackend: 'basic',
+    })
+    const restored = Session.fromRestore(source.id, persisted.events, persisted.header)
+
+    expect(rollback.ctx.compaction).toBeInstanceOf(BasicCompactionEngine)
+    await drain(rollback.ctx.llm.stream({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: restored.deriveMessages(),
+      sessionId: restored.id,
+    }))
+
+    expect(rollback.requests).toHaveLength(1)
+    expect(JSON.stringify(rollback.requests[0]!.body)).toContain(PORTABLE_SUMMARY)
+    expect(JSON.stringify(rollback.requests[0]!.body)).not.toContain('opaque-remote-checkpoint')
+    expect(JSON.stringify(restored.events)).toContain('opaque-remote-checkpoint')
   })
 
   it('never arms a manual compact turn state for a later loop request', async () => {

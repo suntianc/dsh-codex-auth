@@ -90,6 +90,8 @@ export interface CodexNativeCheckpointV1 {
 /** Opaque durable carrier duplicated by Basic into summary and replacement events. */
 export interface CodexNativeCheckpointBlock {
   readonly type: typeof CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE
+  /** Empty generic-presenter sentinel; prevents clients from stringifying opaque state. */
+  readonly text: ''
   /** Serialized schema JSON; kept opaque so unknown canonical item fields round-trip. */
   readonly state: string
 }
@@ -162,6 +164,7 @@ export function encodeCodexNativeCheckpoint(
   }
   const block = Object.freeze({
     type: CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    text: '' as const,
     state: JSON.stringify(checkpoint),
   })
   const decoded = decodeCodexNativeCheckpoint(block)
@@ -185,13 +188,15 @@ function decodeCodexNativeCheckpointUnchecked(
 ): CodexNativeCheckpointDecodeResult {
   if (!isPlainJsonTree(block)
     || !isRecord(block)
-    || !hasOnlyKeys(block, ['type', 'state'])
+    || (!hasOnlyKeys(block, ['type', 'state']) && !hasOnlyKeys(block, ['type', 'text', 'state']))
     || block.type !== CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE
+    || (block.text !== undefined && block.text !== '')
     || typeof block.state !== 'string') {
     return { ok: false, reason: 'invalid content block' }
   }
   if (serializedJsonBytes({
     type: CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    ...(block.text === '' ? { text: '' } : {}),
     state: block.state,
   }) > MAX_CODEX_NATIVE_CHECKPOINT_BYTES) {
     return { ok: false, reason: 'serialized checkpoint exceeds 2 MiB' }
@@ -365,6 +370,47 @@ const FORBIDDEN_STATE_KEYS = new Set([
   'constructor',
 ])
 
+const FORBIDDEN_STATE_KEY_WORDS = new Set([
+  'auth',
+  'authentication',
+  'authorization',
+  'bearer',
+  'cookie',
+  'cookies',
+  'credential',
+  'credentials',
+  'header',
+  'headers',
+  'oauth',
+  'password',
+  'secret',
+])
+
+/** Compact/camel wrappers whose normalized form still identifies sensitive state. */
+const FORBIDDEN_STATE_KEY_COMPOUNDS = [
+  'authorization',
+  'authentication',
+  'accesstoken',
+  'refreshtoken',
+  'idtoken',
+  'authtoken',
+  'apikey',
+  'credential',
+  'clientsecret',
+  'secretkey',
+  'setcookie',
+  'proxyauthorization',
+  'wwwauthenticate',
+  'authenticationinfo',
+  'turnstate',
+  'accountid',
+  'sessionid',
+  'requestid',
+  'promptcachekey',
+  'previousresponseid',
+  'turnid',
+] as const
+
 /** Scan everything except the one schema-validated terminal opaque byte string. */
 function containsForbiddenCheckpointMaterial(checkpoint: CodexNativeCheckpointV1): boolean {
   const replacementItems = [...checkpoint.replacementItems]
@@ -377,17 +423,45 @@ function containsForbiddenCheckpointMaterial(checkpoint: CodexNativeCheckpointV1
   return containsForbiddenMaterial({ ...checkpoint, replacementItems })
 }
 
+function containsForbiddenStateKey(key: string, value: unknown): boolean {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/gu, '')
+  if (FORBIDDEN_STATE_KEYS.has(normalized)
+    || FORBIDDEN_STATE_KEY_COMPOUNDS.some(compound => normalized.includes(compound))) return true
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/gu, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/gu)
+    .filter(word => word.length > 0)
+  if (words.some(word => FORBIDDEN_STATE_KEY_WORDS.has(word))) return true
+  const tokenWord = words.includes('token') || words.includes('tokens')
+  return tokenWord && !nonnegativeInteger(value)
+}
+
+function hasForbiddenDiscriminator(value: Record<string, unknown>): boolean {
+  const associatedValue = value.value ?? value.data ?? value.content ?? value.count
+  for (const discriminator of ['name', 'type', 'key', 'field'] as const) {
+    const candidate = value[discriminator]
+    if (typeof candidate === 'string'
+      && containsForbiddenStateKey(candidate, associatedValue)) return true
+  }
+  return false
+}
+
 /** Reject raw request/auth state at any remaining depth. */
 function containsForbiddenMaterial(value: unknown): boolean {
   if (typeof value === 'string') {
     return /^\s*Bearer\s+/iu.test(value)
       || /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/u.test(value)
   }
-  if (Array.isArray(value)) return value.some(containsForbiddenMaterial)
+  if (Array.isArray(value)) {
+    if (typeof value[0] === 'string'
+      && containsForbiddenStateKey(value[0], value[1])) return true
+    return value.some(containsForbiddenMaterial)
+  }
   if (!isRecord(value)) return false
+  if (hasForbiddenDiscriminator(value)) return true
   for (const [nestedKey, nested] of Object.entries(value)) {
-    const normalized = nestedKey.toLowerCase().replace(/[^a-z0-9]/gu, '')
-    if (FORBIDDEN_STATE_KEYS.has(normalized)
+    if (containsForbiddenStateKey(nestedKey, nested)
       || containsForbiddenMaterial(nested)) return true
   }
   return false

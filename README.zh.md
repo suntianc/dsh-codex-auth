@@ -108,23 +108,37 @@ preset；已有会话仍可通过同级 Portable 文本继续，不需要迁移 
 转换 DSH 消息之前，Host 会把每条完整且有效的 checkpoint 消息替换成请求局部 marker；
 provider payload hook 再在原位置把整条 marker item 替换为 canonical Codex Native
 Checkpoint items，或替换为一条只含 Portable Checkpoint 的普通 user item。Native 与
-Portable 两种表示绝不会同时发给 provider。连续执行手动压缩时，会先把早先兼容的 Native
-Checkpoint 展开，再在末尾追加新的 trigger。
+Portable 两种表示绝不会同时发给 provider。持久化 block 可安全经过 JSON 存储、
+`Session.fromRestore()` 与 `SessionStore.fork()`；重启恢复及 fork 都不需要改写 Session。
+连续执行手动压缩时，会先展开早先兼容的 Native Checkpoint，再追加新的 trigger。
 
 只有当 checkpoint 的 schema/codec/retention generation、provider、精确 model、哈希后的
-Codex account identity 与 compatibility digest 都匹配最终 Responses 请求时，才会执行
-Native 回放。未知、损坏、超过 2 MiB、含 secret、混合格式或不兼容的状态会退化为 Portable
-文本。生成的 marker 只存在于 Host；marker 缺失、重复、嵌入、泄漏或未消费时会在网络请求
-之前失败。回放 converter 精确固定在 DSH LLM / pi-ai Adapter `0.1.1-rc.2` 与 pi-ai
-`0.82.1`；其他 runtime 组合只使用 Portable 文本。Long Context Mode 不参与兼容性摘要。
+Codex account identity、instructions、tools、parallel/tool-choice controls、reasoning、text
+配置与 service tier 都匹配**最终生效**的 Responses 请求时，才会执行 Native 回放。组合的
+payload callback 可以改变这些控制项；callback 完成后会重新判定并选择 Native 或 Portable。
+Request ID、prompt-cache key、临时 header、turn state 与 Long Context Mode 不参与兼容性。
+未知、损坏、超过 2 MiB、含 secret、混合格式或不兼容的状态会退化为 Portable 文本。生成的
+marker 只存在于 Host；marker 缺失、重复、嵌入、泄漏或未消费时会在网络请求之前失败。
+回放 converter 精确固定在 DSH LLM / pi-ai Adapter `0.1.1-rc.2` 与 pi-ai `0.82.1`；其他
+runtime 组合只使用 Portable 文本。Adapter generation 替换或 HMR 会使进程内 replay 与
+turn-continuation 状态失效，但不会修改持久化 Dual Checkpoint。
 
 版本化 Host codec 通过 `dsh-codex-auth/native-checkpoint` 导出。它以 lossless JSON 保留
 canonical 的纯文本 retained-user Responses items，并要求最后恰有一个 opaque compaction
-item；credential、header、原始 turn state 与请求局部元数据都会被拒绝。DSH 的会话投影
-只显示和复制同级 Portable 文本；opaque custom block 不会渲染为会话内容。受支持的其他
-Adapter 会继续使用 Portable 文本；任意第三方 Adapter 若拒绝 declaration-merged 未知 block，
-仍属于该实验方案的限制。Native 创建仍要求显式选择自定义 preset，也不会修改
-`cordis.patch.yml`。
+item；credential、带命名空间的原始账号/路由标识、header、原始 turn state 与请求局部元数据
+都会被拒绝，持久化的账号信息只有带 domain separation 的 hash。block 还带有空的通用展示
+sentinel，因此 stock conversation 与 trajectory 只显示/复制同级 Portable 文本，不会把
+opaque state JSON 化展示。该无凭据 opaque block 在 rc.2 中仍是敏感的普通 Session 数据，
+可能存在于 Session RPC 与导出中，使用这些表面时仍须按敏感数据处理。issue 18 之前的
+worktree 实验版本曾生成不含展示 sentinel 的 block；codec 为回放兼容仍可在 Host 解码它们，
+但不保证通用 Trajectory 对这些从未发布的 fixture 隐藏内容。查看导入 Session 前应先迁移或
+删除此类 fixture。
+
+随 DSH 发布的 PiAiAdapter 与 direct DeepSeek Adapter 在 provider wire 上只发送 Portable
+文本。转换使用脱离 Session 的请求副本，因此在下一次压缩前切回兼容 Codex route，仍可回放
+保留的 Native 状态。切回 stock Basic preset 同样不需要迁移 Session；不兼容状态会继续走
+Portable 文本。任意第三方 Adapter 若拒绝 declaration-merged 未知 block，仍属于该实验方案
+的限制。Native 创建仍要求显式选择自定义 preset，也不会修改 `cordis.patch.yml`。
 
 ### 网页搜索
 

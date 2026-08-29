@@ -135,26 +135,47 @@ complete checkpoint message with a request-local marker. The provider payload
 hook then replaces that whole marker item at the same position with either the
 canonical Codex Native Checkpoint items or one ordinary user item containing
 the Portable Checkpoint. Native and Portable representations are never sent
-together. Consecutive manual compaction expands an earlier compatible Native
-Checkpoint before appending the new trigger.
+together. The durable block survives JSON persistence, `Session.fromRestore()`,
+and `SessionStore.fork()`; replay works after restart and in a fork without
+rewriting the Session. Consecutive manual compaction expands an earlier
+compatible Native Checkpoint before appending the new trigger.
 
 Native replay requires the checkpoint's schema/codec/retention generations,
-provider, exact model, hashed Codex account identity, and compatibility digest
-to match the final Responses request. Unknown, malformed, oversized (over 2
-MiB), secret-bearing, mixed, or incompatible state degrades to Portable text.
-Generated markers are Host-only and any missing, duplicate, embedded, leaked,
-or unconsumed marker fails before network I/O. The replay converter is pinned
-to DSH LLM / pi-ai Adapter `0.1.1-rc.2` and pi-ai `0.82.1`; another runtime pair
-uses Portable text instead. Long Context Mode is excluded from compatibility.
+provider, exact model, hashed Codex account identity, instructions, tools,
+parallel/tool-choice controls, reasoning, text configuration, and service tier
+to match the **final effective** Responses request. A composed payload callback
+may change those controls: replay is re-evaluated after the callback and selects
+Native or Portable accordingly. Request IDs, prompt-cache keys, transient
+headers, turn state, and Long Context Mode do not affect compatibility. Unknown,
+malformed, oversized (over 2 MiB), secret-bearing, mixed, or incompatible state
+degrades to Portable text. Generated markers are Host-only and any missing,
+duplicate, embedded, leaked, or unconsumed marker fails before network I/O. The
+replay converter is pinned to DSH LLM / pi-ai Adapter `0.1.1-rc.2` and pi-ai
+`0.82.1`; another runtime pair uses Portable text instead. Adapter generation
+replacement or HMR invalidates process-local replay and turn-continuation state,
+while the durable Dual Checkpoint remains unchanged for a later request.
 
 The versioned Host-only codec is exported as
 `dsh-codex-auth/native-checkpoint`. It preserves canonical text-only retained-
 user Responses items followed by one terminal opaque compaction item as
-lossless JSON, but rejects credentials, headers, raw turn state, and request-
-scoped metadata. DSH's conversation projection displays and copies only the
-sibling Portable text; the opaque custom block is never rendered conversation
-content. Supported foreign adapters continue with Portable text; arbitrary
-third-party adapters that reject unknown declaration-merged blocks remain an
+lossless JSON, but rejects credentials, namespaced account/routing identifiers,
+headers, raw turn state, and request-scoped metadata. Only the domain-separated
+account hash is durable. The block carries an empty generic-presentation sentinel
+so stock conversation and trajectory views display/copy the sibling Portable
+text without stringifying opaque state. The credential-free opaque block is
+still sensitive ordinary Session data in rc.2 and may be present in Session RPC
+and exports; treat those surfaces accordingly. Experimental blocks emitted by
+pre-issue-18 worktree builds did not carry the presentation sentinel. They stay
+Host-decodable for replay compatibility, but their generic Trajectory rendering
+is not covered; migrate or remove those never-released fixtures before viewing
+an imported Session.
+
+The shipped PiAiAdapter and direct DeepSeek Adapter put only Portable text on
+their provider wire. Because conversion uses detached request copies, switching
+back to a compatible Codex route before another compaction still replays the
+retained Native state. Selecting a stock Basic preset likewise needs no Session
+migration; incompatible state simply continues through Portable text. Arbitrary
+third-party adapters that reject declaration-merged unknown blocks remain an
 experimental limitation. Native creation still requires the explicit custom
 preset and does not change `cordis.patch.yml`.
 

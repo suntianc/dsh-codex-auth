@@ -47,6 +47,7 @@ interface ReplayEntry {
 interface ReplayScope {
   readonly provider: string
   readonly model: string
+  readonly generation: number
   readonly entries: Map<string, ReplayEntry>
   accountHash: string | undefined
 }
@@ -68,6 +69,17 @@ interface RestoredEntry extends ReplayEntry {
  */
 export class CodexNativeCheckpointReplay {
   private readonly storage = new AsyncLocalStorage<ReplayScope>()
+  private generation = 0
+
+  /** Capture the replay generation owned by one prepared Adapter call. */
+  captureGeneration(): number {
+    return this.generation
+  }
+
+  /** Invalidate request-local Native candidates while leaving durable messages untouched. */
+  invalidate(): void {
+    this.generation += 1
+  }
 
   /** Record the current request's hashed account after the auth coordinator resolves it. */
   noteAccount(accountId: string | undefined): void {
@@ -85,13 +97,14 @@ export class CodexNativeCheckpointReplay {
   stream(
     options: GenerateOptions,
     dispatch: (options: GenerateOptions) => AsyncIterable<StreamChunk>,
+    generation = this.generation,
   ): AsyncIterable<StreamChunk> {
-    const prepared = this.prepare(options)
+    const prepared = this.prepare(options, generation)
     if (prepared.scope === undefined) return dispatch(prepared.options)
     return this.scopedStream(prepared.scope, prepared.options, dispatch)
   }
 
-  /** Compose restoration before any provider callback already supplied by the caller. */
+  /** Restore before prior callbacks, then choose the final compatible representation. */
   payloadCallback(previous?: PayloadCallback): PayloadCallback | undefined {
     const scope = this.storage.getStore()
     if (scope === undefined) return previous
@@ -99,12 +112,13 @@ export class CodexNativeCheckpointReplay {
       const restored = this.restorePayload(scope, payload)
       const returned = await previous?.(restored.payload, model)
       const effective = returned === undefined ? restored.payload : returned
-      this.validateFinalPayload(scope, restored.entries, effective)
-      return effective
+      const finalized = this.finalizePayload(scope, restored.entries, effective)
+      this.validateFinalPayload(scope, finalized.entries, finalized.payload)
+      return finalized.payload
     }
   }
 
-  private prepare(options: GenerateOptions): PreparedReplay {
+  private prepare(options: GenerateOptions, generation: number): PreparedReplay {
     const entries = new Map<string, ReplayEntry>()
     const reservedText = options.messages.flatMap(message => message.content.flatMap(
       block => block.type === 'text' ? [block.text] : [],
@@ -120,7 +134,8 @@ export class CodexNativeCheckpointReplay {
       changed = true
       const portable = textOnlyMessage(message)
       runtimeCompatible ??= isCodexNativeReplayRuntimeCompatible()
-      if (!runtimeCompatible
+      if (generation !== this.generation
+        || !runtimeCompatible
         || !isCompleteBasicCheckpoint(message)
         || nativeBlocks.length !== 1) return portable
       const decoded = decodeCodexNativeCheckpoint(nativeBlocks[0])
@@ -146,6 +161,7 @@ export class CodexNativeCheckpointReplay {
       scope: {
         provider: options.provider,
         model: options.model,
+        generation,
         entries,
         accountHash: undefined,
       },
@@ -197,10 +213,7 @@ export class CodexNativeCheckpointReplay {
       consumed.add(marker)
       const entry = scope.entries.get(marker)
       if (entry === undefined) throw replayError('unknown checkpoint marker')
-      const usedNative = this.isCompatible(scope, body, entry.checkpoint)
-      const replacementItems: unknown[] = usedNative
-        ? entry.checkpoint.replacementItems.map(item => structuredClone(item))
-        : [portableUserItem(entry.portableText)]
+      const { usedNative, items: replacementItems } = this.materialize(scope, body, entry)
       restoredEntries.push({
         ...entry,
         usedNative,
@@ -217,22 +230,69 @@ export class CodexNativeCheckpointReplay {
     return { payload: restored, entries: restoredEntries }
   }
 
+  private materialize(
+    scope: ReplayScope,
+    payload: Record<string, unknown>,
+    entry: ReplayEntry,
+  ): { readonly usedNative: boolean, readonly items: unknown[] } {
+    const usedNative = this.isCompatible(scope, payload, entry.checkpoint)
+    return {
+      usedNative,
+      items: usedNative
+        ? entry.checkpoint.replacementItems.map(item => structuredClone(item))
+        : [portableUserItem(entry.portableText)],
+    }
+  }
+
   private isCompatible(
     scope: ReplayScope,
     payload: Record<string, unknown>,
     checkpoint: CodexNativeCheckpointV1,
   ): boolean {
-    if (scope.provider !== CODEX_ROUTE
+    if (scope.generation !== this.generation
+      || scope.provider !== CODEX_ROUTE
       || checkpoint.provenance.provider !== scope.provider
-      || checkpoint.provenance.model !== scope.model
       || scope.accountHash === undefined
       || checkpoint.provenance.accountHash !== scope.accountHash) return false
     const input = compatibilityInput(scope, scope.accountHash, payload)
-    if (input === undefined) return false
+    if (input === undefined || checkpoint.provenance.model !== input.model) return false
     try {
       return checkpoint.compatibilityDigest === codexNativeCheckpointCompatibilityDigest(input)
     } catch {
       return false
+    }
+  }
+
+  private finalizePayload(
+    scope: ReplayScope,
+    entries: readonly RestoredEntry[],
+    payload: unknown,
+  ): { readonly payload: Record<string, unknown>; readonly entries: readonly RestoredEntry[] } {
+    const body = payloadRecord(payload)
+    const input = body.input
+    if (!Array.isArray(input)) throw replayError('final provider payload has no input array')
+    const finalizedEntries: RestoredEntry[] = []
+    const finalizedInput: unknown[] = []
+    let cursor = 0
+    for (const entry of entries) {
+      if (!sequenceAt(input, entry.inputIndex, entry.expectedItems)) {
+        throw replayError('provider callback erased or moved a checkpoint representation')
+      }
+      finalizedInput.push(...input.slice(cursor, entry.inputIndex))
+      const { usedNative, items: expectedItems } = this.materialize(scope, body, entry)
+      finalizedEntries.push({
+        ...entry,
+        usedNative,
+        inputIndex: finalizedInput.length,
+        expectedItems: structuredClone(expectedItems),
+      })
+      finalizedInput.push(...expectedItems)
+      cursor = entry.inputIndex + entry.expectedItems.length
+    }
+    finalizedInput.push(...input.slice(cursor))
+    return {
+      payload: { ...body, input: finalizedInput },
+      entries: finalizedEntries,
     }
   }
 
@@ -247,26 +307,42 @@ export class CodexNativeCheckpointReplay {
     const body = payloadRecord(payload)
     if (!Array.isArray(body.input)) throw replayError('final provider payload has no input array')
     assertNoMarkers(scope, body)
+    const expectedPortableCounts = new Map<string, number>()
+    const expectedNativeCounts = new Map<string, { count: number, artifact: unknown }>()
+    for (const entry of entries) {
+      const previousPortable = expectedPortableCounts.get(entry.portableText) ?? 0
+      expectedPortableCounts.set(entry.portableText, previousPortable + (entry.usedNative ? 0 : 1))
+      const nativeArtifact = entry.checkpoint.replacementItems.at(-1)
+      const identity = nativeArtifactIdentity(nativeArtifact)
+      if (identity === undefined) throw replayError('native checkpoint lost terminal artifact')
+      const previousNative = expectedNativeCounts.get(identity)
+      expectedNativeCounts.set(identity, {
+        count: (previousNative?.count ?? 0) + (entry.usedNative ? 1 : 0),
+        artifact: nativeArtifact,
+      })
+    }
+    for (const [portableText, expectedCount] of expectedPortableCounts) {
+      const actualCount = body.input.filter(item => portableItemMatches(item, portableText)).length
+      if (actualCount !== expectedCount) {
+        throw replayError('checkpoint representations coexist or were duplicated')
+      }
+    }
+    for (const { count: expectedCount, artifact } of expectedNativeCounts.values()) {
+      const actualCount = body.input.filter(item => sameNativeArtifact(item, artifact)).length
+      if (actualCount !== expectedCount) {
+        throw replayError('checkpoint representations coexist or were duplicated')
+      }
+    }
     for (const entry of entries) {
       if (!sequenceAt(body.input, entry.inputIndex, entry.expectedItems)) {
         throw replayError('provider callback erased or moved a checkpoint representation')
       }
-      if (!entry.usedNative) {
-        const nativeArtifact = entry.checkpoint.replacementItems.at(-1)
-        if (nativeArtifact !== undefined
-          && body.input.some(item => sameNativeArtifact(item, nativeArtifact))) {
-          throw replayError('native and Portable checkpoint representations coexist')
-        }
-        continue
-      }
+      if (!entry.usedNative) continue
       if (scope.accountHash === undefined) throw replayError('native replay lost account identity')
       const input = compatibilityInput(scope, scope.accountHash, body)
       if (input === undefined
         || codexNativeCheckpointCompatibilityDigest(input) !== entry.checkpoint.compatibilityDigest) {
         throw replayError('provider callback changed native compatibility controls')
-      }
-      if (body.input.some(item => portableItemContains(item, entry.portableText))) {
-        throw replayError('native and Portable checkpoint representations coexist')
       }
     }
   }
@@ -360,26 +436,32 @@ function sequenceAt(
 }
 
 /** The opaque bytes, not forward-extensible metadata, identify native state. */
-function sameNativeArtifact(actual: unknown, expected: unknown): boolean {
-  return isRecord(actual)
-    && isRecord(expected)
-    && actual.type === 'compaction'
-    && expected.type === 'compaction'
-    && typeof expected.encrypted_content === 'string'
-    && actual.encrypted_content === expected.encrypted_content
+function nativeArtifactIdentity(value: unknown): string | undefined {
+  return isRecord(value)
+    && value.type === 'compaction'
+    && typeof value.encrypted_content === 'string'
+    ? value.encrypted_content
+    : undefined
 }
 
-function portableItemContains(item: unknown, text: string): boolean {
+function sameNativeArtifact(actual: unknown, expected: unknown): boolean {
+  const identity = nativeArtifactIdentity(expected)
+  return identity !== undefined && nativeArtifactIdentity(actual) === identity
+}
+
+/** Match a complete Portable item without treating an ordinary quotation as replay state. */
+function portableItemMatches(item: unknown, text: string): boolean {
   if (!isRecord(item) || item.role !== 'user' || text.length === 0) return false
-  if (typeof item.content === 'string') return item.content.includes(text)
+  if (typeof item.content === 'string') return item.content === text
   if (!Array.isArray(item.content)) return false
   let joined = ''
   for (const content of item.content) {
-    if (isRecord(content)
-      && content.type === 'input_text'
-      && typeof content.text === 'string') joined += content.text
+    if (!isRecord(content)
+      || content.type !== 'input_text'
+      || typeof content.text !== 'string') return false
+    joined += content.text
   }
-  return joined.includes(text)
+  return joined === text
 }
 
 function compatibilityInput(
@@ -387,13 +469,14 @@ function compatibilityInput(
   accountHash: string,
   payload: Record<string, unknown>,
 ): CodexNativeCheckpointCompatibilityInput | undefined {
-  if (payload.model !== scope.model
+  if (typeof payload.model !== 'string'
+    || payload.model.length === 0
     || typeof payload.instructions !== 'string'
     || typeof payload.parallel_tool_calls !== 'boolean') return undefined
   try {
     return {
       provider: scope.provider,
-      model: scope.model,
+      model: payload.model,
       accountHash,
       instructions: payload.instructions,
       tools: jsonOrNull(payload.tools),
