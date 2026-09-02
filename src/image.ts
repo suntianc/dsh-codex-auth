@@ -9,17 +9,17 @@ import type {
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, LlmCallConfig, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { CodexAuthService, CodexCredential } from './codex-auth-service.ts'
 import { CODEX_ROUTE } from './codex-auth-adapter.ts'
 import { readBoundedResponseText } from './bounded-response.ts'
+import { compatibleSettingsNamespace, installCompatibleSettingsSection } from './settings-compat.ts'
 
 export const GENERATE_IMAGE_TOOL_NAME = 'generate_image'
 export const LIST_IMAGES_TOOL_NAME = 'list_images'
 export const CODEX_IMAGE_GENERATION_ENDPOINT = 'https://chatgpt.com/backend-api/codex/images/generations'
 export const CODEX_IMAGE_EDIT_ENDPOINT = 'https://chatgpt.com/backend-api/codex/images/edits'
-export const CODEX_IMAGE_SETTINGS_NAMESPACE = settingsNamespace('codex-image')
+export const CODEX_IMAGE_SETTINGS_NAMESPACE = compatibleSettingsNamespace('codex-image')
 
 const IMAGE_ORIGINS = ['all', 'generated', 'reference', 'user'] as const
 const IMAGE_SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536'] as const
@@ -817,7 +817,7 @@ const listOutputSchema = {
 
 /** Cordis plugin name for the independent Image row. */
 export const name = 'codex-image'
-export const inject = ['tools', 'llm', 'agents', 'attachments', 'fs', 'codexAuth']
+export const inject = ['tools', 'llm', 'agents', 'attachments', 'fs', 'codexAuth', 'settings']
 
 /**
  * Register image tools only in currently eligible Agent scopes. Eligibility is
@@ -868,7 +868,7 @@ export function apply(ctx: Context, config: Config): void {
     generations.clear()
   }, 'codex-image: scoped tool cleanup')
 
-  installSettingsSection(ctx, CODEX_IMAGE_SETTINGS_NAMESPACE, Config, config, {
+  installCompatibleSettingsSection(ctx, CODEX_IMAGE_SETTINGS_NAMESPACE, Config, config, {
     setSource: source => { current = source },
     onChange: refreshAll,
   })

@@ -21,7 +21,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { installSettingsSection } from '@deepseek-ai/dsh-settings'
+import { installCompatibleSettingsSection } from './settings-compat.ts'
 import { DEFAULT_REFRESH_LEAD_MS, defaultAuthJsonPath } from './codex-auth.ts'
 import {
   CODEX_ROUTE, CodexAuthAdapter, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_TRANSPORT,
@@ -37,7 +37,7 @@ import { installEnvHttpProxy } from './env-proxy.ts'
 import { CODEX_AUTH_RPC_CHANNEL, handleCodexAuthRpc } from './rpc.ts'
 
 export const name = 'llm-codex-auth'
-export const inject = ['llm']
+export const inject = ['llm', 'settings']
 
 /** Plugin configuration; every field has a default, so a bare row mounts the plugin. */
 export interface Config {
@@ -118,7 +118,7 @@ export function apply(ctx: Context, config: Config): void {
       registration.replace([CODEX_ROUTE])
     }
   }
-  installSettingsSection(ctx, CODEX_LLM_SETTINGS_NAMESPACE, CodexLlmSettingsConfig, settingsEntry, {
+  installCompatibleSettingsSection(ctx, CODEX_LLM_SETTINGS_NAMESPACE, CodexLlmSettingsConfig, settingsEntry, {
     setSource: source => { currentSettings = source },
     onChange: announceModelPolicyChange,
   })

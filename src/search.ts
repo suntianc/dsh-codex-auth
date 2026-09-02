@@ -2,18 +2,18 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { WebError } from '@deepseek-ai/dsh-web'
 import type { WebSearchProvider, WebSearchRequest, WebSearchResult, WebSearchSource } from '@deepseek-ai/dsh-web'
 import type { CodexAuthService } from './codex-auth-service.ts'
 import { CODEX_ROUTE } from './codex-auth-adapter.ts'
 import { readBoundedResponseText } from './bounded-response.ts'
+import { compatibleSettingsNamespace, installCompatibleSettingsSection } from './settings-compat.ts'
 
 /** Stable provider id selected by DSH's stock `web_search` Capability Tool. */
 export const CODEX_SEARCH_PROVIDER_ID = 'codex'
 /** Official standalone search endpoint used by Codex 0.147.0. */
 export const CODEX_SEARCH_ENDPOINT = 'https://chatgpt.com/backend-api/codex/alpha/search'
-export const CODEX_SEARCH_SETTINGS_NAMESPACE = settingsNamespace('codex-search')
+export const CODEX_SEARCH_SETTINGS_NAMESPACE = compatibleSettingsNamespace('codex-search')
 
 const MAX_SEARCH_ATTEMPTS = 5
 const MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -156,14 +156,14 @@ export class CodexSearchProvider implements WebSearchProvider {
 
 /** Cordis plugin name for the independent Search row. */
 export const name = 'codex-search'
-export const inject = ['web', 'codexAuth']
+export const inject = ['web', 'codexAuth', 'settings']
 
 /** Register the Global Codex Search Provider with independently live settings. */
 export function apply(ctx: Context, config: Config): void {
   const auth = ctx.get('codexAuth') as CodexAuthService | undefined
   if (auth === undefined) throw new Error('codex-search: shared codexAuth service is unavailable')
   let current = (): CodexSearchSettings => config
-  installSettingsSection(ctx, CODEX_SEARCH_SETTINGS_NAMESPACE, Config, config, {
+  installCompatibleSettingsSection(ctx, CODEX_SEARCH_SETTINGS_NAMESPACE, Config, config, {
     setSource: source => { current = source },
     onChange: () => {},
   })
