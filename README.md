@@ -113,23 +113,55 @@ consumes Codex quota; its credential-free opaque state is still sensitive
 conversation data and is duplicated by rc.2 in the summary event and replacement
 message.
 
+#### Enable and use Dual Checkpoint compaction
+
 Installing the normal Codex Capability Bundle does not activate this Adapter.
 `cordis.patch.yml` and DSH's shipped presets continue to select stock Basic
-compaction. To opt in, copy the complete `compaction` group from the packaged
-minimal example into a custom preset:
+compaction. Opt in through a complete user-owned custom preset:
 
-```text
-node_modules/dsh-codex-auth/examples/agent-presets/codex-portable/
-├── preset.yml
-└── agent.cordis.yml
-```
+1. Install the package in the profile that runs DSH (the examples below use
+   `web`).
+2. Copy DSH's complete Standard preset to a new user preset. Choose a new
+   `PRESET_ID`; the commands intentionally refuse to overwrite an existing one:
 
-That group selects exactly one `dsh-codex-auth/compaction` row at
-`ctx.compaction` and retains `@deepseek-ai/dsh-command-compact` plus
-`@deepseek-ai/dsh-compaction-tool-result-pruner`. Do not add
-`@deepseek-ai/dsh-compaction-basic` beside it. The example intentionally
-contains no persona or tools; merge the group into a deployer-owned full preset
-rather than treating it as a replacement for DSH's standard capabilities.
+   ```sh
+   DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
+   DSH_ROOT="$(dirname "$(dirname "$(realpath "$(command -v dsh)")")")"
+   PRESET_ID=codex-dual
+   PRESET_DIR="$DSH_HOME/.agent-presets/$PRESET_ID"
+
+   test ! -e "$PRESET_DIR"
+   mkdir -p "$DSH_HOME/.agent-presets"
+   cp -R "$DSH_ROOT/config/agent-presets/standard" "$PRESET_DIR"
+   ```
+
+3. Give the copy a distinct `name` and `description` in
+   `$PRESET_DIR/preset.yml`.
+4. In `$PRESET_DIR/agent.cordis.yml`, **replace rather than append** the complete
+   `- id: compaction` group with the group from:
+
+   ```text
+   $DSH_HOME/profiles/web/node_modules/dsh-codex-auth/
+   └── examples/agent-presets/codex-portable/agent.cordis.yml
+   ```
+
+   Use only that example's `compaction` group. The example intentionally has no
+   persona or tools and is not a replacement for the copied Standard preset.
+   The resulting group must contain exactly one
+   `dsh-codex-auth/compaction` row with `auto: true`, retain
+   `@deepseek-ai/dsh-command-compact` and
+   `@deepseek-ai/dsh-compaction-tool-result-pruner`, and contain no
+   `@deepseek-ai/dsh-compaction-basic` row. `ctx.compaction` must have one owner.
+5. Restart DSH, create a new conversation, select the custom preset, and choose
+   an `openai-codex` model. Keep the provider, exact model, account, and explicit
+   reasoning setting unchanged when Native replay is required.
+
+With `auto: true`, the custom engine handles both context-pressure compaction
+and provider-confirmed context overflow automatically. `/compact` invokes the
+same engine manually. Every entry remains Portable-first: an eligible Codex
+request adds the Native sibling, while any incompatibility or Native failure
+keeps the valid Portable Checkpoint. Stock conversation views intentionally show
+the Portable text even when the next compatible provider request replays Native.
 
 This experimental export supports exactly DSH / Basic compaction
 `0.1.1-rc.2` and pi-ai `0.82.1`; mounting it on another pair fails with an
@@ -343,7 +375,7 @@ Restart `dsh web`, open Settings, and select **GPT Auth**.
 ## Install a prebuilt release
 
 ```sh
-dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.2.2/dsh-codex-auth-0.2.2.tgz
+dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.3.2/dsh-codex-auth-0.3.2.tgz
 ```
 
 Restart `dsh web`, open Settings, and select **GPT Auth**.

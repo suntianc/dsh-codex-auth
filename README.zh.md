@@ -87,21 +87,48 @@ envelope allowance；该值不冒充 DSH 的 provider-neutral pressure price。�
 Codex 配额；其 opaque 状态不含 credential，但仍是敏感会话数据，而且 rc.2 会在 summary
 event 与 replacement message 中各保存一份。
 
+#### 启用并使用 Dual Checkpoint 压缩
+
 正常安装 Codex 能力包不会启用这个 Adapter。`cordis.patch.yml` 与 DSH 内置 preset
-仍然使用 stock Basic 压缩。要显式启用，可把 npm 包内最小示例的完整 `compaction`
-group 复制到自定义 preset：
+仍然使用 stock Basic 压缩。请通过一个完整、由用户维护的自定义 preset 显式启用：
 
-```text
-node_modules/dsh-codex-auth/examples/agent-presets/codex-portable/
-├── preset.yml
-└── agent.cordis.yml
-```
+1. 把本包安装到实际运行 DSH 的 profile（以下示例使用 `web`）。
+2. 将 DSH 的完整 Standard preset 复制为新的用户 preset。请选用新的 `PRESET_ID`；以下命令
+   会拒绝覆盖已有目录：
 
-该 group 在 `ctx.compaction` 只选择一个 `dsh-codex-auth/compaction` 行，并保留
-`@deepseek-ai/dsh-command-compact` 与
-`@deepseek-ai/dsh-compaction-tool-result-pruner`。不要在旁边再添加
-`@deepseek-ai/dsh-compaction-basic`。示例刻意不含 persona 或工具；应把这个 group
-合并进部署者维护的完整 preset，而不是用它替代 DSH 的标准能力。
+   ```sh
+   DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
+   DSH_ROOT="$(dirname "$(dirname "$(realpath "$(command -v dsh)")")")"
+   PRESET_ID=codex-dual
+   PRESET_DIR="$DSH_HOME/.agent-presets/$PRESET_ID"
+
+   test ! -e "$PRESET_DIR"
+   mkdir -p "$DSH_HOME/.agent-presets"
+   cp -R "$DSH_ROOT/config/agent-presets/standard" "$PRESET_DIR"
+   ```
+
+3. 在 `$PRESET_DIR/preset.yml` 中为副本设置独立的 `name` 与 `description`。
+4. 在 `$PRESET_DIR/agent.cordis.yml` 中，用下列文件里的完整 `- id: compaction` group
+   **替换而不是追加**原有 group：
+
+   ```text
+   $DSH_HOME/profiles/web/node_modules/dsh-codex-auth/
+   └── examples/agent-presets/codex-portable/agent.cordis.yml
+   ```
+
+   只复制示例中的 `compaction` group。该示例刻意不含 persona 或工具，不能替代刚复制的
+   Standard preset。最终 group 必须只有一个带 `auto: true` 的
+   `dsh-codex-auth/compaction` 行，并保留 `@deepseek-ai/dsh-command-compact` 与
+   `@deepseek-ai/dsh-compaction-tool-result-pruner`，且不能包含
+   `@deepseek-ai/dsh-compaction-basic`；`ctx.compaction` 只能有一个所有者。
+5. 重启 DSH，新建会话并选择该自定义 preset，再选择 `openai-codex` 模型。需要 Native
+   回放时，请保持 provider、精确模型、账户以及显式 reasoning 设置不变。
+
+配置 `auto: true` 后，自定义 engine 会自动处理上下文压力压缩和 provider 确认的 context
+overflow；`/compact` 则手动调用同一个 engine。所有入口仍然 Portable-first：符合条件的
+Codex 请求会增加 Native 同级表示，任何不兼容或 Native 失败都会保留有效 Portable
+Checkpoint。即使下一次兼容 provider 请求实际回放 Native，stock conversation 视图仍会
+刻意显示 Portable 文本。
 
 该实验性导出只支持 DSH / Basic compaction `0.1.1-rc.2` 与 pi-ai `0.82.1`；
 在其他版本组合上挂载会给出可操作的兼容性错误并失败。长上下文模式可以改变 pressure
@@ -278,7 +305,7 @@ dsh plugin --profile web add dsh-codex-auth
 ## 安装预构建 Release
 
 ```sh
-dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.2.2/dsh-codex-auth-0.2.2.tgz
+dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.3.2/dsh-codex-auth-0.3.2.tgz
 ```
 
 重启 `dsh web`，打开设置并选择 **GPT Auth**。
