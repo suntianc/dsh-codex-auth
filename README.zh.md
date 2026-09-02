@@ -5,7 +5,7 @@
 
 [English](README.md) | 中文
 
-当前 npm 版本：**v0.3.1**
+当前 npm 版本：**v0.3.2**
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -297,7 +297,7 @@ Git 依赖会通过包内 `prepare` 脚本从源码构建。pnpm 10+ 默认阻�
 需要可复现安装时，固定 release tag 或 commit：
 
 ```sh
-dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.2.2
+dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.3.2
 ```
 
 ## 从 tarball 安装
@@ -307,7 +307,7 @@ git clone https://github.com/suntianc/dsh-codex-auth.git
 cd dsh-codex-auth
 pnpm install
 pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.3.1.tgz
+dsh plugin --profile web add ./dsh-codex-auth-0.3.2.tgz
 ```
 
 ## 升级
@@ -315,11 +315,11 @@ dsh plugin --profile web add ./dsh-codex-auth-0.3.1.tgz
 先停止正在运行的 `dsh web`，再将 Web Profile 更新到当前版本：
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth@0.3.1
+dsh plugin --profile web add dsh-codex-auth@0.3.2
 dsh plugin --profile web list
 ```
 
-列表显示 `dsh-codex-auth@0.3.1` 后，重新启动 `dsh web` 并刷新浏览器。
+列表显示 `dsh-codex-auth@0.3.2` 后，重新启动 `dsh web` 并刷新浏览器。
 
 ## Host 配置
 

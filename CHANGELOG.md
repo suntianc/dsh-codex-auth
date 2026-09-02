@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-02
+
 ### Added
 
 - Added an experimental, Portable-first `dsh-codex-auth/compaction` Host Adapter and a packaged custom-preset example that retains the stock compact command and tool-result pruner.
@@ -108,7 +110,8 @@ All notable changes to this project are documented in this file.
 
 - DSH `0.1.0-rc.6` does not expose a policy-aware binary workspace-write API, so generated images remain durable conversation attachments and workspace export is not offered.
 
-[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.2...v0.2.3
