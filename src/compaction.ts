@@ -132,6 +132,14 @@ function currentRoutedTarget(agent: Agent): { provider: string; model: string } 
   return { provider, model }
 }
 
+/** Match Agent-loop replay semantics: inherit only a user-pinned reasoning effort. */
+function currentExplicitReasoningEffort(agent: Agent) {
+  const header = agent.session.requestHeader()
+  return header?.adapterDefaults?.reasoningEffort === true
+    ? undefined
+    : header?.config.reasoningEffort
+}
+
 function currentCompactionId(agent: Agent): string | undefined {
   for (let index = agent.session.events.length - 1; index >= 0; index -= 1) {
     const event = agent.session.events[index]
@@ -336,6 +344,7 @@ export class CodexCompactionEngine extends BasicCompactionEngine {
     return codexNativeCompactionCoordinator.withPortableCapture(
       input.messages,
       signal,
+      currentExplicitReasoningEffort(agent),
       async () => {
         const portable = await super.summarize(input, agent, signal)
         const native = await codexNativeCompactionCoordinator.createCheckpoint(

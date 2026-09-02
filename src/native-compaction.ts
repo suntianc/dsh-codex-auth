@@ -138,6 +138,7 @@ interface CompactionOperation {
 interface PortablePhase {
   readonly input: readonly Message[]
   readonly signal: AbortSignal | undefined
+  readonly reasoningEffort: GenerateOptions['reasoningEffort']
   credential: CapturedCredential | undefined
   providerRequest: CapturedProviderRequest | undefined
   instructionText: string | undefined
@@ -308,6 +309,7 @@ class CodexNativeCompactionCoordinator {
   async withPortableCapture<T>(
     input: readonly Message[],
     signal: AbortSignal | undefined,
+    reasoningEffort: GenerateOptions['reasoningEffort'],
     task: () => Promise<T>,
   ): Promise<T> {
     const operation = this.storage.getStore()
@@ -319,6 +321,7 @@ class CodexNativeCompactionCoordinator {
     const phase: PortablePhase = {
       input,
       signal,
+      reasoningEffort,
       credential: undefined,
       providerRequest: undefined,
       instructionText: undefined,
@@ -333,21 +336,28 @@ class CodexNativeCompactionCoordinator {
     }
   }
 
-  /** Capture Basic's actual appended instruction without copying its private text. */
-  notePortableCall(options: GenerateOptions): void {
-    const phase = this.storage.getStore()?.phase
+  /** Capture Basic's appended instruction and align its omitted explicit reasoning control. */
+  preparePortableCall(options: GenerateOptions): GenerateOptions {
+    const operation = this.storage.getStore()
+    if (operation === undefined) return options
+    const phase = operation.phase
     if (phase === undefined
       || options.purpose !== 'compaction'
       || options.messages.length !== phase.input.length + 1
       || !phase.input.every((message, index) =>
-        isDeepStrictEqual(message, options.messages[index]))) return
+        isDeepStrictEqual(message, options.messages[index]))) return options
     const finalMessage = options.messages.at(-1)
     const finalBlock = finalMessage?.content[0]
     if (finalMessage?.role !== 'user'
       || finalMessage.content.length !== 1
       || finalBlock?.type !== 'text'
-      || finalBlock.text.length === 0) return
+      || finalBlock.text.length === 0) return options
     phase.instructionText = finalBlock.text
+    if (phase.reasoningEffort === undefined
+      || options.reasoningEffort !== undefined
+      || operation.target?.provider !== options.provider
+      || operation.target.model !== options.model) return options
+    return { ...options, reasoningEffort: phase.reasoningEffort }
   }
 
   /** Retain the already resolved Codex Login State only for this request scope. */

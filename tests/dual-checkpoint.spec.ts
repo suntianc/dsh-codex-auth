@@ -12,6 +12,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import LlmRuntime, {
   CallId,
+  ReasoningEffortId,
   createAssistantMessage,
   CONTEXT_WINDOW_EXCEEDED_CODE,
   createToolResultMessage,
@@ -342,7 +343,10 @@ function mountDualCheckpointHost(options: DualHostOptions = {}): {
   }
 }
 
-function closedConversation(id = 'dual-checkpoint'): Session {
+function closedConversation(
+  id = 'dual-checkpoint',
+  reasoningEffort?: string,
+): Session {
   const session = Session.create(SessionId(id))
   for (let turn = 1; turn <= 2; turn += 1) {
     session.append('turn/start', { turn })
@@ -353,7 +357,15 @@ function closedConversation(id = 'dual-checkpoint'): Session {
     session.append('step/start', { turn, step: 1 })
     if (turn === 1) {
       session.append('request/header', {
-        header: { config: { provider: 'openai-codex', model: MODEL } },
+        header: {
+          config: {
+            provider: 'openai-codex',
+            model: MODEL,
+            ...(reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: ReasoningEffortId(reasoningEffort) }),
+          },
+        },
         reason: 'initial',
       })
     }
@@ -627,6 +639,35 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(JSON.stringify(replayBody)).not.toContain(PORTABLE_SUMMARY)
     expect(JSON.stringify(replayBody)).not.toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
     expect(JSON.stringify(replayBody)).not.toContain('compaction_trigger')
+  })
+
+  it('replays Native when the session pins a reasoning effort', async () => {
+    const { ctx, requests } = mountDualCheckpointHost()
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const session = closedConversation('dual-reasoning-effort', 'minimal')
+
+    await expect(ctx.compaction.compactNow(
+      idleAgent(session),
+      new AbortController().signal,
+    )).resolves.not.toBeNull()
+
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(requests[0]!.body.reasoning).toEqual({ effort: 'low', summary: 'auto' })
+    expect(requests[1]!.body.reasoning).toEqual({ effort: 'low', summary: 'auto' })
+
+    await drain(ctx.llm.stream({
+      provider: 'openai-codex',
+      model: MODEL,
+      reasoningEffort: ReasoningEffortId('minimal'),
+      messages: session.deriveMessages(),
+      sessionId: session.id,
+    }))
+
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native', 'ordinary'])
+    const replayBody = requests[2]!.body
+    expect(replayBody.reasoning).toEqual({ effort: 'low', summary: 'auto' })
+    expect(JSON.stringify(replayBody)).toContain('opaque-remote-checkpoint')
+    expect(JSON.stringify(replayBody)).not.toContain(PORTABLE_SUMMARY)
   })
 
   it('loads the packaged custom preset as the sole Adapter for manual, pressure, and overflow Dual flows', async () => {

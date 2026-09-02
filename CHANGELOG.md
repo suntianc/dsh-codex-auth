@@ -21,6 +21,10 @@ All notable changes to this project are documented in this file.
 - Completed repeated compaction semantics with ordered expansion of compatible earlier checkpoints, Portable contribution from incompatible checkpoints, later-tail preservation, Basic-owned bounded pressure behavior, and the versioned retained-JSON plus opaque-base64 replay estimator under the 64,000-token retained-prefix policy.
 - Completed experimental delivery verification with custom-preset manual/pressure/overflow coverage, stock client non-copyability checks, packed design/ADR documentation, strengthened tarball smoke checks, and a CI-refusing double-confirmed live v2/continuation/restart/repetition harness that remains outside normal `test` and `check`.
 
+### Fixed
+
+- Kept Native replay compatible with sessions that explicitly pin a reasoning effort by applying the same request-header value to Basic's auxiliary Portable call before capturing the Codex payload.
+
 ### Security
 
 - Kept generated replay markers and Codex Turn Continuations process-local; credentials, namespaced/wrapped token and auth fields, sensitive headers, raw turn state, and raw account/routing identifiers never enter durable checkpoint state, logs, errors, or diagnostics.

@@ -365,8 +365,8 @@ export class CodexAuthAdapter extends PiAiAdapter {
       stream: (options: GenerateOptions) => codexTurnStateContinuity.withAdapterGeneration(
         generation,
         () => {
-          codexNativeCompactionCoordinator.notePortableCall(options)
-          return this.nativeReplay.stream(options, prepared.stream, replayGeneration)
+          const preparedOptions = codexNativeCompactionCoordinator.preparePortableCall(options)
+          return this.nativeReplay.stream(preparedOptions, prepared.stream, replayGeneration)
         },
       ),
     })
@@ -375,8 +375,8 @@ export class CodexAuthAdapter extends PiAiAdapter {
   override stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const generation = this.adapterGeneration
     return codexTurnStateContinuity.withAdapterGeneration(generation, () => {
-      codexNativeCompactionCoordinator.notePortableCall(options)
-      return this.nativeReplay.stream(options, detached => super.stream(detached))
+      const preparedOptions = codexNativeCompactionCoordinator.preparePortableCall(options)
+      return this.nativeReplay.stream(preparedOptions, detached => super.stream(detached))
     })
   }
 }
