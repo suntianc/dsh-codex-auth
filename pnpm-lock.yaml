@@ -66,6 +66,9 @@ importers:
       '@deepseek-ai/dsh-command-compact':
         specifier: 0.1.1-rc.2
         version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-commands@0.1.1-rc.2(b1c9bb65d126e06ce94f2f99685f88d1))(@deepseek-ai/dsh-compaction@0.1.1-rc.2(c2dcc055d09f7c9d67a285ee7bd52a82))(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))
+      '@deepseek-ai/dsh-commands':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(b1c9bb65d126e06ce94f2f99685f88d1)
       '@deepseek-ai/dsh-compaction':
         specifier: 0.1.1-rc.2
         version: 0.1.1-rc.2(c2dcc055d09f7c9d67a285ee7bd52a82)
