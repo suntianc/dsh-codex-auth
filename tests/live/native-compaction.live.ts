@@ -5,7 +5,6 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LlmRuntime, {
   createAssistantMessage,
   createUserMessage,
-  deepFreeze,
   markAgentLoopRequest,
 } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
@@ -13,7 +12,9 @@ import SessionStore, {
   SessionId,
   type SessionEvent,
 } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
+import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAuthJsonPath } from '../../src/codex-auth.ts'
 import { CodexAuthAdapter } from '../../src/codex-auth-adapter.ts'
@@ -100,6 +101,7 @@ function mountLiveHost(automatic = false): LiveHost {
   const ctx = new Context()
   void new LlmRuntime(ctx)
   void new SessionStore(ctx)
+  void new SessionProjectionRegistry(ctx)
   void new TokenMeter(ctx)
   const probe = new RedactedTransportProbe(LIVE_FETCH)
   vi.stubGlobal('fetch', probe.fetch)
@@ -311,16 +313,26 @@ describe('credential-gated Codex Native compaction live boundary', () => {
     session.append('turn/end', { turn: 3, reason: { kind: 'completed' } })
 
     const persisted = JSON.parse(JSON.stringify({
-      events: session.events,
+      events: session.snapshotEvents(),
       header: session.header,
-    })) as { events: SessionEvent[]; header: typeof session.header }
+      inheritedEventCount: session.inheritedEventCount,
+    })) as {
+      events: SessionEvent[]
+      header: typeof session.header
+      inheritedEventCount: typeof session.inheritedEventCount
+    }
     first.probe.clearSensitiveExpectations()
     await first.ctx.fiber.dispose()
     hosts.splice(hosts.indexOf(first), 1)
 
     const resumedHost = mountLiveHost()
     hosts.push(resumedHost)
-    const resumed = Session.fromRestore(session.id, persisted.events, persisted.header)
+    const resumed = Session.fromRestore(
+      session.id,
+      persisted.events,
+      persisted.header,
+      persisted.inheritedEventCount,
+    )
     resumedHost.probe.expectedNative = firstState.nativeOpaque
     resumedHost.probe.portableFallback = firstState.portableFallback
     await consume(resumedHost.ctx.llm.stream({

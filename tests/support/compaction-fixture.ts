@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import { apply as applyCodexCompaction } from '../../src/compaction.ts'
 
@@ -8,6 +9,7 @@ import { apply as applyCodexCompaction } from '../../src/compaction.ts'
 export function mountCustomCompaction(ctx: Context): void {
   void new LlmRuntime(ctx)
   void new SessionStore(ctx)
+  void new SessionProjectionRegistry(ctx)
   void new TokenMeter(ctx)
   applyCodexCompaction(ctx, { auto: false })
 }

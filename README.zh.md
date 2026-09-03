@@ -1,11 +1,11 @@
 # dsh-codex-auth
 
-[![npm version](https://img.shields.io/npm/v/dsh-codex-auth.svg)](https://www.npmjs.com/package/dsh-codex-auth)
+[![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 [English](README.md) | 中文
 
-当前 npm 版本：**v0.3.2**
+当前 alpha 版本：**v0.3.3-alpha.5**，对齐 DSH `0.1.2-alpha.5`、Cordis `4.0.2`、Schemastery `3.18.2` 与 pi-ai `0.84.4`。
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -22,6 +22,13 @@
 > `chatgpt.com/backend-api` 未获官方支持、可随时撤销，也可能在没有通知的情况下被限流
 > 或变更。请勿依赖它承载生产任务。
 
+## v0.3.3-alpha.5 重点更新
+
+- 将开发依赖图与 peer 基线迁移到 DSH `0.1.2-alpha.5`，采用当前 Session snapshot、Settings 注册、Connection 包与 `ToolCallId`；本仓库 lockfile 不含旧 DSH 包族。
+- 在 alpha.5 上保持账号 RPC fail-closed：只有明确绑定 `127.0.0.1` 的 Web Host 才能触达认证服务。
+- 在 alpha.5 上保留 Dual Checkpoint 创建、回放、重启/fork 持久性与一次性 Turn Continuation。
+- 确认 SSE、WebSocket 与自动回退的最终 pi-ai payload 完全一致；在 Native compatibility digest 覆盖 deferred-tool `additional_tools` 历史之前，相关 payload 保守使用 Portable checkpoint。
+
 ## 功能
 
 ### 共享 Codex 登录态
@@ -33,7 +40,9 @@
 - 可启动官方 `codex login` 浏览器登录或设备码登录流程。
 - 设置页显示连接状态，以及尽力获取的周剩余额度和重置时间。固定的
   `/backend-api/wham/usage` 探测有 10 秒 Host 截止时间，并按窗口时长识别七天窗口。
-- 插件自有、仅允许 loopback 的 `/codex-auth` Connection RPC 不会向浏览器发送任何 token 值。
+- 插件自有的 `/codex-auth` Connection RPC 不会向浏览器发送任何 token 值。只有 Web
+  bind 明确为 `127.0.0.1` 时才注册真实 dispatcher；bind 缺失、面向所有接口或未知时都只返回
+  相同且不含状态值的 `loopback-required` 拒绝。
 
 ### GPT-5.6 长上下文
 
@@ -67,7 +76,7 @@ Debug 诊断只包含 compaction ID、trigger、codec generation、model、eligi
 class、breaker state、耗时、item/byte 数、回放估算与 usage 是否可用；认证被拒绝时会提示执行
 `codex login`。诊断绝不会包含 prompt、tool、header、token、turn state、canonical item、
 encrypted content 或 provider 报告的 Token 数值。Native usage 数值可以作为诊断 metadata
-保存在敏感 checkpoint 内，但 rc.2 的聚合 Token 记账仍只使用 Portable 摘要调用。
+保存在敏感 checkpoint 内，但 DSH 的聚合 Token 记账仍只使用 Portable 摘要调用。
 
 一次**内联自动** Native 压缩成功后，provider 响应中非空的 `x-codex-turn-state` 会成为
 进程局部的 **Codex Turn Continuation**。只读 `llm/stream` waterfall 会在 Runtime 克隆前
@@ -84,7 +93,7 @@ Checkpoint，选定前缀之后的图片和其他消息继续留在 DSH tail。c
 文本前缀。回放估算对 opaque 内容单独采用固定 Codex 规则：base64 解码长度减去 650-byte
 envelope allowance；该值不冒充 DSH 的 provider-neutral pressure price。完整 custom block
 上限为 2 MiB，最终仍由 Basic 执行权威 strict-shrink 校验。额外 v2 请求会增加延迟并消耗
-Codex 配额；其 opaque 状态不含 credential，但仍是敏感会话数据，而且 rc.2 会在 summary
+Codex 配额；其 opaque 状态不含 credential，但仍是敏感会话数据，而且 alpha.5 会在 summary
 event 与 replacement message 中各保存一份。
 
 #### 启用并使用 Dual Checkpoint 压缩
@@ -104,7 +113,7 @@ event 与 replacement message 中各保存一份。
 
    test ! -e "$PRESET_DIR"
    mkdir -p "$DSH_HOME/.agent-presets"
-   cp -R "$DSH_ROOT/config/agent-presets/standard" "$PRESET_DIR"
+   cp -R "$DSH_ROOT/node_modules/@deepseek-ai/dsh-agent-presets/presets/standard" "$PRESET_DIR"
    ```
 
 3. 在 `$PRESET_DIR/preset.yml` 中为副本设置独立的 `name` 与 `description`。
@@ -130,7 +139,7 @@ Codex 请求会增加 Native 同级表示，任何不兼容或 Native 失败都�
 Checkpoint。即使下一次兼容 provider 请求实际回放 Native，stock conversation 视图仍会
 刻意显示 Portable 文本。
 
-该实验性导出只支持 DSH / Basic compaction `0.1.1-rc.2` 与 pi-ai `0.82.1`；
+该实验性导出只支持 DSH / Basic compaction `0.1.2-alpha.5` 与 pi-ai `0.84.4`；
 在其他版本组合上挂载会给出可操作的兼容性错误并失败。长上下文模式可以改变 pressure
 压缩的触发时机，但不会改变 Native activation、codec、retention、v2 payload、回放兼容性
 或一次性 turn-continuation 契约。回滚时只需重新选择 DSH 内置 preset；已有会话仍可通过
@@ -166,12 +175,15 @@ Basic 负责。
 
 只有当 checkpoint 的 schema/codec/retention generation、provider、精确 model、哈希后的
 Codex account identity、instructions、tools、parallel/tool-choice controls、reasoning、text
-配置与 service tier 都匹配**最终生效**的 Responses 请求时，才会执行 Native 回放。组合的
-payload callback 可以改变这些控制项；callback 完成后会重新判定并选择 Native 或 Portable。
+配置与 service tier 都匹配**最终生效**的 Responses 请求时，才会执行 Native 回放。Pi-ai
+`0.84.4` 可能把 GPT-5.6 的 deferred tools 编码为 `additional_tools` input item；该语义历史
+不在当前 codec 的兼容 digest 内，因此这类 payload 在回放和新建 Native 时都会保守改用
+Portable 文本。组合的 payload callback 可以改变已有建模控制项；callback 完成后会重新判定
+并选择 Native 或 Portable。
 Request ID、prompt-cache key、临时 header、turn state 与 Long Context Mode 不参与兼容性。
 未知、损坏、超过 2 MiB、含 secret、混合格式或不兼容的状态会退化为 Portable 文本。生成的
 marker 只存在于 Host；marker 缺失、重复、嵌入、泄漏或未消费时会在网络请求之前失败。
-回放 converter 精确固定在 DSH LLM / pi-ai Adapter `0.1.1-rc.2` 与 pi-ai `0.82.1`；其他
+回放 converter 精确固定在 DSH LLM / pi-ai Adapter `0.1.2-alpha.5` 与 pi-ai `0.84.4`；其他
 runtime 组合只使用 Portable 文本。Adapter generation 替换或 HMR 会使进程内 replay 与
 turn-continuation 状态失效，但不会修改持久化 Dual Checkpoint。
 
@@ -180,12 +192,8 @@ canonical 的纯文本 retained-user Responses items，并要求最后恰有一�
 item；credential、带命名空间的原始账号/路由标识、header、原始 turn state 与请求局部元数据
 都会被拒绝，持久化的账号信息只有带 domain separation 的 hash。block 还带有空的通用展示
 sentinel，因此 stock conversation 与 trajectory 只显示/复制同级 Portable 文本，不会把
-opaque state JSON 化展示。该无凭据 opaque block 在 rc.2 中仍是敏感的普通 Session 数据，
-可能存在于 Session RPC 与导出中，使用这些表面时仍须按敏感数据处理。issue 18 之前的
-worktree 实验版本曾生成不含展示 sentinel 的 block；codec 为回放兼容仍可在 Host 解码它们，
-但不保证通用 Trajectory 对这些从未发布的 fixture 隐藏内容。查看导入 Session 前应先迁移或
-删除此类 fixture。
-
+opaque state JSON 化展示。该无凭据 opaque block 在 alpha.5 中仍是敏感的普通 Session 数据，
+可能存在于 Session RPC 与导出中，使用这些表面时仍须按敏感数据处理。
 随 DSH 发布的 PiAiAdapter 与 direct DeepSeek Adapter 在 provider wire 上只发送 Portable
 文本。转换使用脱离 Session 的请求副本，因此在下一次压缩前切回兼容 Codex route，仍可回放
 保留的 Native 状态。切回 stock Basic preset 同样不需要迁移 Session；不兼容状态会继续走
@@ -263,90 +271,80 @@ cursor 和来源筛选，同时返回稳定 Image Handle 与真实 ImageBlock，
 | 质量 | `auto` | `auto`、`low`、`medium`、`high` |
 | 背景 | `auto` | `auto`、`opaque`、`transparent` |
 
-成功的 `generate_image` 结果只展示 DSH 标准图片画廊；`list_images` 是供模型使用的目录状态，
+成功的 `generate_image` 结果只展示插件自有的图片画廊；`list_images` 是供模型使用的目录状态，
 不提供面向用户的结果视图。插件通过公开的会话授权附件 API 读取图片，使用有界 Blob URL 缓存，
 并在连接重置、淘汰和插件卸载时回收自身 URL。生成图会作为对话附件持久保存。
-DeepSeek Harness `0.1.1-rc.1` 尚未提供二进制工作区写入 API，因此界面不提供工作区导出操作；
+DeepSeek Harness `0.1.2-alpha.5` 尚未提供二进制工作区写入 API，因此界面不提供工作区导出操作；
 插件也不会通过 Node 文件系统绕过 DSH 的文件策略。
 
 ### ACP 图片互操作
 
-历史背景：DSH rc.7 引入了这里使用的 ACP 图片路径；当时如果当前 `openai-codex` 模型明确声明支持图片输入，ACP 客户端可以发送
-PNG、JPEG、WebP 或 GIF 内联图片。DSH 会在用户消息入队前完成校验和持久化，因此这些图片
-会作为普通的 `user` 图片进入本插件的图片目录，之后可通过 Image Handle 选作
-`generate_image` 参考图。
+当当前 `openai-codex` 模型明确声明支持图片输入时，ACP 客户端可以发送 PNG、JPEG、
+WebP 或 GIF 内联图片。DSH 会在用户消息入队前完成校验和持久化，因此这些图片会作为普通的
+`user` 图片进入本插件的图片目录，之后可通过 Image Handle 选作 `generate_image` 参考图。
 
-历史背景：rc.7 的 ACP 桥接只发送已经提交到 `assistant/message` 的文本和图片块。`generate_image`
-生成的图片仍位于 `tool/result` 内，因此 ACP 客户端不会直接收到这些生成图的二进制内容；
-除非后续 assistant 消息自身包含 ImageBlock。
+DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 ACP
+`tool_call` 与 `tool_call_update` 消息，因此完成的 `generate_image` 结果可以直接通过该工具更新携带图片内容，
+不再要求后续 assistant 消息另含 ImageBlock。
 
 ## 环境要求
 
-- DeepSeek Harness `0.1.1-rc.1` 或兼容的后续 `0.1.x` 版本。
+- DeepSeek Harness `0.1.2-alpha.5`（最低且已测试的 prerelease 基线）；不要与旧 rc 包族混装。
 - Node.js `^22.19.0` 或 `>=24.0.0`。
+- `PATH` 中可用 `pnpm`（本项目测试版本为 `11.7.0`）。
 - `codex` CLI 已加入 `PATH`。
 - 可提前执行 `codex login`，也可在 GPT Auth 卡片中启动登录。
 
-最低兼容版本为 `0.1.1-rc.1`（见上方环境要求）。历史背景：rc.7 是第一个完整的 Web
-设置功能基线，当时 Host 会把插件注册的 `codex-search`、`codex-image` 设置 namespace
-暴露给浏览器；原版 rc.6 虽然能够注册 GPT Auth 分区，但这两个实时设置 scope 无法通过
-远程接口读取或写入。
-
 ## 从 npm 安装（推荐）
 
-npm 包已包含预构建的 Host 与浏览器 bundle，不需要安装期构建权限：
+npm 包已包含预构建的 Host 与浏览器 bundle，不需要安装期构建权限。请显式安装与
+DSH alpha.5 对齐的版本：
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth
+dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.5
 ```
 
-重启 `dsh web`，打开设置并选择 **GPT Auth**。
+确认 Web Host 明确绑定 `127.0.0.1` 后，重启 `dsh web`，打开设置并选择 **GPT Auth**。
 
 ## 安装预构建 Release
 
 ```sh
-dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.3.2/dsh-codex-auth-0.3.2.tgz
+dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.3.3-alpha.5/dsh-codex-auth-0.3.3-alpha.5.tgz
 ```
 
-重启 `dsh web`，打开设置并选择 **GPT Auth**。
+确认 Web Host 明确绑定 `127.0.0.1` 后，重启 `dsh web`，打开设置并选择 **GPT Auth**。
 
-## 从 GitHub 源码安装
+## 从 GitHub tag 源码安装
 
 ```sh
-dsh plugin --profile web add github:suntianc/dsh-codex-auth
+dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.3.3-alpha.5
 ```
 
 Git 依赖会通过包内 `prepare` 脚本从源码构建。pnpm 10+ 默认阻止该脚本，因此第一次安装
-可能打印 `allowBuilds` 键并停止。把 **dsh 输出的完整键** 加到
-`~/.dsh/profiles/web/pnpm-workspace.yaml` 的 `allowBuilds` 下，再重新执行安装。只应在审查并
-信任源码后授权。
-
-需要可复现安装时，固定 release tag 或 commit：
-
-```sh
-dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.3.2
-```
+可能打印 `allowBuilds` 键并停止。把 **dsh 输出的完整键** 加到 dsh 输出的
+`pnpm-workspace.yaml` 路径下的 `allowBuilds`，再重新执行安装。只应在审查并信任源码后授权。
 
 ## 从 tarball 安装
 
 ```sh
-git clone https://github.com/suntianc/dsh-codex-auth.git
+git clone --branch v0.3.3-alpha.5 --depth 1 https://github.com/suntianc/dsh-codex-auth.git
 cd dsh-codex-auth
 pnpm install
 pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.3.2.tgz
+dsh plugin --profile web add ./dsh-codex-auth-0.3.3-alpha.5.tgz
 ```
 
 ## 升级
 
-先停止正在运行的 `dsh web`，再将 Web Profile 更新到当前版本：
+先停止正在运行的 `dsh web`，确认 Host 本身已经是 DSH `0.1.2-alpha.5`；若不是，必须先升级 DSH。随后安装匹配的插件版本并核对 Web Profile 条目：
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth@0.3.2
+dsh --version # 必须显示 0.1.2-alpha.5
+dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.5
 dsh plugin --profile web list
 ```
 
-列表显示 `dsh-codex-auth@0.3.2` 后，重新启动 `dsh web` 并刷新浏览器。
+列表显示 `dsh-codex-auth@0.3.3-alpha.5` 后，重新启动 `dsh web` 并刷新浏览器。
 
 ## Host 配置
 
@@ -383,7 +381,13 @@ dsh plugin --profile web list
   只有 Host 侧请求会收到认证 header。
 - 状态可包含本地解码的账户 ID 和套餐 claim；它们是身份/状态信息，不是凭证。
 - 刷新写回会保留未知字段，并以仅属主可读写（`0600`）权限原子替换登录文件。
-- 状态/登录 RPC 通道只接受 loopback authority。
+- 只有公开 WebServer bind 精确为 `127.0.0.1` 时才启用账户 RPC dispatcher。bind 缺失、
+  `0.0.0.0` 或未知时会使用固定、不含状态值的 `loopback-required` handler，且不会触达认证
+  service。alpha.5 没有公开的逐方法或 carrier authority 事实，因此自定义 owner-contained
+  transport 也会被保守拒绝。客户端 `isLoopback` 只用于隐藏设置界面，不是授权边界；特别是
+  通过 localhost URL 打开面向所有接口的 Host 时，可能仍看到设置行，但所有账户操作都会被
+  Host RPC 拒绝。
+- 非 loopback 客户端不注册 GPT Auth 设置与账号 RPC binding，但仍保留 `generate_image` 与 `list_images` 结果视图。
 - 图片附件 ID 不是 bearer capability；会话历史中必须存在对应的持久 ImageBlock。
 - 若 Codex 只把凭证放在系统钥匙串，`auth.json` 可能没有可用 token。可在
   `~/.codex/config.toml` 设置 `cli_auth_credentials_store = "file"`，再执行
@@ -406,11 +410,10 @@ pnpm run check
 - `lib/compaction.js`：供自定义 preset 使用的实验性 Dual Checkpoint 压缩 Adapter；
 - `lib/native-checkpoint.js`：版本化 Host codec 与回放兼容性契约；
 - `lib/invariant.js`：invariant companion；
-- `lib/client.js`：兼容 Loader、内联 CSS Modules 的浏览器插件；
+- `lib/client.cjs`：兼容 Loader、内联 CSS Modules 的浏览器插件；
 - `lib/types/**`：类型声明。
 
-另见 [`docs/design.md`](docs/design.md)、[`CONTEXT.md`](CONTEXT.md) 与
-[架构决策记录](docs/adr/)。
+另见 [`docs/design.md`](docs/design.md) 与[架构决策记录](docs/adr/)。
 
 ## 友情链接
 

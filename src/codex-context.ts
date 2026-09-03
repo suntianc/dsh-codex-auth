@@ -1,10 +1,9 @@
 /** Live GPT-5.6 context-capacity policy owned by the Codex LLM route. */
 import type { Api, Model } from '@earendil-works/pi-ai'
 import z from '@deepseek-ai/schemastery'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 
 /** Durable settings namespace for Codex LLM route preferences. */
-export const CODEX_LLM_SETTINGS_NAMESPACE = settingsNamespace('codex-llm')
+export const CODEX_LLM_SETTINGS_NAMESPACE = 'codex-llm'
 /** Conservative Codex default that avoids automatic long-context usage. */
 export const CODEX_STANDARD_CONTEXT_WINDOW = 272_000
 /** Explicit opt-in budget matching Codex's documented one-million-token configuration. */

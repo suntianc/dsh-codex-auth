@@ -9,13 +9,14 @@ import { builtinProviders } from '@earendil-works/pi-ai/providers/all'
 
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { compactCheckpointSource, CompactionId } from '@deepseek-ai/dsh-compaction'
-import LlmRuntime, { createUserMessage, deepFreeze, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import { CodexAuthAdapter } from '../src/codex-auth-adapter.ts'
-import type { CodexAuthAdapterOptions } from '../src/codex-auth-adapter.ts'
+import type { CodexAuthAdapterOptions, CodexAuthTransport } from '../src/codex-auth-adapter.ts'
 import {
   codexNativeCheckpointCompatibilityDigest,
   hashCodexAccountIdentity,
@@ -158,18 +159,24 @@ describe('Codex Native Checkpoint codec', () => {
 
   it('pins replay to the observed DSH and pi-ai conversion pair', () => {
     expect(CODEX_NATIVE_REPLAY_COMPATIBILITY).toEqual({
-      dsh: '0.1.1-rc.2',
-      piAi: '0.82.1',
+      dsh: '0.1.2-alpha.5',
+      piAi: '0.84.4',
     })
+    expect(isCodexNativeReplayRuntimeCompatible()).toBe(true)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.1-rc.2',
-      dshPiAi: '0.1.1-rc.2',
-      piAi: '0.82.1',
+      dshLlm: '0.1.2-alpha.5',
+      dshPiAi: '0.1.2-alpha.5',
+      piAi: '0.84.4',
     })).toBe(true)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.1-rc.2',
-      dshPiAi: '0.1.1-rc.3',
-      piAi: '0.82.1',
+      dshLlm: '0.1.2-alpha.5',
+      dshPiAi: '0.1.2-alpha.6',
+      piAi: '0.84.4',
+    })).toBe(false)
+    expect(isCodexNativeReplayRuntimeCompatible({
+      dshLlm: '0.1.2-alpha.5',
+      dshPiAi: '0.1.2-alpha.5',
+      piAi: '0.84.2',
     })).toBe(false)
   })
 
@@ -445,6 +452,7 @@ function createCodexAdapter(
   ctx: Context,
   fetchImpl: typeof fetch,
   onPayload?: CodexAuthAdapterOptions['onPayload'],
+  transport: CodexAuthTransport = 'sse',
 ): CodexAuthAdapter {
   return new CodexAuthAdapter(ctx, {
     auth: {
@@ -459,7 +467,7 @@ function createCodexAdapter(
     fetchImpl,
     displayName: 'OpenAI Codex (chatgpt)',
     settings: () => ({ longContextEnabled: false }),
-    transport: 'sse',
+    transport,
     websocketConnectTimeoutMs: 1_000,
     timeoutMs: 5_000,
     ...onPayload === undefined ? {} : { onPayload },
@@ -493,6 +501,10 @@ function registerDeepSeekAdapter(ctx: Context): { readonly provider: string; rea
     options: () => connection,
     resolveApiKey: () => Promise.resolve('deepseek-test-key'),
     resolveUserId: () => 'anonymous-test-user' as never,
+    prepareExtensions: () => Promise.resolve({
+      fields: {},
+      accept: () => Promise.resolve(),
+    }),
   }))
   return { provider, model }
 }
@@ -616,6 +628,102 @@ async function collect(stream: AsyncIterable<unknown>): Promise<unknown[]> {
 }
 
 describe('Codex Native Checkpoint replay', () => {
+  it('keeps the pi-ai 0.84.4 final payload identical across SSE, WebSocket, and auto fallback', async () => {
+    type FixtureMode = 'success' | 'fail-before-open'
+    class FixtureWebSocket extends EventTarget {
+      static mode: FixtureMode = 'success'
+      static readonly frames: unknown[] = []
+      readyState = 0
+
+      constructor(_url: string | URL, _options?: unknown) {
+        super()
+        queueMicrotask(() => {
+          if (FixtureWebSocket.mode === 'fail-before-open') {
+            this.dispatchEvent(new Event('error'))
+            return
+          }
+          this.readyState = 1
+          this.dispatchEvent(new Event('open'))
+        })
+      }
+
+      send(data: unknown): void {
+        if (typeof data !== 'string') throw new TypeError('fixture expected a JSON WebSocket frame')
+        FixtureWebSocket.frames.push(JSON.parse(data))
+        queueMicrotask(() => {
+          const event = new Event('message')
+          Object.defineProperty(event, 'data', {
+            value: JSON.stringify({
+              type: 'response.completed',
+              response: {
+                id: 'resp_alpha5_transport_fixture',
+                status: 'completed',
+                usage: {
+                  input_tokens: 1,
+                  output_tokens: 1,
+                  total_tokens: 2,
+                  input_tokens_details: { cached_tokens: 0 },
+                  output_tokens_details: { reasoning_tokens: 0 },
+                },
+              },
+            }),
+          })
+          this.dispatchEvent(event)
+        })
+      }
+
+      close(): void {
+        this.readyState = 3
+      }
+    }
+
+    const callback = vi.fn((payload: unknown) => {
+      if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return payload
+      return { ...payload, alpha5_transport_fixture: true }
+    })
+    const options = deepFreeze({
+      provider: 'openai-codex',
+      model: MODEL,
+      system: SYSTEM,
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'transport payload fixture' }],
+        source: { kind: 'user' },
+      })],
+    }) as GenerateOptions
+    const run = async (transport: CodexAuthTransport): Promise<unknown[]> => {
+      const localContext = new Context()
+      void new LlmRuntime(localContext)
+      const payloads: unknown[] = []
+      const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        payloads.push(requestBodyJson(init))
+        return new Response('fixture stop', { status: 400 })
+      }) as typeof fetch
+      vi.stubGlobal('fetch', fetchMock)
+      try {
+        await drain(createCodexAdapter(localContext, fetchMock, callback, transport).stream(options))
+      } finally {
+        await localContext.fiber.dispose()
+      }
+      return payloads
+    }
+
+    const ssePayloads = await run('sse')
+    vi.stubGlobal('WebSocket', FixtureWebSocket)
+    const websocketPayloads = await run('websocket')
+    FixtureWebSocket.mode = 'fail-before-open'
+    const fallbackPayloads = await run('auto')
+
+    expect(ssePayloads).toHaveLength(1)
+    expect(websocketPayloads).toHaveLength(0)
+    expect(FixtureWebSocket.frames).toHaveLength(1)
+    const { type, ...websocketPayload } = FixtureWebSocket.frames[0] as Record<string, unknown>
+    expect(type).toBe('response.create')
+    expect(websocketPayload).toEqual(ssePayloads[0])
+    expect(fallbackPayloads).toEqual(ssePayloads)
+    expect(callback).toHaveBeenCalledTimes(3)
+    expect(ssePayloads[0]).toMatchObject({ alpha5_transport_fixture: true })
+  })
+
   it('restores one checkpoint through ctx.llm.stream at the same payload position', async () => {
     const payloads: unknown[] = []
     const { ctx } = mountCodexAdapter(payloads)
@@ -1045,6 +1153,10 @@ describe('Codex Native Checkpoint replay', () => {
     ['reasoning', (body: Record<string, unknown>) => { body.reasoning = { effort: 'high' } }],
     ['text configuration', (body: Record<string, unknown>) => { body.text = { verbosity: 'high' } }],
     ['service tier', (body: Record<string, unknown>) => { body.service_tier = 'flex' }],
+    ['pi 0.84 additional tools history', (body: Record<string, unknown>) => {
+      const input = body.input as unknown[]
+      input.push({ type: 'additional_tools', role: 'developer', tools: [{ name: 'deferred_fixture' }] })
+    }],
   ])('substitutes Portable before fetch when the final callback changes %s', async (_field, change) => {
     const payloads: unknown[] = []
     const callback = (payload: unknown) => {

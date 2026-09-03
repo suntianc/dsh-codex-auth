@@ -659,7 +659,8 @@ function deriveNativeRequest(
   const finalItem = input.pop()
   if (!isCapturedCompactionInstruction(finalItem, instructionText)
     || input.length === 0
-    || wireInputHasImage(input)) {
+    || wireInputHasImage(input)
+    || input.some(item => containsType(item, 'additional_tools'))) {
     return undefined
   }
   const tools = captured.tools === undefined ? null : cloneJson(captured.tools)

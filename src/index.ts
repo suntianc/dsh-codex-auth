@@ -21,7 +21,8 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { installSettingsSection } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-settings'
 import { DEFAULT_REFRESH_LEAD_MS, defaultAuthJsonPath } from './codex-auth.ts'
 import {
   CODEX_ROUTE, CodexAuthAdapter, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_TRANSPORT,
@@ -34,6 +35,7 @@ import {
 } from './codex-context.ts'
 import type { CodexLlmSettings } from './codex-context.ts'
 import { installEnvHttpProxy } from './env-proxy.ts'
+import { createLoopbackRpcGuard } from './loopback-rpc.ts'
 import { CODEX_AUTH_RPC_CHANNEL, handleCodexAuthRpc } from './rpc.ts'
 
 export const name = 'llm-codex-auth'
@@ -118,15 +120,22 @@ export function apply(ctx: Context, config: Config): void {
       registration.replace([CODEX_ROUTE])
     }
   }
-  installSettingsSection(ctx, CODEX_LLM_SETTINGS_NAMESPACE, CodexLlmSettingsConfig, settingsEntry, {
-    setSource: source => { currentSettings = source },
-    onChange: announceModelPolicyChange,
+  ctx.inject(['settings'], settingsCtx => {
+    settingsCtx.settings.installSection(ctx, CODEX_LLM_SETTINGS_NAMESPACE, CodexLlmSettingsConfig, settingsEntry, {
+      setSource: source => { currentSettings = source },
+      onChange: announceModelPolicyChange,
+    })
   })
-  ctx.inject(['connection'], connectionCtx => connectionCtx.connection.rpc.handle(
-    CODEX_AUTH_RPC_CHANNEL,
-    (endpoint, payload, signal) => handleCodexAuthRpc(service, endpoint, payload, signal),
-    { authority: 'loopback' },
-  ))
+  ctx.inject(['connection'], connectionCtx => {
+    const guard = createLoopbackRpcGuard(
+      connectionCtx.get('webServer')?.host,
+      (endpoint, payload, signal) => handleCodexAuthRpc(service, endpoint, payload, signal),
+    )
+    if (guard.mode === 'blocked') {
+      connectionCtx.logger.warn('llm-codex-auth: account RPC is disabled because the WebServer is not loopback-bound')
+    }
+    return connectionCtx.connection.rpc.handle(CODEX_AUTH_RPC_CHANNEL, guard.handler)
+  })
   if (config.llmEnabled) {
     ctx.logger.info(
       'llm-codex-auth: route %s serving ChatGPT login from %s (transport %s, ws-connect %sms, request timeout %sms)',

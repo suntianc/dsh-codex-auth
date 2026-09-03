@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.3-alpha.5] - 2026-09-03
+
+### Changed
+
+- Migrated the development and peer baseline as one graph to DSH `0.1.2-alpha.5`, Cordis `4.0.2`, Schemastery `3.18.2`, and pi-ai `0.84.4`, including the split Connection, Settings, Session, and client UI package owners.
+- Ported Session consumers to alpha.5 snapshot accessors and the explicit `inheritedEventCount` restore contract; migrated settings registration to `ctx.settings.installSection()` and tool identifiers to `ToolCallId`.
+- Moved the exact experimental compaction and Native replay gates to DSH / Basic `0.1.2-alpha.5` with pi-ai `0.84.4`, validated final payload parity across SSE, WebSocket, and automatic fallback, and deduplicated the lock graph so the plugin and DSH Adapter share one pi-ai runtime. Final Codex payloads containing deferred-tool `additional_tools` history now conservatively use Portable creation and replay.
+- Updated the stock presentation fixture for alpha.5's Chat / Trajectory client-module batches while preserving the non-copyability of opaque Native state, and emitted the CommonJS browser bundle with the unambiguous `.cjs` extension.
+- Refreshed the release README for exact prerelease installs, corrected the alpha.5 Standard preset source and ACP tool-result image delivery, and removed obsolete rc migration guidance.
+
+### Security
+
+- Replaced the removed Connection authority tier with a fail-closed static Host guard: only an explicit `127.0.0.1` Web bind reaches account RPC, while missing, all-interface, and unknown binds receive one value-free `loopback-required` handler that never calls auth services. Client loopback detection remains UX-only.
+
 ## [0.3.2] - 2026-09-02
 
 ### Added
@@ -110,7 +124,8 @@ All notable changes to this project are documented in this file.
 
 - DSH `0.1.0-rc.6` does not expose a policy-aware binary workspace-write API, so generated images remain durable conversation attachments and workspace export is not offered.
 
-[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.3-alpha.5...HEAD
+[0.3.3-alpha.5]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.2...v0.3.3-alpha.5
 [0.3.2]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/suntianc/dsh-codex-auth/compare/v0.2.3...v0.3.0

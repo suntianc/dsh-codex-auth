@@ -9,7 +9,7 @@ import type {
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, LlmCallConfig, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { CodexAuthService, CodexCredential } from './codex-auth-service.ts'
 import { CODEX_ROUTE } from './codex-auth-adapter.ts'
@@ -19,7 +19,7 @@ export const GENERATE_IMAGE_TOOL_NAME = 'generate_image'
 export const LIST_IMAGES_TOOL_NAME = 'list_images'
 export const CODEX_IMAGE_GENERATION_ENDPOINT = 'https://chatgpt.com/backend-api/codex/images/generations'
 export const CODEX_IMAGE_EDIT_ENDPOINT = 'https://chatgpt.com/backend-api/codex/images/edits'
-export const CODEX_IMAGE_SETTINGS_NAMESPACE = settingsNamespace('codex-image')
+export const CODEX_IMAGE_SETTINGS_NAMESPACE = 'codex-image'
 
 const IMAGE_ORIGINS = ['all', 'generated', 'reference', 'user'] as const
 const IMAGE_SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536'] as const
@@ -537,7 +537,7 @@ function parseListArgs(value: unknown): { limit: number; cursor?: string; origin
 function collectSessionImages(agent: Agent): CatalogItem[] {
   const calls = new Map<string, string>()
   const catalog = new Map<string, CatalogItem>()
-  for (const event of agent.session.events) {
+  for (const event of agent.session.snapshotEvents()) {
     if (event.type === 'tool/call' && isRecord(event.data)) {
       if (typeof event.data.callId === 'string' && typeof event.data.name === 'string') calls.set(event.data.callId, event.data.name)
       continue
@@ -868,9 +868,11 @@ export function apply(ctx: Context, config: Config): void {
     generations.clear()
   }, 'codex-image: scoped tool cleanup')
 
-  installSettingsSection(ctx, CODEX_IMAGE_SETTINGS_NAMESPACE, Config, config, {
-    setSource: source => { current = source },
-    onChange: refreshAll,
+  ctx.inject(['settings'], settingsCtx => {
+    settingsCtx.settings.installSection(ctx, CODEX_IMAGE_SETTINGS_NAMESPACE, Config, config, {
+      setSource: source => { current = source },
+      onChange: refreshAll,
+    })
   })
   ctx.on('agent/created', ({ agent }) => { void refreshAgent(agent) })
   ctx.on('agent/request', async ({ agent }, next) => {

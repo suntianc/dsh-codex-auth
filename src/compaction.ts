@@ -55,6 +55,7 @@ const DSH_RUNTIME_PACKAGES = [
   '@deepseek-ai/dsh-compaction',
   '@deepseek-ai/dsh-compaction-basic',
   '@deepseek-ai/dsh-llm',
+  '@deepseek-ai/dsh-llm-pi-ai',
   '@deepseek-ai/dsh-session',
   '@deepseek-ai/dsh-token-meter',
 ] as const
@@ -64,10 +65,10 @@ type DshRuntimePackage = typeof DSH_RUNTIME_PACKAGES[number]
 /** Conservative allowance for Basic's private framing around returned summary blocks. */
 const BASIC_FRAME_TOKEN_RESERVE = 256
 
-/** Exact runtime pair whose rc.2 framing and pi conversion behavior this Adapter uses. */
+/** Exact alpha.5 runtime pair whose framing and pi conversion behavior this Adapter uses. */
 export const CODEX_COMPACTION_COMPATIBILITY = Object.freeze({
-  dsh: '0.1.1-rc.2',
-  piAi: '0.82.1',
+  dsh: '0.1.2-alpha.5',
+  piAi: '0.84.4',
 })
 
 /** Runtime facts accepted by the compatibility assertion. */
@@ -141,8 +142,9 @@ function currentExplicitReasoningEffort(agent: Agent) {
 }
 
 function currentCompactionId(agent: Agent): string | undefined {
-  for (let index = agent.session.events.length - 1; index >= 0; index -= 1) {
-    const event = agent.session.events[index]
+  const events = agent.session.snapshotEvents()
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
     if (event?.type === 'compaction/start') return String(event.data.compactionId)
   }
   return undefined

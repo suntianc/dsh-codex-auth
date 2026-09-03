@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
@@ -45,7 +45,7 @@ function fakeAgent(events: unknown[] = [], overrides: Partial<Agent['options']> 
     session: {
       id: SessionId('session-1'),
       header: { version: 0, id: SessionId('session-1'), createdAt: 1, cwd: '/workspace' },
-      events,
+      snapshotEvents: () => events,
       requestHeader: () => undefined,
     },
     ctx,
@@ -117,7 +117,7 @@ async function execute(
   signal = new AbortController().signal,
 ) {
   return tools.execute({
-    callId: CallId(`call-${name}`),
+    callId: ToolCallId(`call-${name}`),
     name,
     arguments: arguments_,
     agent,

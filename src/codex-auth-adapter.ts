@@ -74,22 +74,12 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 /** Provider-idle ceiling for one outstanding stream read, mirroring llm-pi-ai's default. */
 const STREAM_IDLE_TIMEOUT_MS = 300_000
 
-/** rc1's default maximum encoded image payload for one pi-ai request. */
+/** Default maximum encoded image payload for one pi-ai request. */
 export const MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
 /** Default maximum pixel count for one normalized request image. */
 export const REQUEST_IMAGE_PIXEL_BUDGET = 2048 * 2048
 /** Default maximum encoded byte length for one normalized request image. */
 export const REQUEST_IMAGE_MAX_BYTES = 1024 * 1024
-
-/**
- * Request-image limits became resolved-profile fields in DSH rc.2. This local
- * structural extension preserves the rc.1 minimum while letting rc.2 consume
- * the same properties at runtime.
- */
-type CodexResolvedPiAiProviderProfile = ResolvedPiAiProviderProfile & {
-  requestImagePixelBudget: number
-  requestImageMaxBytes: number
-}
 
 type CodexProviderTransport = Pick<CodexAuthAdapterOptions, 'fetchImpl' | 'timeoutMs'> & {
   readonly streamIdleTimeoutMs: number
@@ -276,7 +266,7 @@ export class CodexAuthAdapter extends PiAiAdapter {
 
   constructor(ctx: Context, options: CodexAuthAdapterOptions) {
     const nativeReplay = new CodexNativeCheckpointReplay()
-    const profile: CodexResolvedPiAiProviderProfile = {
+    const profile: ResolvedPiAiProviderProfile = {
       provider: CODEX_ROUTE,
       displayName: options.displayName,
       streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,

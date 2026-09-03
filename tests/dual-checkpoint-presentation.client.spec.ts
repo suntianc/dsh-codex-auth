@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Stock rc.2 presentation of one plugin-owned Dual Checkpoint. */
+/** Stock alpha.5 presentation of one plugin-owned Dual Checkpoint. */
 import type {
   ClientBootstrapModule,
   ClientBundleRegistration,
@@ -13,8 +13,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { encodeCodexNativeCheckpoint } from '../src/native-checkpoint.ts'
 
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
-const CONVERSATION_ID = '@deepseek-ai/dsh-client-ui-conversation'
-const CONVERSATION_URL = '/plugins/conversation/client.js'
+const CONVERSATION_ID = '@deepseek-ai/dsh-client-ui-chat'
+const CONVERSATION_URL = '/plugins/chat/client.js'
 const TRAJECTORY_ID = '@deepseek-ai/dsh-client-ui-trajectory'
 const TRAJECTORY_URL = '/plugins/trajectory/client.js'
 const win = globalThis as DshWindow
@@ -41,7 +41,7 @@ function staticHook<Value>(value: Value) {
   return <Selected>(selector: (snapshot: Value) => Selected): Selected => selector(value)
 }
 
-function runtimeModule(): Record<string, unknown> {
+function storeModule(): Record<string, unknown> {
   return {
     defineStore: () => () => ({}),
     isReplacementSurfaceEvent: (event: { surfaceOp?: unknown }) => (
@@ -121,7 +121,7 @@ async function loadStockClients(): Promise<{
   )
 
   const staticModules = {
-    '@deepseek-ai/dsh-client-runtime/client': runtimeModule(),
+    '@deepseek-ai/dsh-client-store': storeModule(),
     '@deepseek-ai/dsh-client-ui-slots': {
       resolveSlotLabel: (label: unknown) => typeof label === 'function' ? label() : label,
     },
@@ -138,22 +138,35 @@ async function loadStockClients(): Promise<{
         {
           id: CONVERSATION_ID,
           url: CONVERSATION_URL,
-          rev: '0.1.1-rc.2',
+          rev: '0.1.2-alpha.5',
           external: Object.keys(staticModules),
         },
         {
           id: TRAJECTORY_ID,
           url: TRAJECTORY_URL,
-          rev: '0.1.1-rc.2',
+          rev: '0.1.2-alpha.5',
           external: Object.keys(staticModules),
         },
       ],
-      batches: [],
+      batches: [
+        {
+          phase: 'application',
+          url: CONVERSATION_URL,
+          rev: '0.1.2-alpha.5',
+          entries: [CONVERSATION_ID],
+        },
+        {
+          phase: 'application',
+          url: TRAJECTORY_URL,
+          rev: '0.1.2-alpha.5',
+          entries: [TRAJECTORY_ID],
+        },
+      ],
     },
     staticModules,
     loadBundle: async (url) => {
       if (url === CONVERSATION_URL) {
-        await import('@deepseek-ai/dsh-client-ui-conversation/client')
+        await import('@deepseek-ai/dsh-client-ui-chat/client')
         return
       }
       if (url === TRAJECTORY_URL) {
@@ -199,8 +212,11 @@ function nativeCheckpointBlock() {
 function renderTrajectoryCheckpoint(trajectoryClient: StockClientExports) {
   let trajectoryView: unknown
   const ctx = {
-    conversationEvents: { register: () => () => {} },
-    conversationViews: { register: () => () => {} },
+    uiConversation: {
+      events: { register: () => () => {} },
+      views: { register: () => () => {} },
+    },
+    uiSession: { provide: () => () => {} },
     locale: {
       register: () => () => {},
       bind: () => (key: string) => key,
@@ -261,10 +277,14 @@ function renderTrajectoryCheckpoint(trajectoryClient: StockClientExports) {
   }
   return render(createElement(trajectoryView as ComponentType<Record<string, unknown>>, {
     useSession: staticHook(session),
+    useTrajectory: staticHook(trajectory),
     useDuration: staticHook(false),
     loadOlder: () => Promise.resolve(false),
+    loadImage: () => Promise.reject(new Error('no image in presentation fixture')),
     setActualDuration: () => {},
-    onInspectDone: () => {},
+    viewRequest: () => {},
+    completeViewRequest: () => {},
+    renderSlot: () => null,
     t: (key: string) => key,
   }))
 }
@@ -274,14 +294,17 @@ function renderConversationCheckpoint(conversationClient: StockClientExports) {
   let compactionView: unknown
   const registrationComplete = new Error('conversation registrations captured')
   const ctx = {
-    conversationEvents: {
-      register(definition: ConversationDefinition) {
-        if (definition.kind === 'compaction') compactionDefinition = definition
-        return () => {}
+    uiConversation: {
+      events: {
+        register(definition: ConversationDefinition) {
+          if (definition.kind === 'compaction') compactionDefinition = definition
+          return () => {}
+        },
+        registerFallback: () => () => {},
       },
-      registerFallback: () => () => {},
+      views: { register: () => () => {} },
     },
-    conversationViews: { register: () => () => {} },
+    uiSession: { provide: () => () => {} },
     slots: {
       inject(_name: string, register: () => () => void) { return register() },
       register(options: Record<string, unknown>, component: unknown) {

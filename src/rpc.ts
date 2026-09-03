@@ -1,6 +1,6 @@
 /** Host dispatcher for the codex-auth plugin's dedicated Connection RPC. */
 
-import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { ConnectionRpcResult as RpcResult } from '@deepseek-ai/dsh-client-connection'
 import type { CodexAuthService } from './codex-auth-service.ts'
 import type { CodexAuthLoginMode } from './rpc-contract.ts'
 export { CODEX_AUTH_RPC_CHANNEL } from './rpc-contract.ts'

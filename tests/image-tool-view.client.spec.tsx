@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Captured ImageBlock rendering regression for the generate_image tool view. */
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -29,8 +29,6 @@ const block: ToolResultNode = {
     { type: 'image', attachment },
   ],
   isError: false,
-  callView: null,
-  resultView: null,
   subCalls: [],
 }
 

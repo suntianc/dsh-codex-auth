@@ -1,6 +1,6 @@
 /** Browser-safe dedicated Connection RPC contract owned by codex-auth. */
 
-import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { ConnectionRpcResult as RpcResult } from '@deepseek-ai/dsh-client-connection'
 
 /** Logical channel registered by the plugin's Host half and called by its browser half. */
 export const CODEX_AUTH_RPC_CHANNEL = '/codex-auth'

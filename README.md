@@ -1,11 +1,11 @@
 # dsh-codex-auth
 
-[![npm version](https://img.shields.io/npm/v/dsh-codex-auth.svg)](https://www.npmjs.com/package/dsh-codex-auth)
+[![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 English | [中文](README.zh.md)
 
-Current npm release: **v0.3.2**
+Current alpha release: **v0.3.3-alpha.5**, aligned with DSH `0.1.2-alpha.5`, Cordis `4.0.2`, Schemastery `3.18.2`, and pi-ai `0.84.4`.
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -24,6 +24,13 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 > may be rate-limited or changed without notice. Do not rely on it for
 > production workloads.
 
+## v0.3.3-alpha.5 highlights
+
+- Moves the development graph and peer baseline to DSH `0.1.2-alpha.5`, including current Session snapshots, Settings registration, Connection packages, and `ToolCallId`; this repository's lockfile contains no older DSH family.
+- Keeps account RPC fail-closed on alpha.5: only an explicit `127.0.0.1` Web bind reaches authentication services.
+- Preserves Dual Checkpoint creation, replay, restart/fork durability, and one-shot Turn Continuation on alpha.5.
+- Confirms identical final pi-ai payloads across SSE, WebSocket, and automatic fallback, while conservatively keeping deferred-tool `additional_tools` history on Portable checkpoints until that semantic state is part of the Native compatibility digest.
+
 ## Features
 
 ### Shared Codex Login State
@@ -38,8 +45,10 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 - Shows connection state plus best-effort weekly remaining balance/reset time.
   The fixed `/backend-api/wham/usage` probe has a ten-second Host deadline and
   identifies the seven-day window by duration rather than response position.
-- Sends no token value over the plugin-owned, loopback-only `/codex-auth`
-  Connection RPC channel.
+- Sends no token value over the plugin-owned `/codex-auth` Connection RPC
+  channel. The real dispatcher is registered only for an explicit
+  `127.0.0.1` Web bind; every absent, all-interface, or unknown bind receives
+  the same value-free `loopback-required` denial.
 
 ### GPT-5.6 long context
 
@@ -85,7 +94,7 @@ replay estimate, and usage availability; an authentication rejection recommends
 `codex login`. They never include prompts, tools, headers, tokens, turn state,
 canonical items, encrypted content, or provider-reported token counts. Reported
 native usage may be retained inside the sensitive checkpoint as diagnostic
-metadata, but rc.2 aggregate token accounting continues to use only the Portable
+metadata, but DSH aggregate token accounting continues to use only the Portable
 summarization call.
 
 After a successful **inline automatic** native compaction, a nonempty provider
@@ -110,7 +119,7 @@ estimation applies Codex's pinned opaque rule—decoded base64 length minus the
 price. The complete custom block is capped at 2 MiB, and Basic still performs
 the authoritative strict-shrink check. The extra v2 request adds latency and
 consumes Codex quota; its credential-free opaque state is still sensitive
-conversation data and is duplicated by rc.2 in the summary event and replacement
+conversation data and is duplicated by alpha.5 in the summary event and replacement
 message.
 
 #### Enable and use Dual Checkpoint compaction
@@ -132,7 +141,7 @@ compaction. Opt in through a complete user-owned custom preset:
 
    test ! -e "$PRESET_DIR"
    mkdir -p "$DSH_HOME/.agent-presets"
-   cp -R "$DSH_ROOT/config/agent-presets/standard" "$PRESET_DIR"
+   cp -R "$DSH_ROOT/node_modules/@deepseek-ai/dsh-agent-presets/presets/standard" "$PRESET_DIR"
    ```
 
 3. Give the copy a distinct `name` and `description` in
@@ -164,7 +173,7 @@ keeps the valid Portable Checkpoint. Stock conversation views intentionally show
 the Portable text even when the next compatible provider request replays Native.
 
 This experimental export supports exactly DSH / Basic compaction
-`0.1.1-rc.2` and pi-ai `0.82.1`; mounting it on another pair fails with an
+`0.1.2-alpha.5` and pi-ai `0.84.4`; mounting it on another pair fails with an
 actionable compatibility error. Long Context Mode may change when pressure
 compaction runs, but does not change native activation, codec, retention, v2
 payload, replay compatibility, or the one-shot turn-continuation contract.
@@ -210,15 +219,18 @@ failure.
 Native replay requires the checkpoint's schema/codec/retention generations,
 provider, exact model, hashed Codex account identity, instructions, tools,
 parallel/tool-choice controls, reasoning, text configuration, and service tier
-to match the **final effective** Responses request. A composed payload callback
-may change those controls: replay is re-evaluated after the callback and selects
-Native or Portable accordingly. Request IDs, prompt-cache keys, transient
+to match the **final effective** Responses request. Pi-ai `0.84.4` may encode
+deferred GPT-5.6 tools as an `additional_tools` input item; because that semantic
+history is outside this codec's compatibility digest, such a payload
+conservatively uses Portable text for both replay and new Native creation. A
+composed payload callback may change the modeled controls: replay is re-evaluated
+after the callback and selects Native or Portable accordingly. Request IDs, prompt-cache keys, transient
 headers, turn state, and Long Context Mode do not affect compatibility. Unknown,
 malformed, oversized (over 2 MiB), secret-bearing, mixed, or incompatible state
 degrades to Portable text. Generated markers are Host-only and any missing,
 duplicate, embedded, leaked, or unconsumed marker fails before network I/O. The
-replay converter is pinned to DSH LLM / pi-ai Adapter `0.1.1-rc.2` and pi-ai
-`0.82.1`; another runtime pair uses Portable text instead. Adapter generation
+replay converter is pinned to DSH LLM / pi-ai Adapter `0.1.2-alpha.5` and pi-ai
+`0.84.4`; another runtime pair uses Portable text instead. Adapter generation
 replacement or HMR invalidates process-local replay and turn-continuation state,
 while the durable Dual Checkpoint remains unchanged for a later request.
 
@@ -230,13 +242,8 @@ headers, raw turn state, and request-scoped metadata. Only the domain-separated
 account hash is durable. The block carries an empty generic-presentation sentinel
 so stock conversation and trajectory views display/copy the sibling Portable
 text without stringifying opaque state. The credential-free opaque block is
-still sensitive ordinary Session data in rc.2 and may be present in Session RPC
-and exports; treat those surfaces accordingly. Experimental blocks emitted by
-pre-issue-18 worktree builds did not carry the presentation sentinel. They stay
-Host-decodable for replay compatibility, but their generic Trajectory rendering
-is not covered; migrate or remove those never-released fixtures before viewing
-an imported Session.
-
+still sensitive ordinary Session data in alpha.5 and may be present in Session
+RPC and exports; treat those surfaces accordingly.
 The shipped PiAiAdapter and direct DeepSeek Adapter put only Portable text on
 their provider wire. Because conversion uses detached request copies, switching
 back to a compatible Codex route before another compaction still replays the
@@ -326,99 +333,89 @@ Live Image settings:
 | Quality | `auto` | `auto`, `low`, `medium`, `high` |
 | Background | `auto` | `auto`, `opaque`, `transparent` |
 
-A successful `generate_image` result displays only DSH's standard image gallery;
+A successful `generate_image` result displays only the plugin-owned image gallery;
 `list_images` is model-facing catalog state and has no user-facing result view. A
 bounded plugin-owned Blob URL cache reads only through the public
 session-authorized attachment API and revokes its URLs on reset, eviction, and
 plugin teardown. Generated images remain durable conversation attachments.
-DeepSeek Harness `0.1.1-rc.1` does not expose a binary workspace-write API, so
+DeepSeek Harness `0.1.2-alpha.5` does not expose a binary workspace-write API, so
 no workspace-export action is offered and the plugin never bypasses DSH policy
 with direct Node filesystem access.
 
 ### ACP image interoperability
 
-Historically, DSH rc.7 introduced the ACP path used here: an ACP client may send inline PNG, JPEG, WebP, or GIF prompts
-when the active `openai-codex` model declares image input. DSH validates and
-persists those images before the user message is queued. They therefore enter
-this plugin's Image Catalog as ordinary `user` images and can be selected later
-by Image Handle as `generate_image` references.
+An ACP client may send inline PNG, JPEG, WebP, or GIF prompts when the active
+`openai-codex` model declares image input. DSH validates and persists those
+images before the user message is queued. They therefore enter this plugin's
+Image Catalog as ordinary `user` images and can be selected later by Image
+Handle as `generate_image` references.
 
-For historical context, DSH's rc.7 ACP bridge emitted only committed `assistant/message` text and image
-blocks. Images returned by `generate_image` remain nested in `tool/result`, so
-ACP clients do not receive those generated bytes directly unless a later
-assistant message itself contains an ImageBlock.
+DSH alpha.5 projects durable `tool/call` and `tool/result` events into ACP
+`tool_call` and `tool_call_update` messages, respectively. Completed `generate_image` results therefore carry
+their image content through that tool update without requiring a later
+assistant ImageBlock.
 
 ## Requirements
 
-- DeepSeek Harness `0.1.1-rc.1` or a compatible later `0.1.x` release.
+- DeepSeek Harness `0.1.2-alpha.5` (the minimum and tested prerelease baseline); do not mix it with an older rc package family.
 - Node.js `^22.19.0` or `>=24.0.0`.
+- `pnpm` available on `PATH` (`11.7.0` is the tested project package manager).
 - The `codex` CLI available on `PATH`.
 - Run `codex login` before use, or start login from the GPT Auth card.
-
-The minimum compatible DSH version is `0.1.1-rc.1` (see the requirement above).
-For historical context, rc.7 was the first complete Web-settings baseline: its
-Host exposed plugin-registered settings namespaces such as `codex-search` and
-`codex-image` to the browser, while stock rc.6 could register GPT Auth but could
-not remotely read or write those two live settings scopes.
 
 ## Install from npm (recommended)
 
 The npm package includes prebuilt Host and browser bundles, so no install-time
-build permission is required:
+build permission is required. Install the alpha.5-aligned release explicitly:
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth
+dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.5
 ```
 
-Restart `dsh web`, open Settings, and select **GPT Auth**.
+With the Web Host bound explicitly to `127.0.0.1`, restart `dsh web`, open Settings, and select **GPT Auth**.
 
 ## Install a prebuilt release
 
 ```sh
-dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.3.2/dsh-codex-auth-0.3.2.tgz
+dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.3.3-alpha.5/dsh-codex-auth-0.3.3-alpha.5.tgz
 ```
 
-Restart `dsh web`, open Settings, and select **GPT Auth**.
+With the Web Host bound explicitly to `127.0.0.1`, restart `dsh web`, open Settings, and select **GPT Auth**.
 
-## Install from GitHub source
+## Install from the tagged GitHub source
 
 ```sh
-dsh plugin --profile web add github:suntianc/dsh-codex-auth
+dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.3.3-alpha.5
 ```
 
 Git dependencies are built by the package's `prepare` script. pnpm 10+ blocks
 that script until explicitly allowed, so the first command may print an
-`allowBuilds` key and stop. Copy the **exact key printed by dsh** under
-`allowBuilds` in `~/.dsh/profiles/web/pnpm-workspace.yaml`, then run the command
-again. Only grant this permission after reviewing the source.
-
-For a reproducible install, pin a release tag or commit:
-
-```sh
-dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.3.2
-```
+`allowBuilds` key and stop. Copy the **exact key printed by dsh** under `allowBuilds` in the
+`pnpm-workspace.yaml` path printed by dsh, then run the command again. Only grant this permission after reviewing the source.
 
 ## Install a tarball
 
 ```sh
-git clone https://github.com/suntianc/dsh-codex-auth.git
+git clone --branch v0.3.3-alpha.5 --depth 1 https://github.com/suntianc/dsh-codex-auth.git
 cd dsh-codex-auth
 pnpm install
 pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.3.2.tgz
+dsh plugin --profile web add ./dsh-codex-auth-0.3.3-alpha.5.tgz
 ```
 
 ## Upgrade
 
-Stop the running `dsh web` process and update the Web profile to the current
-release:
+Stop the running `dsh web` process and verify that the Host itself is already on
+DSH `0.1.2-alpha.5`; upgrade DSH first if it is not. Then install the matching
+plugin release and verify the Web profile entry:
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth@0.3.2
+dsh --version # must report 0.1.2-alpha.5
+dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.5
 dsh plugin --profile web list
 ```
 
-After the list reports `dsh-codex-auth@0.3.2`, restart `dsh web` and refresh the
+After the list reports `dsh-codex-auth@0.3.3-alpha.5`, restart `dsh web` and refresh the
 browser.
 
 ## Host configuration
@@ -453,13 +450,21 @@ Do not also add an `openai-codex` entry under `llm-pi-ai.providers` or install
 ## Security and limitations
 
 - Token values never enter the browser, settings, logs, session events, tool
-  metadata, search requests, or image results. Only Host-side requests receive
+  metadata, browser-visible search parameters, or image results. Only Host-side requests receive
   authorization headers.
 - Status may include locally decoded account ID and plan claims; these are
   identity/status facts, not credentials.
 - Refresh writes preserve unknown fields and atomically replace the auth file
   with owner-only (`0600`) permissions.
-- The status/login RPC channel is restricted to loopback authorities.
+- The account RPC dispatcher is enabled only when the public WebServer bind is
+  exactly `127.0.0.1`. Missing, `0.0.0.0`, and unknown binds get a fixed,
+  value-free `loopback-required` handler that never reaches auth services.
+  Alpha.5 has no public per-method or carrier authority fact, so custom
+  owner-contained transports are conservatively denied. Client `isLoopback`
+  only hides the Settings surface as UX; it is not an authorization boundary.
+  In particular, an all-interface Host opened through a localhost URL may show
+  the Settings row while every account action is still denied by Host RPC.
+- Non-loopback clients omit the GPT Auth Settings and account-RPC bindings but keep the `generate_image` and `list_images` result views registered.
 - Image attachment IDs are not bearer capabilities: session history must contain
   the corresponding durable ImageBlock.
 - When Codex stores credentials only in the OS keyring, `auth.json` may contain
@@ -483,11 +488,10 @@ pnpm run check
 - `lib/compaction.js` — experimental custom-preset Dual Checkpoint compaction Adapter;
 - `lib/native-checkpoint.js` — versioned Host codec and replay compatibility contract;
 - `lib/invariant.js` — invariant companion;
-- `lib/client.js` — loader-compatible browser plugin with inline CSS Modules;
+- `lib/client.cjs` — loader-compatible browser plugin with inline CSS Modules;
 - `lib/types/**` — declarations.
 
-See [`docs/design.md`](docs/design.md), [`CONTEXT.md`](CONTEXT.md), and the
-[architecture decisions](docs/adr/).
+See [`docs/design.md`](docs/design.md) and the [architecture decisions](docs/adr/).
 
 ## Friendship links
 

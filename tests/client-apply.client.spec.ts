@@ -1,5 +1,5 @@
 /** Browser contribution registration, dedicated injections, and cleanup. */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { CodexCapabilitySettingsProps } from '../src/client/CodexCapabilitySettings.tsx'
 import type { CodexAuthKey } from '../src/client/locales.ts'
 import { describe, expect, it, vi } from 'vitest'
@@ -15,7 +15,7 @@ interface SlotRecord {
   component: unknown
 }
 
-function bench() {
+function bench(isLoopback = true) {
   const call = vi.fn(() => Promise.resolve({ ok: true as const, value: { status: {
     available: true,
     configured: true,
@@ -52,7 +52,7 @@ function bench() {
       },
     },
     get(service: string) {
-      if (service === 'connection') return { rpc: { call } }
+      if (service === 'connection') return { isLoopback, rpc: { call } }
       throw new Error(`unexpected service: ${service}`)
     },
     effect(effect: () => (() => void)) {
@@ -106,5 +106,21 @@ describe('dsh-codex-auth client apply', () => {
     expect(b.slots).toHaveLength(0)
     expect(b.listeners.size).toBe(0)
     expect(b.dictionaries.size).toBe(0)
+  })
+
+  it('keeps image result views but omits privileged settings off loopback', () => {
+    const b = bench(false)
+
+    expect(b.bindScope).not.toHaveBeenCalled()
+    expect(b.slots).toHaveLength(2)
+    expect(b.slots.map(record => record.options)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),
+      expect.objectContaining({ name: 'tool.call.toolview', key: 'list_images' }),
+    ]))
+    expect(b.slots.some(record => record.options.name === 'settings.section')).toBe(false)
+    expect(b.call).not.toHaveBeenCalled()
+
+    b.dispose()
+    expect(b.slots).toHaveLength(0)
   })
 })

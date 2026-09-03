@@ -32,7 +32,7 @@ import { isPlainJsonTree } from './json-tree.ts'
 
 const CODEX_ROUTE = 'openai-codex'
 const MARKER_PREFIX = '[[dsh-codex-native-checkpoint:'
-/** Pinned rc.2 Basic frame digests; source text remains owned by Basic. */
+/** Pinned alpha.5 Basic frame digests; source text remains owned by Basic. */
 const BASIC_CHECKPOINT_OPEN_SHA256 = '7986ebcdf3457b678a1d08a59d9ec746ade700b5a5cb036c72284169103aca2d'
 const BASIC_CHECKPOINT_CLOSE_SHA256 = '396eac8b7d03e4f0b95511caeeb28c11c88c7e09d2e0d2fabe9c01f7d8e357a5'
 
@@ -468,7 +468,11 @@ function compatibilityInput(
   accountHash: string,
   payload: Record<string, unknown>,
 ): CodexNativeCheckpointCompatibilityInput | undefined {
-  if (typeof payload.model !== 'string'
+  // pi-ai 0.84.4 can encode deferred tool availability as semantic input rather
+  // than in the top-level tool schema. Until the durable digest models that
+  // history, fail back to Portable instead of replaying opaque state against it.
+  if (containsPayloadType(payload.input, 'additional_tools')
+    || typeof payload.model !== 'string'
     || payload.model.length === 0
     || typeof payload.instructions !== 'string'
     || typeof payload.parallel_tool_calls !== 'boolean') return undefined
@@ -488,6 +492,12 @@ function compatibilityInput(
   } catch {
     return undefined
   }
+}
+
+function containsPayloadType(value: unknown, type: string): boolean {
+  if (Array.isArray(value)) return value.some(item => containsPayloadType(item, type))
+  if (!isRecord(value)) return false
+  return value.type === type || Object.values(value).some(item => containsPayloadType(item, type))
 }
 
 function jsonOrNull(value: unknown): JsonValue {

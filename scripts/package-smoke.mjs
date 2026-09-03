@@ -7,14 +7,22 @@ import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import semver from 'semver'
 
-const DSH_BASELINE = '0.1.1-rc.1'
-const CODEX_COMPACTION_DSH_VERSION = '0.1.1-rc.2'
+const DSH_BASELINE = '0.1.2-alpha.5'
+const CODEX_COMPACTION_DSH_VERSION = '0.1.2-alpha.5'
 const EXPERIMENTAL_DSH_PEERS = [
   '@deepseek-ai/dsh-compaction',
   '@deepseek-ai/dsh-compaction-basic',
   '@deepseek-ai/dsh-token-meter',
 ]
-const PI_AI_VERSION = '0.82.1'
+const PI_AI_VERSION = '0.84.4'
+const EXACT_SUPPORT_PACKAGES = {
+  '@deepseek-ai/cordis': '4.0.2',
+  '@deepseek-ai/schemastery': '3.18.2',
+}
+const RETIRED_DSH_PACKAGES = [
+  '@deepseek-ai/dsh-client-runtime',
+  '@deepseek-ai/dsh-host-apiproxy',
+]
 const SEMVER_OPTIONS = { includePrerelease: true }
 const sourceRoot = resolve(import.meta.dirname, '..')
 const temporary = await mkdtemp(resolve(tmpdir(), 'dsh-codex-auth-package-smoke-'))
@@ -46,6 +54,7 @@ try {
     'docs/adr/0005-create-dual-checkpoints-inside-basic-manual-transactions.md',
     'docs/adr/0006-preserve-turn-continuity-during-automatic-compaction.md',
     'docs/adr/0007-preserve-dual-checkpoints-across-session-lifecycles.md',
+    'docs/adr/0008-fail-closed-account-rpc-on-alpha5.md',
   ]
   for (const documentation of requiredDocumentation) {
     if (!packedPaths.has(documentation)) {
@@ -127,12 +136,48 @@ try {
   if (manifest.devDependencies?.['@earendil-works/pi-ai'] !== PI_AI_VERSION) {
     throw new Error(`package smoke: devDependencies must pin pi-ai to ${PI_AI_VERSION}`)
   }
+  for (const [name, version] of Object.entries(EXACT_SUPPORT_PACKAGES)) {
+    const peerRange = semver.validRange(String(manifest.peerDependencies?.[name] ?? ''), SEMVER_OPTIONS)
+    if (peerRange === null || !semver.satisfies(version, peerRange, SEMVER_OPTIONS)) {
+      throw new Error(`package smoke: peerDependencies.${name} must accept ${version}`)
+    }
+    if (manifest.devDependencies?.[name] !== version) {
+      throw new Error(`package smoke: devDependencies.${name} must pin ${version}`)
+    }
+  }
+  for (const name of RETIRED_DSH_PACKAGES) {
+    if (manifest.peerDependencies?.[name] !== undefined
+      || manifest.devDependencies?.[name] !== undefined
+      || manifest.dsh?.client?.inject?.includes(name)) {
+      throw new Error(`package smoke: retired alpha.5 package remains declared: ${name}`)
+    }
+  }
   const lockfile = await readFile(resolve(sourceRoot, 'pnpm-lock.yaml'), 'utf8')
+  const piAiResolutions = new Set([...lockfile.matchAll(
+    /^ {2}['"]@earendil-works\/pi-ai@([^('"\s:]+).*['"]:\s*$/gmu,
+  )].map(([, version]) => version))
+  const snapshots = lockfile.split('\nsnapshots:\n', 2)[1] ?? ''
+  const piAiSnapshotIdentities = [...snapshots.matchAll(
+    /^ {2}['"](@earendil-works\/pi-ai@[^'"]+)['"]:\s*$/gmu,
+  )].map(([, identity]) => identity)
+  if (piAiResolutions.size !== 1
+    || !piAiResolutions.has(PI_AI_VERSION)
+    || piAiSnapshotIdentities.length !== 1) {
+    throw new Error(
+      `package smoke: pnpm-lock.yaml must contain one pi-ai ${PI_AI_VERSION} snapshot; found ${piAiSnapshotIdentities.join(', ') || 'none'}`,
+    )
+  }
   const dshResolutions = [...lockfile.matchAll(
     /^ {2}['"](@deepseek-ai\/dsh-[^@'"]+)@([^('"\s:]+).*['"]:\s*$/gmu,
   )].map(([, name, version]) => ({ name, version }))
   if (dshResolutions.length === 0) {
     throw new Error('package smoke: pnpm-lock.yaml contains no resolved DSH package entries')
+  }
+  const mixedDsh = dshResolutions.filter(({ version }) => version !== CODEX_COMPACTION_DSH_VERSION)
+  if (mixedDsh.length > 0) {
+    throw new Error(
+      `package smoke: pnpm-lock.yaml mixes the alpha.5 graph: ${mixedDsh.map(({ name, version }) => `${name}@${version}`).join(', ')}`,
+    )
   }
   const declaredDshNames = new Set(['peerDependencies', 'devDependencies']
     .flatMap(section => Object.keys(manifest[section] ?? {}))

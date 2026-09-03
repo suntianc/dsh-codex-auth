@@ -11,13 +11,12 @@ import type { BasicCompactionConfig } from '@deepseek-ai/dsh-compaction-basic'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import LlmRuntime, {
-  CallId,
+  ToolCallId,
   ReasoningEffortId,
   createAssistantMessage,
   CONTEXT_WINDOW_EXCEEDED_CODE,
   createToolResultMessage,
   createUserMessage,
-  deepFreeze,
   isAgentLoopRequest,
   markAgentLoopRequest,
 } from '@deepseek-ai/dsh-llm'
@@ -27,7 +26,9 @@ import SessionStore, {
   SessionId,
   type SessionEvent,
 } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
+import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import { CodexAuthAdapter } from '../src/codex-auth-adapter.ts'
 import type { CodexAuthAdapterOptions } from '../src/codex-auth-adapter.ts'
 import {
@@ -132,6 +133,7 @@ function textResponse(text: string): Response {
         usage: {
           input_tokens: 120,
           output_tokens: 8,
+          total_tokens: 128,
           input_tokens_details: { cached_tokens: 20 },
           output_tokens_details: { reasoning_tokens: 3 },
         },
@@ -228,6 +230,7 @@ function compactionResponse(
               usage: {
                 input_tokens: 1000,
                 output_tokens: 55,
+                total_tokens: 1055,
                 input_tokens_details: { cached_tokens: 400 },
                 output_tokens_details: { reasoning_tokens: 21 },
               },
@@ -271,6 +274,7 @@ function mountDualCheckpointHost(options: DualHostOptions = {}): {
   context = ctx
   void new LlmRuntime(ctx)
   void new SessionStore(ctx)
+  void new SessionProjectionRegistry(ctx)
   void new TokenMeter(ctx)
 
   const requests: CapturedRequest[] = []
@@ -466,10 +470,10 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const { ctx, requests } = mountDualCheckpointHost()
     const debug = vi.spyOn(ctx.logger, 'debug').mockImplementation(() => undefined)
     const session = closedConversation()
-    const beforeEventCount = session.events.length
+    const beforeEventCount = session.snapshotEvents().length
     const flushSnapshots: string[][] = []
     vi.spyOn(ctx.sessions, 'flush').mockImplementation((flushed) => {
-      flushSnapshots.push(flushed.events
+      flushSnapshots.push(flushed.snapshotEvents()
         .filter(event => event.type.startsWith('compaction/'))
         .map(event => event.type))
       return Promise.resolve(true)
@@ -521,7 +525,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       'compaction/summary',
       'compaction/end',
     ]])
-    const transaction = session.events.slice(beforeEventCount)
+    const transaction = session.snapshotEvents().slice(beforeEventCount)
     const startEvent = transaction.find(event => event.type === 'compaction/start')
     expect(startEvent?.type === 'compaction/start'
       && diagnostics.includes(String(startEvent.data.compactionId))).toBe(true)
@@ -538,6 +542,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       : undefined).toEqual({
       inputTokens: 100,
       outputTokens: 8,
+      totalTokens: 128,
       cacheReadTokens: 20,
     })
     const checkpointEvent = transaction.find(
@@ -805,7 +810,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
   })
 
   it('leaves ordinary Codex text, tools, reasoning, images, and SSE unchanged while the custom Adapter is mounted', async () => {
-    const callId = CallId('ordinary-regression-tool-call')
+    const callId = ToolCallId('ordinary-regression-tool-call')
     const messages: Message[] = [
       createUserMessage({
         content: [{ type: 'text', text: 'ordinary request before any native compaction' }],
@@ -894,7 +899,11 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const source = closedConversation('dual-persisted-source')
     await first.ctx.compaction.compactNow(idleAgent(source), new AbortController().signal)
 
-    const durableJson = JSON.stringify({ events: source.events, header: source.header })
+    const durableJson = JSON.stringify({
+      events: source.snapshotEvents(),
+      header: source.header,
+      inheritedEventCount: source.inheritedEventCount,
+    })
     expect(durableJson).toContain('opaque-remote-checkpoint')
     expect(durableJson).not.toContain(fakeAccessToken(ACCOUNT_ID))
     expect(durableJson).not.toContain(ACCOUNT_ID)
@@ -903,12 +912,18 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const persisted = JSON.parse(durableJson) as {
       events: SessionEvent[]
       header: typeof source.header
+      inheritedEventCount: typeof source.inheritedEventCount
     }
 
     await first.ctx.fiber.dispose()
     context = undefined
     const resumedHost = mountDualCheckpointHost()
-    const resumed = Session.fromRestore(source.id, persisted.events, persisted.header)
+    const resumed = Session.fromRestore(
+      source.id,
+      persisted.events,
+      persisted.header,
+      persisted.inheritedEventCount,
+    )
     const detach = resumedHost.ctx.sessions.enter(resumed)
     resumedHost.ctx.sessions.announce(resumed)
     const fork = resumedHost.ctx.sessions.fork(
@@ -916,6 +931,23 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       undefined,
       SessionId('dual-persisted-fork'),
     )
+    expect(fork.inheritedEventCount).toBeGreaterThan(0)
+    const persistedFork = JSON.parse(JSON.stringify({
+      events: fork.snapshotEvents(),
+      header: fork.header,
+      inheritedEventCount: fork.inheritedEventCount,
+    })) as {
+      events: SessionEvent[]
+      header: typeof fork.header
+      inheritedEventCount: typeof fork.inheritedEventCount
+    }
+    const restoredFork = Session.fromRestore(
+      fork.id,
+      persistedFork.events,
+      persistedFork.header,
+      persistedFork.inheritedEventCount,
+    )
+    expect(restoredFork.inheritedEventCount).toBe(fork.inheritedEventCount)
 
     await drain(resumedHost.ctx.llm.stream({
       provider: 'openai-codex',
@@ -929,15 +961,22 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       messages: fork.deriveMessages(),
       sessionId: fork.id,
     }))
+    await drain(resumedHost.ctx.llm.stream({
+      provider: 'openai-codex',
+      model: MODEL,
+      messages: restoredFork.deriveMessages(),
+      sessionId: restoredFork.id,
+    }))
 
-    expect(resumedHost.requests).toHaveLength(2)
+    expect(resumedHost.requests).toHaveLength(3)
     for (const request of resumedHost.requests) {
       expect(JSON.stringify(request.body)).toContain('opaque-remote-checkpoint')
       expect(JSON.stringify(request.body)).not.toContain(PORTABLE_SUMMARY)
       expect(JSON.stringify(request.body)).not.toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
     }
-    expect(JSON.stringify(resumed.events)).toContain('opaque-remote-checkpoint')
-    expect(JSON.stringify(fork.events)).toContain('opaque-remote-checkpoint')
+    expect(JSON.stringify(resumed.snapshotEvents())).toContain('opaque-remote-checkpoint')
+    expect(JSON.stringify(fork.snapshotEvents())).toContain('opaque-remote-checkpoint')
+    expect(JSON.stringify(restoredFork.snapshotEvents())).toContain('opaque-remote-checkpoint')
     detach()
   })
 
@@ -950,9 +989,14 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const source = closedConversation('dual-repeated-before-restart')
     await first.ctx.compaction.compactNow(idleAgent(source), new AbortController().signal)
     const persisted = JSON.parse(JSON.stringify({
-      events: source.events,
+      events: source.snapshotEvents(),
       header: source.header,
-    })) as { events: SessionEvent[]; header: typeof source.header }
+      inheritedEventCount: source.inheritedEventCount,
+    })) as {
+      events: SessionEvent[]
+      header: typeof source.header
+      inheritedEventCount: typeof source.inheritedEventCount
+    }
 
     await first.ctx.fiber.dispose()
     context = undefined
@@ -961,7 +1005,12 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       nativeReply: () => compactionResponse('opaque-after-restart'),
     })
     vi.spyOn(resumedHost.ctx.sessions, 'flush').mockResolvedValue(true)
-    const resumed = Session.fromRestore(source.id, persisted.events, persisted.header)
+    const resumed = Session.fromRestore(
+      source.id,
+      persisted.events,
+      persisted.header,
+      persisted.inheritedEventCount,
+    )
     const detach = resumedHost.ctx.sessions.enter(resumed)
     resumedHost.ctx.sessions.announce(resumed)
     const fork = resumedHost.ctx.sessions.fork(
@@ -1008,7 +1057,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     if (!decoded.ok) throw new Error(decoded.reason)
     expect(JSON.stringify(decoded.checkpoint.replacementItems)).toContain('opaque-after-restart')
     expect(JSON.stringify(decoded.checkpoint.replacementItems)).not.toContain('opaque-before-restart')
-    expect(JSON.stringify(resumed.events)).toContain('opaque-before-restart')
+    expect(JSON.stringify(resumed.snapshotEvents())).toContain('opaque-before-restart')
     detach()
   })
 
@@ -1018,9 +1067,14 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const source = closedConversation('dual-stock-rollback')
     await first.ctx.compaction.compactNow(idleAgent(source), new AbortController().signal)
     const persisted = JSON.parse(JSON.stringify({
-      events: source.events,
+      events: source.snapshotEvents(),
       header: source.header,
-    })) as { events: SessionEvent[]; header: typeof source.header }
+      inheritedEventCount: source.inheritedEventCount,
+    })) as {
+      events: SessionEvent[]
+      header: typeof source.header
+      inheritedEventCount: typeof source.inheritedEventCount
+    }
 
     await first.ctx.fiber.dispose()
     context = undefined
@@ -1028,7 +1082,12 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       accountId: 'acct_after_stock_rollback',
       compactionBackend: 'basic',
     })
-    const restored = Session.fromRestore(source.id, persisted.events, persisted.header)
+    const restored = Session.fromRestore(
+      source.id,
+      persisted.events,
+      persisted.header,
+      persisted.inheritedEventCount,
+    )
 
     expect(rollback.ctx.compaction).toBeInstanceOf(BasicCompactionEngine)
     await drain(rollback.ctx.llm.stream({
@@ -1041,7 +1100,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(rollback.requests).toHaveLength(1)
     expect(JSON.stringify(rollback.requests[0]!.body)).toContain(PORTABLE_SUMMARY)
     expect(JSON.stringify(rollback.requests[0]!.body)).not.toContain('opaque-remote-checkpoint')
-    expect(JSON.stringify(restored.events)).toContain('opaque-remote-checkpoint')
+    expect(JSON.stringify(restored.snapshotEvents())).toContain('opaque-remote-checkpoint')
   })
 
   it('never arms a manual compact turn state for a later loop request', async () => {
@@ -1069,7 +1128,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
 
     expect(requests.map(request => request.kind)).toEqual(['portable', 'native', 'ordinary'])
     expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('isolates concurrent manual compactions by session', async () => {
@@ -1150,7 +1209,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     await expect(active).resolves.not.toBeNull()
 
     expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
-    expect(session.events.filter(event => event.type === 'compaction/summary')).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'compaction/summary')).toHaveLength(1)
     expect(session.deriveMessages().filter(message => message.content.some(
       block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
     ))).toHaveLength(1)
@@ -1289,7 +1348,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
 
     expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
-    expect(session.events.slice(-4).map(event => event.type)).toEqual([
+    expect(session.snapshotEvents().slice(-4).map(event => event.type)).toEqual([
       'compaction/start',
       'compaction/summary',
       'user/message',
@@ -1327,7 +1386,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       rawTurnState,
       null,
     ])
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
     const diagnostics = JSON.stringify([debug.mock.calls, warn.mock.calls])
     expect(diagnostics).toContain('pressure')
     expect(diagnostics).not.toContain(rawTurnState)
@@ -1463,7 +1522,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
 
     expect(long.requests).toEqual([])
-    expect(longSession.events.some(event => event.type.startsWith('compaction/'))).toBe(false)
+    expect(longSession.snapshotEvents().some(event => event.type.startsWith('compaction/'))).toBe(false)
 
     await agentEvents(long.ctx, longAgent).waterfall('agent/request-error', {
       turn: 3,
@@ -1599,7 +1658,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
 
     expect(adapterSawLoopMark).toBe(false)
     expect(requests.at(-1)?.headers.get('x-codex-turn-state')).toBe(rawTurnState)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('keeps concurrent automatic turn-state continuations isolated by session', async () => {
@@ -1653,8 +1712,8 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(firstRequest.headers.get('x-codex-turn-state'))
       .toBe(`turn-state-${first.id}`)
     expect(secondReplay.headers.has('x-codex-turn-state')).toBe(false)
-    expect(JSON.stringify(first.events)).not.toContain('turn-state-')
-    expect(JSON.stringify(second.events)).not.toContain('turn-state-')
+    expect(JSON.stringify(first.snapshotEvents())).not.toContain('turn-state-')
+    expect(JSON.stringify(second.snapshotEvents())).not.toContain('turn-state-')
   })
 
   it('atomically hands one continuation to one of two concurrent matching requests', async () => {
@@ -1733,7 +1792,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     await dispatched
 
     expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
-    expect(session.events.some(event => event.type === 'compaction/summary')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
     await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
       provider: 'openai-codex',
       model: MODEL,
@@ -1742,7 +1801,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       signal: new AbortController().signal,
     }))))
     expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('erases continuation before awaiting a stalled request iterator teardown', async () => {
@@ -1817,7 +1876,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
 
     releaseReturn()
     await closing
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('discards armed turn state when the eligible loop request aborts before dispatch', async () => {
@@ -1865,7 +1924,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       signal: new AbortController().signal,
     }))))
     expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('discards armed turn state when the eligible loop request fails authentication', async () => {
@@ -1917,7 +1976,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       signal: new AbortController().signal,
     }))))
     expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('discards turn state when pressure remains over threshold after a native commit', async () => {
@@ -1947,7 +2006,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     }, () => Promise.resolve({ kind: 'enter' as const, messages: [] }))
 
     expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
-    expect(session.events.some(event => event.type === 'compaction/summary')).toBe(true)
+    expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
     await drain(ctx.llm.stream(markAgentLoopRequest(deepFreeze({
       provider: 'openai-codex',
       model: MODEL,
@@ -1956,7 +2015,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       signal: new AbortController().signal,
     }))))
     expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('discards pressure turn state on the first mismatching eligible loop request', async () => {
@@ -1999,7 +2058,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(ordinary).toHaveLength(2)
     expect(ordinary.every(request =>
       !request.headers.has('x-codex-turn-state'))).toBe(true)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('discards pressure turn state when the resolved Codex account changes', async () => {
@@ -2050,7 +2109,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(ordinary).toHaveLength(2)
     expect(ordinary.every(request =>
       !request.headers.has('x-codex-turn-state'))).toBe(true)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('expires pressure turn state after sixty seconds', async () => {
@@ -2091,7 +2150,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     }))))
 
     expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('discards pressure turn state when the Codex Adapter generation is replaced', async () => {
@@ -2130,7 +2189,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     }))))
 
     expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('discards pressure turn state across Host disposal and Adapter remount', async () => {
@@ -2174,7 +2233,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
 
     expect(replacement.requests).toHaveLength(1)
     expect(replacement.requests[0]?.headers.has('x-codex-turn-state')).toBe(false)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('does not arm turn state for a direct automatic maintenance call', async () => {
@@ -2208,7 +2267,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
 
     expect(requests.map(request => request.kind)).toEqual(['portable', 'native', 'ordinary'])
     expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('uses Basic overflow retry proof and cap before one turn-state-bearing retry', async () => {
@@ -2241,7 +2300,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     await expect(overflow()).resolves.toEqual({ kind: 'retry' })
     await expect(overflow()).resolves.toBeUndefined()
     expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
-    expect(session.events.slice(-4).map(event => event.type)).toEqual([
+    expect(session.snapshotEvents().slice(-4).map(event => event.type)).toEqual([
       'compaction/start',
       'compaction/summary',
       'user/message',
@@ -2257,7 +2316,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     }))))
 
     expect(requests.at(-1)?.headers.get('x-codex-turn-state')).toBe(rawTurnState)
-    expect(JSON.stringify(session.events)).not.toContain(rawTurnState)
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain(rawTurnState)
   })
 
   it('keeps explicit-region compaction Portable-only', async () => {
@@ -2305,6 +2364,22 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
             ...(first.content as unknown[]),
             { type: 'input_image', image_url: 'data:image/png;base64,fixture' },
           ]
+          return body
+        },
+      } satisfies DualHostOptions,
+    },
+    {
+      label: 'pi 0.84 additional tools history',
+      options: {
+        accountId: 'acct_additional_tools_ineligible_fixture',
+        onPayload: (payload: unknown) => {
+          const body = structuredClone(payload) as Record<string, unknown>
+          const input = body.input as unknown[]
+          input.splice(-1, 0, {
+            type: 'additional_tools',
+            role: 'developer',
+            tools: [{ name: 'deferred_fixture' }],
+          })
           return body
         },
       } satisfies DualHostOptions,
@@ -2643,7 +2718,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       expect(checkpoint?.content.some(
         block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
       )).toBe(false)
-      expect(session.events.slice(-4).map(event => event.type)).toEqual([
+      expect(session.snapshotEvents().slice(-4).map(event => event.type)).toEqual([
         'compaction/start',
         'compaction/summary',
         'user/message',
@@ -2692,7 +2767,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(requests.every(request => request.kind === 'portable')).toBe(true)
     expect(session.surface.nodes).toEqual(beforeSurface)
     expect(session.deriveMessages()).toEqual(beforeMessages)
-    expect(session.events.slice(-2).map(event => event.type)).toEqual([
+    expect(session.snapshotEvents().slice(-2).map(event => event.type)).toEqual([
       'compaction/start',
       'compaction/end',
     ])
@@ -2721,7 +2796,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
     expect(session.surface.nodes).toEqual(beforeSurface)
     expect(session.deriveMessages()).toEqual(beforeMessages)
-    expect(session.events.slice(-2).map(event => event.type)).toEqual([
+    expect(session.snapshotEvents().slice(-2).map(event => event.type)).toEqual([
       'compaction/start',
       'compaction/end',
     ])
@@ -2758,7 +2833,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       new Promise<'pending'>(resolve => setTimeout(() => resolve('pending'), 50)),
     ])).toBe('rejected')
     expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
-    expect(session.events.some(event => event.type === 'compaction/summary')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
     expect(session.deriveMessages().some(message => message.content.some(
       block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
     ))).toBe(false)

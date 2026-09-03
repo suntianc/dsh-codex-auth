@@ -15,7 +15,7 @@ import {
   type CompactionResult,
 } from '@deepseek-ai/dsh-compaction'
 import LlmRuntime, {
-  CallId,
+  ToolCallId,
   createAssistantMessage,
   createToolResultMessage,
   createUserMessage,
@@ -27,7 +27,8 @@ import type {
   Message,
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
-import SessionStore, { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionId, type SessionEvent, type SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import {
   apply as applyCodexCompaction,
@@ -122,13 +123,13 @@ function openConversation(): Session {
 
 /** Open tool step whose call/result pair must remain together across pressure selection. */
 function toolPairConversation(): {
-  readonly assistantSeq: number
+  readonly assistantSeq: SessionSeq
   readonly fullResult: string
-  readonly resultSeq: number
+  readonly resultSeq: SessionSeq
   readonly session: Session
 } {
   const session = closedConversation()
-  const callId = CallId('balanced-tool-call')
+  const callId = ToolCallId('balanced-tool-call')
   const fullResult = `tool-result-head:${'middle-data '.repeat(2_000)}:tool-result-tail`
   session.append('turn/start', { turn: 3 })
   session.append('user/message', createUserMessage({
@@ -195,6 +196,7 @@ function createCompactionHost(): Context {
   const ctx = new Context()
   void new LlmRuntime(ctx)
   void new SessionStore(ctx)
+  void new SessionProjectionRegistry(ctx)
   void new TokenMeter(ctx)
   return ctx
 }
@@ -283,7 +285,7 @@ async function observeCompaction(
   ctx.llm.registerAdapter([MODEL], adapter)
   const engine = new Engine(ctx, definition.config)
   const session = definition.session()
-  const beforeEventCount = session.events.length
+  const beforeEventCount = session.snapshotEvents().length
   let flushes = 0
   vi.spyOn(ctx.sessions, 'flush').mockImplementation(() => {
     flushes += 1
@@ -314,7 +316,7 @@ async function observeCompaction(
         : { kind: 'error', name: typeof error, message: String(error) }
     }
 
-    const transaction = session.events.slice(beforeEventCount)
+    const transaction = session.snapshotEvents().slice(beforeEventCount)
     const checkpoint = transaction.find(
       (event): event is SessionEvent<'user/message'> => event.type === 'user/message'
         && isCompactCheckpointSource(event.data.source),
@@ -371,10 +373,10 @@ describe('Codex Portable Checkpoint Adapter', () => {
     const adapter = new PortableSummaryAdapter()
     const ctx = mountCodexCompaction(adapter, { auto: false, maxTokens: 128 })
     const session = closedConversation()
-    const beforeEventCount = session.events.length
+    const beforeEventCount = session.snapshotEvents().length
     const flushSnapshots: string[][] = []
     vi.spyOn(ctx.sessions, 'flush').mockImplementation((flushed) => {
-      flushSnapshots.push(flushed.events
+      flushSnapshots.push(flushed.snapshotEvents()
         .filter(event => event.type.startsWith('compaction/'))
         .map(event => event.type))
       return Promise.resolve(true)
@@ -391,7 +393,7 @@ describe('Codex Portable Checkpoint Adapter', () => {
       'compaction/summary',
       'compaction/end',
     ]])
-    const transaction = session.events.slice(beforeEventCount)
+    const transaction = session.snapshotEvents().slice(beforeEventCount)
     expect(transaction.map(event => event.type)).toEqual([
       'compaction/start',
       'compaction/summary',
@@ -458,7 +460,7 @@ describe('Codex Portable Checkpoint Adapter', () => {
       expect(result).not.toBeNull()
       expect(adapter.requests).toHaveLength(1)
       expect(adapter.requests[0]?.purpose).toBe('compaction')
-      expect(session.events.slice(-4).map(event => event.type)).toEqual([
+      expect(session.snapshotEvents().slice(-4).map(event => event.type)).toEqual([
         'compaction/start',
         'compaction/summary',
         'user/message',
@@ -495,7 +497,7 @@ describe('Codex Portable Checkpoint Adapter', () => {
     }, () => Promise.resolve({ kind: 'enter' as const, messages: [] })))
       .resolves.toEqual({ kind: 'enter', messages: [] })
 
-    const events = session.events
+    const events = session.snapshotEvents()
     const pruneIndex = events.findIndex(event => event.type === 'compaction/prune')
     const startIndex = events.findIndex(event => event.type === 'compaction/start')
     expect(pruneIndex).toBeGreaterThan(-1)
@@ -537,7 +539,7 @@ describe('Codex Portable Checkpoint Adapter', () => {
 
     expect(session.surface.nodes).toEqual(beforeSurface)
     expect(session.deriveMessages()).toEqual(beforeMessages)
-    expect(session.events.filter(event => event.type.startsWith('compaction/'))
+    expect(session.snapshotEvents().filter(event => event.type.startsWith('compaction/'))
       .map(event => event.type)).toEqual(['compaction/start', 'compaction/end'])
   })
 
@@ -555,8 +557,8 @@ describe('Codex Portable Checkpoint Adapter', () => {
     )).rejects.toThrow()
 
     expect(session.surface.nodes).toEqual(beforeSurface)
-    expect(session.events.some(event => event.type === 'compaction/summary')).toBe(false)
-    expect(session.events.filter(event => event.type.startsWith('compaction/'))
+    expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
+    expect(session.snapshotEvents().filter(event => event.type.startsWith('compaction/'))
       .map(event => event.type)).toEqual(['compaction/start', 'compaction/end'])
   })
 
@@ -619,23 +621,48 @@ describe('Codex Portable Checkpoint Adapter', () => {
     expect(adapter.requests.map(request => request.purpose)).toEqual(['compaction', 'compaction'])
   })
 
-  it('fails loud when any experimental DSH runtime package leaves the pinned pair', () => {
-    expect(CODEX_COMPACTION_COMPATIBILITY).toEqual({
-      dsh: '0.1.1-rc.2',
-      piAi: '0.82.1',
-    })
+  it('accepts the resolved alpha.5 and pi-ai 0.84.4 runtime pair', () => {
     expect(() => assertCodexCompactionCompatibility({
       dsh: {
-        '@deepseek-ai/dsh-agent': '0.1.1-rc.1',
-        '@deepseek-ai/dsh-compaction': '0.1.1-rc.2',
-        '@deepseek-ai/dsh-compaction-basic': '0.1.1-rc.2',
-        '@deepseek-ai/dsh-llm': '0.1.1-rc.2',
-        '@deepseek-ai/dsh-session': '0.1.1-rc.2',
-        '@deepseek-ai/dsh-token-meter': '0.1.1-rc.2',
+        '@deepseek-ai/dsh-agent': '0.1.2-alpha.5',
+        '@deepseek-ai/dsh-compaction': '0.1.2-alpha.5',
+        '@deepseek-ai/dsh-compaction-basic': '0.1.2-alpha.5',
+        '@deepseek-ai/dsh-llm': '0.1.2-alpha.5',
+        '@deepseek-ai/dsh-llm-pi-ai': '0.1.2-alpha.5',
+        '@deepseek-ai/dsh-session': '0.1.2-alpha.5',
+        '@deepseek-ai/dsh-token-meter': '0.1.2-alpha.5',
       },
-      piAi: '0.82.1',
+      piAi: '0.84.4',
+    })).not.toThrow()
+  })
+
+  it('fails loud when any experimental DSH or pi-ai runtime package leaves the pinned pair', () => {
+    expect(CODEX_COMPACTION_COMPATIBILITY).toEqual({
+      dsh: '0.1.2-alpha.5',
+      piAi: '0.84.4',
+    })
+    const pinnedDsh = {
+      '@deepseek-ai/dsh-agent': '0.1.2-alpha.5',
+      '@deepseek-ai/dsh-compaction': '0.1.2-alpha.5',
+      '@deepseek-ai/dsh-compaction-basic': '0.1.2-alpha.5',
+      '@deepseek-ai/dsh-llm': '0.1.2-alpha.5',
+      '@deepseek-ai/dsh-llm-pi-ai': '0.1.2-alpha.5',
+      '@deepseek-ai/dsh-session': '0.1.2-alpha.5',
+      '@deepseek-ai/dsh-token-meter': '0.1.2-alpha.5',
+    }
+    expect(() => assertCodexCompactionCompatibility({
+      dsh: { ...pinnedDsh, '@deepseek-ai/dsh-agent': '0.1.2-alpha.4' },
+      piAi: '0.84.4',
     })).toThrow(
-      /requires DSH 0\.1\.1-rc\.2.*received @deepseek-ai\/dsh-agent=0\.1\.1-rc\.1/,
+      /requires DSH 0\.1\.2-alpha\.5.*received @deepseek-ai\/dsh-agent=0\.1\.2-alpha\.4/,
     )
+    expect(() => assertCodexCompactionCompatibility({
+      dsh: { ...pinnedDsh, '@deepseek-ai/dsh-llm-pi-ai': '0.1.2-alpha.4' },
+      piAi: '0.84.4',
+    })).toThrow(/@deepseek-ai\/dsh-llm-pi-ai=0\.1\.2-alpha\.4/)
+    expect(() => assertCodexCompactionCompatibility({
+      dsh: pinnedDsh,
+      piAi: '0.84.2',
+    })).toThrow(/requires DSH 0\.1\.2-alpha\.5.*pi-ai 0\.84\.4.*pi-ai=0\.84\.2/)
   })
 })

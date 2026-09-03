@@ -1,6 +1,6 @@
 # dsh-codex-auth — design record
 
-Status: **implemented for DSH rc7; Workspace Export remains disabled pending a policy-aware binary workspace-write API**.
+Status: **adapted in this unpublished working tree for DSH `0.1.2-alpha.5`; Workspace Export remains disabled pending a policy-aware binary workspace-write API**.
 
 The canonical project language lives in [`CONTEXT.md`](../CONTEXT.md). This document records implementation boundaries and the accepted design.
 
@@ -12,13 +12,13 @@ The bundle provides three independently enabled runtime capabilities from one np
 
 1. Codex login-state access and the `openai-codex` LLM route;
 2. a Codex-backed provider for DSH's stock `web_search` tool;
-3. Codex-backed image creation, durable display, reference-image discovery, and workspace export.
+3. Codex-backed image creation, durable display, and reference-image discovery.
 
 The package remains named `dsh-codex-auth`, and the Web settings section remains **GPT Auth** because login gates the other two capabilities. Search and image creation are nevertheless capability operations, not authentication operations.
 
 ## Boundaries
 
-- Local machine, one user, loopback-only browser RPC.
+- Local machine, one user. Real account RPC is enabled only for an explicit `127.0.0.1` Web bind; every absent, all-interface, or unknown bind is inert.
 - The current Codex account is used; account switching is out of scope.
 - The Codex CLI owns login. The plugin neither implements another OAuth flow nor copies the login into Harness credentials.
 - The token is not a general OpenAI Platform API credential.
@@ -32,7 +32,7 @@ One npm package supplies one client bundle and multiple Host plugin rows:
 
 | Runtime plugin | Responsibility | Primary DSH seams |
 |---|---|---|
-| Auth/LLM | Codex login status and guidance, request authentication, refresh coordination, `openai-codex` model route | `ctx.llm`, `ctx.codexAuth`, loopback Connection RPC |
+| Auth/LLM | Codex login status and guidance, request authentication, refresh coordination, `openai-codex` model route | `ctx.llm`, `ctx.codexAuth`, statically guarded Connection RPC |
 | Search | Codex standalone-search transport and normalization | `ctx.web`, `ctx.settings`, current Agent context |
 | Image | `generate_image`, `list_images`, attachment persistence, tool presentation, workspace export | `ctx.tools`, `ctx.attachments`, `ctx.fs`, client slots |
 
@@ -64,7 +64,7 @@ Every authenticated operation uses one Host coordinator:
 
 Atomic replacement prevents torn files; version-bound snapshots prevent old bytes from being paired with a newer file's metadata. The official Codex process does not participate in the plugin's lock, so cross-client coordination remains recovery-oriented rather than an absolute serialization guarantee.
 
-Login buttons continue to spawn the official `codex login` browser or device-code flow. Status RPC remains value-free and loopback-only.
+Login buttons continue to spawn the official `codex login` browser or device-code flow. Status RPC remains value-free. Alpha.5 removed per-channel authority and exposes no public request/carrier authority fact, so the plugin selects its dispatcher once at activation: only exact WebServer host `127.0.0.1` reaches the real account service; missing, `0.0.0.0`, and unknown hosts receive a fixed `loopback-required` handler. Client `isLoopback` only controls Settings visibility and is not the Host authorization boundary.
 
 ## LLM route
 
@@ -74,7 +74,7 @@ The independently live `codex-llm` settings namespace owns one narrow policy: `l
 
 The route defaults to SSE and exposes `sse`, `websocket`, and `auto` transport selection. `websocketConnectTimeoutMs` bounds the WebSocket handshake, while `timeoutMs` bounds the SSE response-header phase or the WebSocket message-idle interval; neither setting is presented as a whole-stream deadline, and `0` explicitly disables the corresponding timeout.
 
-Installed pi-ai `0.82.1` does not model Codex standalone search, Responses `web_search`, or image-generation result items. Search and image creation therefore do not modify or inject payloads into `PiAiAdapter`; they use dedicated capability plugins and the official Codex standalone endpoints.
+Installed pi-ai `0.84.4` does not model Codex standalone search, Responses `web_search`, or image-generation result items. Search and image creation therefore do not modify or inject payloads into `PiAiAdapter`; they use dedicated capability plugins and the official Codex standalone endpoints.
 
 ## Dual Checkpoint compaction
 
@@ -82,17 +82,17 @@ The experimental `dsh-codex-auth/compaction` entry replaces Basic only inside an
 
 An eligible head-anchored prefix causes one direct v2 call to the same Codex Responses URL. The request is rebuilt from an explicit semantic allowlist, excludes generation-only fields, and appends a transient trigger. The dedicated SSE decoder requires terminal completion and exactly one opaque compaction output. Client-side retention keeps recent text-only user groups newest-first under a versioned 64,000-token JSON estimate, permits one Unicode-safe boundary prefix, and appends the artifact last. Replay pricing adds the retained-item estimates to `max(floor(base64Length * 3 / 4) - 650, 0)` model-visible opaque bytes at four bytes per token; this codec diagnostic is distinct from Basic pressure pricing. The versioned credential-free block must satisfy the 2 MiB codec limit and a conservative shrink precheck before Basic atomically lands it beside Portable text.
 
-Native failures are intentionally swallowed only after Portable success; caller cancellation is rethrown. The direct operation performs no retry and uses a process-local account/model/endpoint/codec breaker. Three transient failures within five minutes open it for ten minutes, 429 follows a one-hour-capped `Retry-After`, protocol and unsupported final-payload shapes open it for one hour, and half-open admits one probe. Authentication and local oversize/shrink fallback do not count; the breaker never gates ordinary inference. Diagnostics expose usage availability rather than token values. Reported Native usage may persist inside the sensitive checkpoint but is not merged into rc.2 aggregate usage. Adapter-realm disposal aborts active direct transport and lets scope `finally` cleanup release captured credentials, payloads, markers, canonical items, and continuation state.
+Native failures are intentionally swallowed only after Portable success; caller cancellation is rethrown. The direct operation performs no retry and uses a process-local account/model/endpoint/codec breaker. Three transient failures within five minutes open it for ten minutes, 429 follows a one-hour-capped `Retry-After`, protocol and unsupported final-payload shapes open it for one hour, and half-open admits one probe. Authentication and local oversize/shrink fallback do not count; the breaker never gates ordinary inference. Diagnostics expose usage availability rather than token values. Reported Native usage may persist inside the sensitive checkpoint but is not merged into DSH aggregate usage. Adapter-realm disposal aborts active direct transport and lets scope `finally` cleanup release captured credentials, payloads, markers, canonical items, and continuation state.
 
 A successful inline automatic commit may retain one nonempty response `x-codex-turn-state` in process memory for at most 60 seconds. The next Agent-loop request must match session, route, model, hashed account, and Adapter generation; the first mismatch, error/abort, route replacement, or disposal erases it. Manual, explicit-region, direct-maintenance, Portable, title, and auxiliary calls never arm or consume this continuation. Ordinary Codex requests otherwise stay on pi-ai, where the request-local replay module chooses exactly one Native or Portable representation for each durable Dual Checkpoint.
 
-The Dual block is immutable ordinary Session data across JSON restore and public forks; replay transformations occur only in detached request copies. Every compatible earlier checkpoint in a repeated selected prefix expands at its original item position, while an incompatible one contributes one Portable item without preventing a fresh Native checkpoint. Basic preserves later tail messages and owns repeated-pressure convergence or bounded failure. Compatibility is re-evaluated after composed payload callbacks against the final semantic request, while routing IDs, cache keys, transient headers, turn state, and Long Context remain excluded. Shipped PiAi and direct DeepSeek routes therefore send Portable text without destroying Native state, stock-Basic rollback needs no migration, and a later compatible Codex route may replay the same candidate. Adapter generation/HMR invalidates stale request-local eligibility. An empty `text` presentation sentinel prevents rc.2 Conversation and Trajectory copy projections from serializing opaque state, although the credential-free block remains sensitive Session/RPC/export data. See [ADR 0007](adr/0007-preserve-dual-checkpoints-across-session-lifecycles.md).
+The Dual block is immutable ordinary Session data across JSON restore and public forks; replay transformations occur only in detached request copies. Every compatible earlier checkpoint in a repeated selected prefix expands at its original item position, while an incompatible one contributes one Portable item without preventing a fresh Native checkpoint. Basic preserves later tail messages and owns repeated-pressure convergence or bounded failure. Compatibility is re-evaluated after composed payload callbacks against the final semantic request, while routing IDs, cache keys, transient headers, turn state, and Long Context remain excluded. Pi-ai `0.84.4` can encode deferred GPT-5.6 tools as an `additional_tools` input item; since that semantic history is not represented in the codec digest, its presence conservatively disables Native creation and replay for that request. Shipped PiAi and direct DeepSeek routes therefore send Portable text without destroying Native state, stock-Basic rollback needs no migration, and a later compatible Codex route may replay the same candidate. Adapter generation/HMR invalidates stale request-local eligibility. An empty `text` presentation sentinel prevents alpha.5 Chat and Trajectory copy projections from serializing opaque state, although the credential-free block remains sensitive Session/RPC/export data. See [ADR 0007](adr/0007-preserve-dual-checkpoints-across-session-lifecycles.md).
 
 ### Delivery and deletion boundary
 
 The npm artifact includes this design, the compaction ADRs, the public Host exports, the Native codec export, and the complete custom-preset example. Package smoke extracts the real tarball outside the checkout, exposes only declared runtime dependencies, and verifies the required and forbidden file/export surface. A separate Vitest configuration covers real v2 creation, same-process turn continuation, restart/resume, repeated compaction, and redacted diagnostics; its launcher refuses CI and requires both an existing Codex Login State and a double explicit quota confirmation, so normal `test` and `check` never execute it.
 
-This implementation is a temporary plugin-owned bridge over rc.2 public seams. Once DSH ships a supported provider-native checkpoint Seam, migrate the codec and replay contract through that Seam, retain Portable fallback compatibility, then delete the declaration-merged carrier, request marker side channel, direct native transport, compatibility pin, and custom Basic replacement rather than maintaining two owners of compaction policy.
+This implementation is a temporary plugin-owned bridge over alpha.5 public seams. Once DSH ships a supported provider-native checkpoint Seam, migrate the codec and replay contract through that Seam, retain Portable fallback compatibility, then delete the declaration-merged carrier, request marker side channel, direct native transport, compatibility pin, and custom Basic replacement rather than maintaining two owners of compaction policy.
 
 ## Web Search
 
@@ -173,7 +173,7 @@ Image Handles are stable, model-visible aliases for session-authorized attachmen
 
 ### ACP interoperability
 
-DSH rc7 owns ACP wire admission and projection. For an ACP connection whose configured route resolves to an image-capable `openai-codex` model, core validates supported inline raster images, persists the complete prompt batch through the attachment store, and records ordinary durable ImageBlocks in `user/message`. The Image Catalog already scans that event type, so ACP-originated images appear as `user` assets without a plugin-specific protocol adapter and may later be selected by Image Handle.
+DSH alpha.5 owns ACP wire admission and projection (the path was introduced in rc7). For an ACP connection whose configured route resolves to an image-capable `openai-codex` model, core validates supported inline raster images, persists the complete prompt batch through the attachment store, and records ordinary durable ImageBlocks in `user/message`. The Image Catalog already scans that event type, so ACP-originated images appear as `user` assets without a plugin-specific protocol adapter and may later be selected by Image Handle.
 
 ACP projects only committed `assistant/message` text and image blocks back to the client. This plugin deliberately returns generated and catalog images inside `tool/result`; those blocks remain durable and model-visible but are not direct ACP output. Sending generated bytes to ACP would require a separate core projection decision rather than duplicating protocol transport inside this plugin.
 
@@ -197,25 +197,27 @@ The generic DSH tool row currently renders non-text blocks as JSON, so the clien
 
 The image loader reads attachments through the public session-authorized API, creates bounded plugin-owned Blob URLs, and revokes them on connection reset, cache eviction, and plugin teardown.
 
-**Current DSH rc7 constraint:** `ctx.fs` has no binary write operation. Workspace export is therefore not offered in the result UI. Conversation attachments remain the durable copy, and the plugin does not evade DSH policy with direct `node:fs` writes. Adding export later requires a policy-aware binary write API in DSH core.
+**Current DSH alpha.5 constraint:** `ctx.fs` has no binary write operation. Workspace export is therefore not offered in the result UI. Conversation attachments remain the durable copy, and the plugin does not evade DSH policy with direct `node:fs` writes. Adding export later requires a policy-aware binary write API in DSH core.
 
 ## Settings UI
 
-The independently navigable section keeps the name **GPT Auth** and the stock icon fallback. It contains three cards:
+The independently navigable section keeps the name **GPT Auth** and the stock icon fallback. It contains four cards:
 
 1. **Login** — connection state, locally decoded plan, weekly remaining balance/reset time, and browser/device login actions when disconnected;
-2. **Web Search** — enabled state, mode, context size, fallback model, and output budget;
-3. **Image Creation** — enabled state, plan eligibility, model-scope note, and default count/size/quality/background.
+2. **LLM Context** — the live, default-off GPT-5.6 1M context policy;
+3. **Web Search** — enabled state, mode, context size, fallback model, and output budget;
+4. **Image Creation** — enabled state, plan eligibility, model-scope note, and default count/size/quality/background.
 
 Search and Image register live settings under the plugin's DSH settings namespace. Both default enabled after installation. Disabling one immediately removes its model capability for current and future Agents without restarting. Logged-out cards are unavailable rather than probing capability endpoints.
 
-DSH rc7 is the minimum complete settings baseline because its Host settings interface exposes every registered namespace to loopback configuration clients. The browser face continues to own one top-level `settings.section` and binds `codex-search` and `codex-image` through `ctx.settingsScope`; it does not use `settings.plugin.item`, so rc7's change of that separate slot from list ownership to keyed namespace ownership requires no migration here. Stock rc6 can mount the section but filters both plugin namespaces out of `settings.describe`, leaving their scopes unavailable.
+DSH `0.1.2-alpha.5` is the minimum and tested settings baseline. The Host installs each namespace through `ctx.settings.installSection()`, while the browser face owns one top-level `settings.section` and binds `codex-llm`, `codex-search`, and `codex-image` through `ctx.settingsScope`. The client registers that privileged section only when `ConnectionHandle.isLoopback` is true; image result views remain available independently. Historically, rc7 was the first Host baseline that exposed plugin namespaces to Web settings, but it is no longer in this package's supported dependency family.
 
 The Login card combines locally verified connection state with a best-effort, value-free account-usage view. When a usable login exists, the Host requests the fixed `/backend-api/wham/usage` endpoint with a ten-second Host deadline, identifies the seven-day window by `limit_window_seconds`, and sends only plan/balance/reset facts to the browser. Cancellation, auth failure, malformed data, a missing weekly window, or upstream failure degrades to unknown values. The UI performs no test search or test generation. Compatibility and private-endpoint disclosures live in repository documentation, not in the settings cards.
 
 ## Security and privacy
 
 - Browser RPC and settings never carry bearer, refresh, or ID token values.
+- Account RPC is real only on an explicit `127.0.0.1` Web bind. Other and missing binds receive an inert, value-free denial that never invokes the auth service. An all-interface deployment reached through localhost can therefore show the client Settings row while Host actions remain denied.
 - Remote capability endpoints are fixed under `https://chatgpt.com/backend-api/codex`, and the read-only account-usage probe is fixed to `https://chatgpt.com/backend-api/wham/usage`; configuration cannot redirect credentials to another origin.
 - Requests use a plugin-owned originator rather than impersonating the official CLI.
 - Account identity is resolved from the latest auth document with token-claim fallback; no identity value is accepted from the model.
@@ -243,6 +245,7 @@ The CLI remains required for login guidance and owns the login state; the plugin
 | Condition | Behavior |
 |---|---|
 | No usable Codex login | LLM and capability operations fail with auth-required guidance |
+| Account RPC bind is absent, all-interface, or unknown | Return fixed `loopback-required` without invoking auth/status operations |
 | Refresh token reused while another process updated the file | Re-read and adopt the newer same-account login |
 | Refresh fails with no recoverable state | Fail closed; guide the user to `codex login` |
 | Search provider disabled | Remove/disable the search capability live |
@@ -264,3 +267,4 @@ The CLI remains required for login guidance and owns the login state; the plugin
 - [ADR-0005: Create Dual Checkpoints inside Basic manual transactions](adr/0005-create-dual-checkpoints-inside-basic-manual-transactions.md)
 - [ADR-0006: Preserve turn continuity during automatic compaction](adr/0006-preserve-turn-continuity-during-automatic-compaction.md)
 - [ADR-0007: Preserve Dual Checkpoints across Session lifecycles](adr/0007-preserve-dual-checkpoints-across-session-lifecycles.md)
+- [ADR-0008: Fail closed for account RPC on the alpha.5 Connection surface](adr/0008-fail-closed-account-rpc-on-alpha5.md)

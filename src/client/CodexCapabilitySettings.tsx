@@ -1,7 +1,7 @@
 /** Unified four-card settings surface for the Codex Capability Bundle. */
 import { useCallback, useEffect, useId, useState, useSyncExternalStore } from 'react'
 import type { ChangeEvent, ReactNode } from 'react'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   Button, IconChevronDownOutline14, IconRefreshOutline16, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'

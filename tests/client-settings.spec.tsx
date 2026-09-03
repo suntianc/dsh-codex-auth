@@ -2,8 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ComponentType } from 'react'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { CodexImageSettings } from '../src/image.ts'
 import type { CodexSearchSettings } from '../src/search.ts'
 import type { CodexAuthRpcClient, CodexAuthStatusView, CodexUsageView } from '../src/rpc-contract.ts'
@@ -226,8 +226,6 @@ describe('Codex Image Creation tool view', () => {
         references: [],
         warnings: [{ index: 1, code: 'IMAGE_MEDIA_INVALID', message: 'One item was invalid.' }],
       },
-      callView: null,
-      resultView: null,
       subCalls: [],
     }
     const loadImage = vi.fn(async () => 'data:image/png;base64,iVBORw0KGgo=')
@@ -248,7 +246,6 @@ describe('Codex Image Creation tool view', () => {
       turn: 1,
       step: 1,
       time: 10,
-      callView: null,
       subCalls: [],
     }
     const { rerender } = render(<CodexImageToolView block={block} loadImage={vi.fn()} />)
@@ -267,7 +264,7 @@ describe('client plugin registration', () => {
       ['codex-image', fakeScope(IMAGE).scope],
     ])
     const sessions = { binding: vi.fn() }
-    const connection = { rpc: { call: vi.fn() } }
+    const connection = { isLoopback: true, rpc: { call: vi.fn() } }
     const ctx = {
       effect: (setup: () => unknown) => setup(),
       on: vi.fn(() => () => {}),
@@ -310,8 +307,6 @@ describe('client plugin registration', () => {
       content: [],
       isError: false,
       meta: { operation: 'list', items: [], nextCursor: null },
-      callView: null,
-      resultView: null,
       subCalls: [],
     }
     const listResult = render(<ListImagesView block={listBlock} sessionId="session-a" t={t} />)
