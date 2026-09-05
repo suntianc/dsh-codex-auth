@@ -50,16 +50,18 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
   `127.0.0.1` Web bind; every absent, all-interface, or unknown bind receives
   the same value-free `loopback-required` denial.
 
-### GPT-5.6 long context
+### GPT-5.6 and GPT-6 Astra long context
 
-GPT Auth Settings exposes a live, default-off **1M context** switch between the
-Login and capability cards. It changes the reported context window for
-`gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-5.6-terra` from the conservative
-272,000-token default to 1,000,000 tokens. DSH uses that capacity for token
-pressure and compaction decisions; no request parameter negotiates capacity
-with the backend. Requests beyond 272K may consume account quota faster, backend
-availability remains account-dependent, and enabling the switch does not expand
-history that DSH already compacted.
+The `openai-codex` route includes GPT-6 Astra (`gpt-6-astra`) even when the
+installed pi-ai `0.84.4` catalog does not list it. GPT Auth Settings exposes a
+live, default-off **1M context** switch between the Login and capability cards.
+It changes the reported context window for `gpt-6-astra`, `gpt-5.6-luna`,
+`gpt-5.6-sol`, and `gpt-5.6-terra` from the conservative 272,000-token default
+to 1,000,000 tokens. DSH uses that capacity for token pressure and compaction
+decisions; no request parameter negotiates capacity with the backend. Requests
+beyond 272K may consume account quota faster, backend availability remains
+account-dependent, and enabling the switch does not expand history that DSH
+already compacted.
 
 ### Experimental Dual Checkpoint compaction Adapter
 
@@ -279,7 +281,7 @@ Live Search settings:
 | Enabled | `true` | on / off |
 | Mode | `live` | `live`, `cached`, `indexed` |
 | Context size | `medium` | `low`, `medium`, `high` |
-| Fallback model | `gpt-5.4` | Codex model ID |
+| Fallback model | `gpt-5.6-terra` | Codex model ID |
 | Maximum output tokens | `2048` | positive integer |
 
 ### Image Creation
@@ -439,7 +441,7 @@ Login State coordinator available to Search/Image without owning an LLM route:
 | `refreshLeadMs` | `300000` | Refresh lead time in milliseconds |
 | `codexCommand` | `codex` | CLI command used for login and version probing |
 | `displayName` | `OpenAI Codex (chatgpt)` | Provider label in model selectors |
-| `longContextEnabled` | `false` | Base value for the live GPT-5.6 1M context policy; GPT Auth Settings may override it in the `codex-llm` namespace |
+| `longContextEnabled` | `false` | Base value for the live GPT-6 Astra / GPT-5.6 1M context policy; GPT Auth Settings may override it in the `codex-llm` namespace |
 | `transport` | `sse` | Streaming transport: `sse`, `websocket`, or `auto` (WebSocket first with SSE fallback). SSE is the default: the WebSocket upgrade is unreliable through common HTTP proxies, and every new conversation pays the connect timeout before `auto` falls back |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket connect timeout in milliseconds (used only when `transport` is not `sse`; `0` disables it) |
 | `timeoutMs` | `120000` | Request timeout in milliseconds (SSE response-header phase; also the WebSocket message idle interval; `0` disables it) |

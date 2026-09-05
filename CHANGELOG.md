@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Surfaced GPT-6 Astra (`gpt-6-astra`) on the `openai-codex` route when the installed pi-ai catalog omits it, using the official Codex descriptor (image input, no `none` reasoning, 272K default context).
+- Extended the default-off 1M context policy to GPT-6 Astra.
+
+### Changed
+
+- Default Codex Search fallback model from retired `gpt-5.4` to `gpt-5.6-terra`.
+
 ## [0.3.3-alpha.5] - 2026-09-03
 
 ### Changed

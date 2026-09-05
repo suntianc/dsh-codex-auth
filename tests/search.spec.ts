@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { mountCustomCompaction } from './support/compaction-fixture.ts'
 import {
   CODEX_SEARCH_ENDPOINT, CODEX_SEARCH_PROVIDER_ID, CodexSearchProvider,
+  Config as SearchConfig,
+  DEFAULT_CODEX_SEARCH_FALLBACK_MODEL,
   type CodexSearchSettings,
 } from '../src/search.ts'
 
@@ -40,6 +42,11 @@ function provider(
 }
 
 describe('Global Codex Search Provider', () => {
+  it('defaults the ChatGPT-sign-in fallback model to gpt-5.6-terra', () => {
+    const parse = SearchConfig as unknown as (input: Record<string, unknown>) => CodexSearchSettings
+    expect(parse({})).toMatchObject({ fallbackModel: DEFAULT_CODEX_SEARCH_FALLBACK_MODEL })
+  })
+
   it.each([
     ['inactive', false],
     ['active', true],

@@ -55,7 +55,7 @@ export interface Config {
   codexCommand: string
   /** Selector label for the provider route. */
   displayName: string
-  /** Opt into the one-million-token context budget for supported GPT-5.6 models. */
+  /** Opt into the one-million-token context budget for supported GPT-5.6 and GPT-6 Astra models. */
   longContextEnabled: boolean
   /** Streaming transport for the route; SSE by default because the WebSocket upgrade is unreliable through common HTTP proxies. */
   transport: CodexAuthTransport

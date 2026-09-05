@@ -44,13 +44,15 @@
   bind 明确为 `127.0.0.1` 时才注册真实 dispatcher；bind 缺失、面向所有接口或未知时都只返回
   相同且不含状态值的 `loopback-required` 拒绝。
 
-### GPT-5.6 长上下文
+### GPT-5.6 与 GPT-6 Astra 长上下文
 
-GPT Auth 设置在登录卡片与能力卡片之间提供实时生效、默认关闭的 **1M 上下文**开关。
-它会把 `gpt-5.6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra` 向 DSH 报告的
-上下文窗口从保守的 272,000 Token 提升到 1,000,000 Token。DSH 会据此计算 Token
-压力和压缩时机；插件不会在请求里发送用于和后端协商容量的参数。超过 272K 的请求可能
-更快消耗账户配额，后端是否支持仍取决于账户，而且启用开关不会展开 DSH 已经压缩的历史。
+即使已安装的 pi-ai `0.84.4` 目录尚未列出 GPT-6 Astra，`openai-codex` 路由也会
+提供 `gpt-6-astra`。GPT Auth 设置在登录卡片与能力卡片之间提供实时生效、默认关闭的
+**1M 上下文**开关。它会把 `gpt-6-astra`、`gpt-5.6-luna`、`gpt-5.6-sol`、
+`gpt-5.6-terra` 向 DSH 报告的上下文窗口从保守的 272,000 Token 提升到 1,000,000 Token。
+DSH 会据此计算 Token 压力和压缩时机；插件不会在请求里发送用于和后端协商容量的参数。
+超过 272K 的请求可能更快消耗账户配额，后端是否支持仍取决于账户，而且启用开关不会展开
+DSH 已经压缩的历史。
 
 ### 实验性 Dual Checkpoint 压缩 Adapter
 
@@ -223,7 +225,7 @@ https://chatgpt.com/backend-api/codex/alpha/search
 | 启用 | `true` | 开 / 关 |
 | 模式 | `live` | `live`、`cached`、`indexed` |
 | 上下文大小 | `medium` | `low`、`medium`、`high` |
-| 备用模型 | `gpt-5.4` | Codex 模型 ID |
+| 备用模型 | `gpt-5.6-terra` | Codex 模型 ID |
 | 最大输出 Token | `2048` | 正整数 |
 
 ### 图片创作
@@ -367,7 +369,7 @@ dsh plugin --profile web list
 | `refreshLeadMs` | `300000` | token 到期前的刷新提前量（毫秒） |
 | `codexCommand` | `codex` | 登录和版本探测使用的 CLI 命令 |
 | `displayName` | `OpenAI Codex (chatgpt)` | 模型选择器中的 provider 名称 |
-| `longContextEnabled` | `false` | GPT-5.6 实时 1M 上下文策略的基础值；GPT Auth 设置可在 `codex-llm` namespace 覆盖它 |
+| `longContextEnabled` | `false` | GPT-6 Astra / GPT-5.6 实时 1M 上下文策略的基础值；GPT Auth 设置可在 `codex-llm` namespace 覆盖它 |
 | `transport` | `sse` | 流式传输方式：`sse`、`websocket` 或 `auto`（优先 WebSocket、失败回退 SSE）。默认 SSE：WebSocket 升级在常见 HTTP 代理下不稳定，且 `auto` 模式下每个新对话都要先付出连接超时才会回退 |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket 连接超时（毫秒，仅当 `transport` 不是 `sse` 时生效；`0` 表示禁用） |
 | `timeoutMs` | `120000` | 请求超时（毫秒，SSE 响应头阶段；同时作为 WebSocket 消息空闲间隔；`0` 表示禁用） |

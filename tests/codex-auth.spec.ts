@@ -24,7 +24,11 @@ import {
 } from '../src/codex-auth-adapter.ts'
 import { CodexAuthService, type CodexAuthServiceOptions } from '../src/codex-auth-service.ts'
 import {
-  CODEX_LONG_CONTEXT_WINDOW, CODEX_STANDARD_CONTEXT_WINDOW, CodexLlmSettingsConfig,
+  CODEX_GPT_6_ASTRA_MODEL_ID,
+  CODEX_LONG_CONTEXT_MODEL_IDS,
+  CODEX_LONG_CONTEXT_WINDOW,
+  CODEX_STANDARD_CONTEXT_WINDOW,
+  CodexLlmSettingsConfig,
 } from '../src/codex-context.ts'
 import { Config as PluginConfig, type Config as PluginConfigView } from '../src/index.ts'
 
@@ -359,25 +363,36 @@ describe('CodexAuthAdapter route profile', () => {
     })
 
     const profile = piAiAdapterCalls.at(-1)?.profiles().get('openai-codex') as {
-      piProvider?: { getModels: () => ReadonlyArray<{ id: string; contextWindow: number }> }
+      piProvider?: {
+        getModels: () => ReadonlyArray<{
+          id: string
+          contextWindow: number
+          thinkingLevelMap?: Record<string, string | null>
+        }>
+      }
     } | undefined
     const getModels = profile?.piProvider?.getModels
     expect(getModels).toBeDefined()
     if (getModels === undefined) throw new Error('missing codex model provider')
 
     const standard = getModels()
-    for (const id of ['gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra']) {
+    expect(standard.some(model => model.id === CODEX_GPT_6_ASTRA_MODEL_ID)).toBe(true)
+    for (const id of CODEX_LONG_CONTEXT_MODEL_IDS) {
       expect(standard.find(model => model.id === id)?.contextWindow).toBe(CODEX_STANDARD_CONTEXT_WINDOW)
     }
     const unchanged = standard.find(model => model.id === 'gpt-5.4')
 
     longContextEnabled = true
     const long = getModels()
-    for (const id of ['gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra']) {
+    for (const id of CODEX_LONG_CONTEXT_MODEL_IDS) {
       expect(long.find(model => model.id === id)?.contextWindow).toBe(CODEX_LONG_CONTEXT_WINDOW)
     }
     expect(long.find(model => model.id === 'gpt-5.4')).toBe(unchanged)
     expect(standard.find(model => model.id === 'gpt-5.6-sol')?.contextWindow).toBe(CODEX_STANDARD_CONTEXT_WINDOW)
+    expect(standard.find(model => model.id === CODEX_GPT_6_ASTRA_MODEL_ID)?.thinkingLevelMap).toMatchObject({
+      off: null,
+      max: 'max',
+    })
   })
 
   it('keeps pi-ai credential storage and ambient discovery fail-closed', async () => {

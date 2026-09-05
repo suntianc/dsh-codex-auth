@@ -69,7 +69,7 @@ The existing settings surface for login plus controls for capabilities unlocked 
 _Avoid_: Auth capability
 
 **Long Context Mode**:
-An explicit, default-off model policy that reports a one-million-token capacity for supported GPT-5.6 models so DSH can defer compaction. It is not a Codex Login State, request parameter, or backend entitlement.
+An explicit, default-off model policy that reports a one-million-token capacity for GPT-6 Astra and supported GPT-5.6 models so DSH can defer compaction. It is not a Codex Login State, request parameter, or backend entitlement.
 _Avoid_: 1M entitlement, enable backend capacity
 
 **Portable Checkpoint**:

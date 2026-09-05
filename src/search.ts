@@ -21,6 +21,8 @@ const DEFAULT_RETRY_BASE_DELAY_MS = 100
 
 export type CodexSearchMode = 'live' | 'cached' | 'indexed'
 export type CodexSearchContextSize = 'low' | 'medium' | 'high'
+/** Codex ChatGPT-sign-in replacement for retired `gpt-5.4`. */
+export const DEFAULT_CODEX_SEARCH_FALLBACK_MODEL = 'gpt-5.6-terra'
 
 /** Independently live settings for the Global Codex Search Provider. */
 export interface CodexSearchSettings {
@@ -37,7 +39,7 @@ export const Config: z<Config> = z.object({
   enabled: z.boolean().default(true),
   mode: z.union([z.const('live'), z.const('cached'), z.const('indexed')]).default('live'),
   contextSize: z.union([z.const('low'), z.const('medium'), z.const('high')]).default('medium'),
-  fallbackModel: z.string().default('gpt-5.4'),
+  fallbackModel: z.string().default(DEFAULT_CODEX_SEARCH_FALLBACK_MODEL),
   maxOutputTokens: z.number().step(1).min(1).default(2048),
 })
 
