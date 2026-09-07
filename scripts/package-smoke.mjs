@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import semver from 'semver'
+import { DSH_BASELINE, DSH_SOURCE_VERSION, DSH_VERIFY_VERSION, DSH_EXPERIMENTAL_PEER_RANGE, resolvedDshPackages } from './dsh-compatibility.mjs'
 
-const DSH_BASELINE = '0.1.2-alpha.5'
 const CODEX_COMPACTION_DSH_VERSION = '0.1.2-alpha.5'
 const EXPERIMENTAL_DSH_PEERS = [
   '@deepseek-ai/dsh-compaction',
@@ -91,7 +91,7 @@ try {
   for (const section of ['peerDependencies', 'devDependencies']) {
     const required = section === 'peerDependencies'
       ? DSH_BASELINE
-      : CODEX_COMPACTION_DSH_VERSION
+      : DSH_VERIFY_VERSION
     const entries = Object.entries(manifest[section] ?? {})
       .filter(([name]) => name.startsWith('@deepseek-ai/dsh-')
         && (section !== 'peerDependencies'
@@ -103,6 +103,7 @@ try {
       if (parsed === null
         || minimum === null
         || !semver.satisfies(required, parsed, SEMVER_OPTIONS)
+        || (section === 'peerDependencies' && !semver.satisfies(DSH_SOURCE_VERSION, parsed))
         || semver.lt(minimum, required)) {
         throw new Error(`package smoke: ${section}.${name} must accept ${required} and exclude earlier versions`)
       }
@@ -110,7 +111,7 @@ try {
   }
   for (const name of EXPERIMENTAL_DSH_PEERS) {
     for (const section of ['peerDependencies', 'devDependencies']) {
-      if (manifest[section]?.[name] !== CODEX_COMPACTION_DSH_VERSION) {
+      if (manifest[section]?.[name] !== (section === 'peerDependencies' ? DSH_EXPERIMENTAL_PEER_RANGE : DSH_VERIFY_VERSION)) {
         throw new Error(
           `package smoke: ${section}.${name} must pin ${CODEX_COMPACTION_DSH_VERSION}`,
         )
@@ -167,16 +168,14 @@ try {
       `package smoke: pnpm-lock.yaml must contain one pi-ai ${PI_AI_VERSION} snapshot; found ${piAiSnapshotIdentities.join(', ') || 'none'}`,
     )
   }
-  const dshResolutions = [...lockfile.matchAll(
-    /^ {2}['"](@deepseek-ai\/dsh-[^@'"]+)@([^('"\s:]+).*['"]:\s*$/gmu,
-  )].map(([, name, version]) => ({ name, version }))
+  const dshResolutions = resolvedDshPackages(lockfile)
   if (dshResolutions.length === 0) {
     throw new Error('package smoke: pnpm-lock.yaml contains no resolved DSH package entries')
   }
-  const mixedDsh = dshResolutions.filter(({ version }) => version !== CODEX_COMPACTION_DSH_VERSION)
+  const mixedDsh = dshResolutions.filter(({ version }) => version !== DSH_VERIFY_VERSION)
   if (mixedDsh.length > 0) {
     throw new Error(
-      `package smoke: pnpm-lock.yaml mixes the alpha.5 graph: ${mixedDsh.map(({ name, version }) => `${name}@${version}`).join(', ')}`,
+      `package smoke: pnpm-lock.yaml mixes the verified DSH graph: ${mixedDsh.map(({ name, version }) => `${name}@${version}`).join(', ')}`,
     )
   }
   const declaredDshNames = new Set(['peerDependencies', 'devDependencies']
@@ -190,7 +189,7 @@ try {
   }
   const stale = [...declaredDshNames]
     .filter(name => !highestDeclaredDshVersions.has(name)
-      || semver.lt(highestDeclaredDshVersions.get(name), CODEX_COMPACTION_DSH_VERSION))
+      || highestDeclaredDshVersions.get(name) !== DSH_VERIFY_VERSION)
   if (stale.length > 0) {
     throw new Error(
       `package smoke: pnpm-lock.yaml resolves declared DSH below ${CODEX_COMPACTION_DSH_VERSION}: ${stale.join(', ')}`,

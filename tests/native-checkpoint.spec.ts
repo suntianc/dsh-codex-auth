@@ -180,6 +180,18 @@ describe('Codex Native Checkpoint codec', () => {
     })).toBe(false)
   })
 
+  it('replays on 0.1.3-alpha.1 only when both DSH converters share that version', () => {
+    expect(isCodexNativeReplayRuntimeCompatible({
+      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '0.84.4',
+    })).toBe(true)
+    expect(isCodexNativeReplayRuntimeCompatible({
+      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.2-alpha.5', piAi: '0.84.4',
+    })).toBe(false)
+    expect(isCodexNativeReplayRuntimeCompatible({
+      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '0.84.2',
+    })).toBe(false)
+  })
+
   it('refuses values JSON.stringify would silently lose', () => {
     const lossy = {
       ...VALID_CHECKPOINT,

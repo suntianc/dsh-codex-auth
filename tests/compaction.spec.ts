@@ -36,6 +36,7 @@ import {
   CODEX_COMPACTION_COMPATIBILITY,
   CodexCompactionEngine,
 } from '../src/compaction.ts'
+import { assistantSettlement } from './support/assistant-settlement.ts'
 
 const MODEL = 'portable-model'
 const HISTORY = 'older conversation history that must be summarized '.repeat(80)
@@ -103,10 +104,10 @@ function closedConversation(): Session {
     session.append('assistant/message', {
       turn,
       step: 1,
-      message: createAssistantMessage({
+      ...assistantSettlement(createAssistantMessage({
         content: [{ type: 'text', text: `answer ${turn}` }],
         source: { provider: MODEL, model: MODEL },
-      }),
+      })),
     }, { surfaceOp: 'append' })
     session.append('step/end', { turn, step: 1 })
     session.append('turn/end', { turn, reason: { kind: 'completed' } })
@@ -140,7 +141,7 @@ function toolPairConversation(): {
   const assistant = session.append('assistant/message', {
     turn: 3,
     step: 1,
-    message: createAssistantMessage({
+    ...assistantSettlement(createAssistantMessage({
       content: [{
         type: 'tool-call',
         id: callId,
@@ -148,7 +149,7 @@ function toolPairConversation(): {
         arguments: '{}',
       }],
       source: { provider: MODEL, model: MODEL },
-    }),
+    })),
   }, { surfaceOp: 'append' })
   session.append('tool/call', {
     turn: 3,
@@ -634,6 +635,23 @@ describe('Codex Portable Checkpoint Adapter', () => {
       },
       piAi: '0.84.4',
     })).not.toThrow()
+  })
+
+  it('accepts the complete 0.1.3-alpha.1 graph and rejects a mixed Session runtime', () => {
+    const dsh = {
+      '@deepseek-ai/dsh-agent': '0.1.3-alpha.1',
+      '@deepseek-ai/dsh-compaction': '0.1.3-alpha.1',
+      '@deepseek-ai/dsh-compaction-basic': '0.1.3-alpha.1',
+      '@deepseek-ai/dsh-llm': '0.1.3-alpha.1',
+      '@deepseek-ai/dsh-llm-pi-ai': '0.1.3-alpha.1',
+      '@deepseek-ai/dsh-session': '0.1.3-alpha.1',
+      '@deepseek-ai/dsh-token-meter': '0.1.3-alpha.1',
+    }
+    expect(() => assertCodexCompactionCompatibility({ dsh, piAi: '0.84.4' })).not.toThrow()
+    expect(() => assertCodexCompactionCompatibility({
+      dsh: { ...dsh, '@deepseek-ai/dsh-session': '0.1.2-alpha.5' },
+      piAi: '0.84.4',
+    })).toThrow()
   })
 
   it('fails loud when any experimental DSH or pi-ai runtime package leaves the pinned pair', () => {

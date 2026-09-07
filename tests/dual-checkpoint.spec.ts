@@ -40,9 +40,12 @@ import {
   CODEX_NATIVE_CHECKPOINT_ESTIMATOR,
   decodeCodexNativeCheckpoint,
 } from '../src/native-checkpoint.ts'
+import { assistantSettlement } from './support/assistant-settlement.ts'
 
 const MODEL = 'gpt-5.6-sol'
 const ACCOUNT_ID = 'acct_dual_fixture'
+// Reuse the same synthetic credential even when an async assertion crosses a second.
+const FIXTURE_TOKEN_EXPIRY = Math.floor(Date.now() / 1000) + 3600
 const PORTABLE_SUMMARY = 'PORTABLE CHECKPOINT'
 const HISTORY = 'durable history fact and implementation detail '.repeat(700)
 
@@ -58,7 +61,7 @@ afterEach(async () => {
 function fakeAccessToken(accountId: string): string {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
   const payload = Buffer.from(JSON.stringify({
-    exp: Math.floor(Date.now() / 1000) + 3600,
+    exp: FIXTURE_TOKEN_EXPIRY,
     'https://api.openai.com/auth': { chatgpt_account_id: accountId },
   })).toString('base64url')
   return `${header}.${payload}.signature`
@@ -376,10 +379,10 @@ function closedConversation(
     session.append('assistant/message', {
       turn,
       step: 1,
-      message: createAssistantMessage({
+      ...assistantSettlement(createAssistantMessage({
         content: [{ type: 'text', text: `${HISTORY}${turn}` }],
         source: { provider: 'openai-codex', model: MODEL },
-      }),
+      })),
     }, { surfaceOp: 'append' })
     session.append('step/end', { turn, step: 1 })
     session.append('turn/end', { turn, reason: { kind: 'completed' } })
@@ -413,10 +416,10 @@ function retentionConversation(): Session {
     session.append('assistant/message', {
       turn,
       step: 1,
-      message: createAssistantMessage({
+      ...assistantSettlement(createAssistantMessage({
         content: [{ type: 'text', text: exchange.assistant }],
         source: { provider: 'openai-codex', model: MODEL },
-      }),
+      })),
     }, { surfaceOp: 'append' })
     session.append('step/end', { turn, step: 1 })
     session.append('turn/end', { turn, reason: { kind: 'completed' } })
@@ -768,10 +771,10 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       pressure.append('assistant/message', {
         turn,
         step: 1,
-        message: createAssistantMessage({
+        ...assistantSettlement(createAssistantMessage({
           content: [{ type: 'text', text: `pressure answer ${turn}:${'p'.repeat(100_000)}` }],
           source: { provider: 'openai-codex', model: MODEL },
-        }),
+        })),
       }, { surfaceOp: 'append' })
       pressure.append('step/end', { turn, step: 1 })
       pressure.append('turn/end', { turn, reason: { kind: 'completed' } })
@@ -1027,10 +1030,10 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     fork.append('assistant/message', {
       turn: 3,
       step: 1,
-      message: createAssistantMessage({
+      ...assistantSettlement(createAssistantMessage({
         content: [{ type: 'text', text: 'new restored answer '.repeat(4_000) }],
         source: { provider: 'openai-codex', model: MODEL },
-      }),
+      })),
     }, { surfaceOp: 'append' })
     fork.append('step/end', { turn: 3, step: 1 })
     fork.append('turn/end', { turn: 3, reason: { kind: 'completed' } })
@@ -1232,10 +1235,10 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     session.append('assistant/message', {
       turn: 3,
       step: 1,
-      message: createAssistantMessage({
+      ...assistantSettlement(createAssistantMessage({
         content: [{ type: 'text', text: 'new answer '.repeat(4_000) }],
         source: { provider: 'openai-codex', model: MODEL },
-      }),
+      })),
     }, { surfaceOp: 'append' })
     session.append('step/end', { turn: 3, step: 1 })
     session.append('turn/end', { turn: 3, reason: { kind: 'completed' } })
@@ -1284,10 +1287,10 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     session.append('assistant/message', {
       turn: 3,
       step: 1,
-      message: createAssistantMessage({
+      ...assistantSettlement(createAssistantMessage({
         content: [{ type: 'text', text: 'new answer after account change '.repeat(3_000) }],
         source: { provider: 'openai-codex', model: MODEL },
-      }),
+      })),
     }, { surfaceOp: 'append' })
     session.append('step/end', { turn: 3, step: 1 })
     session.append('turn/end', { turn: 3, reason: { kind: 'completed' } })
@@ -1460,10 +1463,10 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     session.append('assistant/message', {
       turn: 3,
       step: 1,
-      message: createAssistantMessage({
+      ...assistantSettlement(createAssistantMessage({
         content: [{ type: 'text', text: 'q'.repeat(1_100_000) }],
         source: { provider: 'openai-codex', model: MODEL },
-      }),
+      })),
     }, { surfaceOp: 'append' })
     session.append('step/end', { turn: 3, step: 1 })
     session.append('turn/end', { turn: 3, reason: { kind: 'completed' } })

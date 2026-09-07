@@ -1,11 +1,13 @@
 # dsh-codex-auth
 
+> **DSH compatibility:** Supports separately verified `0.1.2-alpha.5` and `0.1.3-alpha.1` graphs. The new DSH prerelease is source-only while its npm packages are unavailable; development dependencies retain alpha.5. See [source verification](docs/dsh-source-verification.md).
+
 [![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 English | [中文](README.zh.md)
 
-Current alpha release: **v0.3.3-alpha.5**, aligned with DSH `0.1.2-alpha.5`, Cordis `4.0.2`, Schemastery `3.18.2`, and pi-ai `0.84.4`.
+Current alpha release: **v0.3.3-alpha.6**, supporting DSH `0.1.2-alpha.5` and `0.1.3-alpha.1`, with, Cordis `4.0.2`, Schemastery `3.18.2`, and pi-ai `0.84.4`.
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -178,8 +180,8 @@ request adds the Native sibling, while any incompatibility or Native failure
 keeps the valid Portable Checkpoint. Stock conversation views intentionally show
 the Portable text even when the next compatible provider request replays Native.
 
-This experimental export supports exactly DSH / Basic compaction
-`0.1.2-alpha.5` and pi-ai `0.84.4`; mounting it on another pair fails with an
+This experimental export supports homogeneous DSH / Basic compaction graphs at
+`0.1.2-alpha.5` or `0.1.3-alpha.1`, each with pi-ai `0.84.4`; a mixed or unverified pair fails with an
 actionable compatibility error. Long Context Mode may change when pressure
 compaction runs, but does not change native activation, codec, retention, v2
 payload, replay compatibility, or the one-shot turn-continuation contract.
@@ -235,8 +237,8 @@ headers, turn state, and Long Context Mode do not affect compatibility. Unknown,
 malformed, oversized (over 2 MiB), secret-bearing, mixed, or incompatible state
 degrades to Portable text. Generated markers are Host-only and any missing,
 duplicate, embedded, leaked, or unconsumed marker fails before network I/O. The
-replay converter is pinned to DSH LLM / pi-ai Adapter `0.1.2-alpha.5` and pi-ai
-`0.84.4`; another runtime pair uses Portable text instead. Adapter generation
+replay converter accepts matching DSH LLM / pi-ai Adapter versions at
+`0.1.2-alpha.5` or `0.1.3-alpha.1`, with pi-ai `0.84.4`; mixed or unverified runtime pairs use Portable text instead. Adapter generation
 replacement or HMR invalidates process-local replay and turn-continuation state,
 while the durable Dual Checkpoint remains unchanged for a later request.
 
@@ -363,7 +365,7 @@ assistant ImageBlock.
 
 ## Requirements
 
-- DeepSeek Harness `0.1.2-alpha.5` (the minimum and tested prerelease baseline); do not mix it with an older rc package family.
+- DeepSeek Harness `0.1.2-alpha.5` or `0.1.3-alpha.1` (separately verified dependency graphs); do not mix it with an older rc package family.
 - Node.js `^22.19.0` or `>=24.0.0`.
 - `pnpm` available on `PATH` (`11.7.0` is the tested project package manager).
 - The `codex` CLI available on `PATH`.
@@ -372,15 +374,17 @@ assistant ImageBlock.
 ## Install from npm (recommended)
 
 The npm package includes prebuilt Host and browser bundles, so no install-time
-build permission is required. Install the alpha.5-aligned release explicitly:
+build permission is required. Install the release for either verified DSH graph explicitly:
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.5
+dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.6
 ```
 
 With the Web Host bound explicitly to `127.0.0.1`, restart `dsh web`, open Settings, and select **GPT Auth**.
 
 ## Install a prebuilt release
+
+These GitHub examples pin the earlier 0.3.3-alpha.5 release; use the npm command above for 0.3.3-alpha.6.
 
 ```sh
 dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.3.3-alpha.5/dsh-codex-auth-0.3.3-alpha.5.tgz
@@ -389,6 +393,8 @@ dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases
 With the Web Host bound explicitly to `127.0.0.1`, restart `dsh web`, open Settings, and select **GPT Auth**.
 
 ## Install from the tagged GitHub source
+
+These GitHub examples pin the earlier 0.3.3-alpha.5 release; use the npm command above for 0.3.3-alpha.6.
 
 ```sh
 dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.3.3-alpha.5
@@ -402,26 +408,23 @@ that script until explicitly allowed, so the first command may print an
 ## Install a tarball
 
 ```sh
-git clone --branch v0.3.3-alpha.5 --depth 1 https://github.com/suntianc/dsh-codex-auth.git
-cd dsh-codex-auth
-pnpm install
-pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.3.3-alpha.5.tgz
+npm pack dsh-codex-auth@0.3.3-alpha.6
+dsh plugin --profile web add ./dsh-codex-auth-0.3.3-alpha.6.tgz
 ```
 
 ## Upgrade
 
 Stop the running `dsh web` process and verify that the Host itself is already on
-DSH `0.1.2-alpha.5`; upgrade DSH first if it is not. Then install the matching
+DSH `0.1.2-alpha.5` or `0.1.3-alpha.1`; upgrade DSH first if it is not. Then install the matching
 plugin release and verify the Web profile entry:
 
 ```sh
-dsh --version # must report 0.1.2-alpha.5
-dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.5
+dsh --version # must report 0.1.2-alpha.5 or 0.1.3-alpha.1
+dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.6
 dsh plugin --profile web list
 ```
 
-After the list reports `dsh-codex-auth@0.3.3-alpha.5`, restart `dsh web` and refresh the
+After the list reports `dsh-codex-auth@0.3.3-alpha.6`, restart `dsh web` and refresh the
 browser.
 
 ## Host configuration

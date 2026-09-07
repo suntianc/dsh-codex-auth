@@ -1,11 +1,13 @@
 # dsh-codex-auth
 
+> **DSH 兼容性：** 已分别验证 `0.1.2-alpha.5` 与 `0.1.3-alpha.1` 两套依赖图。目标 DSH npm 包尚未发布，开发锁文件暂保留 alpha.5；新版本使用固定源码制品验证。见[源码验证说明](docs/dsh-source-verification.md)。
+
 [![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 [English](README.md) | 中文
 
-当前 alpha 版本：**v0.3.3-alpha.5**，对齐 DSH `0.1.2-alpha.5`、Cordis `4.0.2`、Schemastery `3.18.2` 与 pi-ai `0.84.4`。
+当前 alpha 版本：**v0.3.3-alpha.6**，支持 DSH `0.1.2-alpha.5` 与 `0.1.3-alpha.1`，使用 Cordis `4.0.2`、Schemastery `3.18.2` 与 pi-ai `0.84.4`。
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -144,7 +146,7 @@ Codex 请求会增加 Native 同级表示，任何不兼容或 Native 失败都�
 Checkpoint。即使下一次兼容 provider 请求实际回放 Native，stock conversation 视图仍会
 刻意显示 Portable 文本。
 
-该实验性导出只支持 DSH / Basic compaction `0.1.2-alpha.5` 与 pi-ai `0.84.4`；
+该实验性导出支持完整一致的 DSH / Basic compaction `0.1.2-alpha.5` 或 `0.1.3-alpha.1` 图，均要求 pi-ai `0.84.4`；
 在其他版本组合上挂载会给出可操作的兼容性错误并失败。长上下文模式可以改变 pressure
 压缩的触发时机，但不会改变 Native activation、codec、retention、v2 payload、回放兼容性
 或一次性 turn-continuation 契约。回滚时只需重新选择 DSH 内置 preset；已有会话仍可通过
@@ -188,7 +190,7 @@ Portable 文本。组合的 payload callback 可以改变已有建模控制项�
 Request ID、prompt-cache key、临时 header、turn state 与 Long Context Mode 不参与兼容性。
 未知、损坏、超过 2 MiB、含 secret、混合格式或不兼容的状态会退化为 Portable 文本。生成的
 marker 只存在于 Host；marker 缺失、重复、嵌入、泄漏或未消费时会在网络请求之前失败。
-回放 converter 精确固定在 DSH LLM / pi-ai Adapter `0.1.2-alpha.5` 与 pi-ai `0.84.4`；其他
+回放 converter 要求 DSH LLM / pi-ai Adapter 同为 `0.1.2-alpha.5` 或同为 `0.1.3-alpha.1`，且 pi-ai 为 `0.84.4`；混合或其他
 runtime 组合只使用 Portable 文本。Adapter generation 替换或 HMR 会使进程内 replay 与
 turn-continuation 状态失效，但不会修改持久化 Dual Checkpoint。
 
@@ -294,7 +296,7 @@ DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 
 
 ## 环境要求
 
-- DeepSeek Harness `0.1.2-alpha.5`（最低且已测试的 prerelease 基线）；不要与旧 rc 包族混装。
+- DeepSeek Harness `0.1.2-alpha.5` 或 `0.1.3-alpha.1`（两套依赖图分别验证）；不要与旧 rc 包族混装。
 - Node.js `^22.19.0` 或 `>=24.0.0`。
 - `PATH` 中可用 `pnpm`（本项目测试版本为 `11.7.0`）。
 - `codex` CLI 已加入 `PATH`。
@@ -302,16 +304,17 @@ DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 
 
 ## 从 npm 安装（推荐）
 
-npm 包已包含预构建的 Host 与浏览器 bundle，不需要安装期构建权限。请显式安装与
-DSH alpha.5 对齐的版本：
+npm 包已包含预构建的 Host 与浏览器 bundle，不需要安装期构建权限。请显式安装支持上述两套 DSH 依赖图的版本：
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.5
+dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.6
 ```
 
 确认 Web Host 明确绑定 `127.0.0.1` 后，重启 `dsh web`，打开设置并选择 **GPT Auth**。
 
 ## 安装预构建 Release
+
+以下 GitHub 示例固定到先前的 0.3.3-alpha.5；本次 0.3.3-alpha.6 请使用上面的 npm 安装命令。
 
 ```sh
 dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.3.3-alpha.5/dsh-codex-auth-0.3.3-alpha.5.tgz
@@ -320,6 +323,8 @@ dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases
 确认 Web Host 明确绑定 `127.0.0.1` 后，重启 `dsh web`，打开设置并选择 **GPT Auth**。
 
 ## 从 GitHub tag 源码安装
+
+以下 GitHub 示例固定到先前的 0.3.3-alpha.5；本次 0.3.3-alpha.6 请使用上面的 npm 安装命令。
 
 ```sh
 dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.3.3-alpha.5
@@ -332,24 +337,21 @@ Git 依赖会通过包内 `prepare` 脚本从源码构建。pnpm 10+ 默认阻�
 ## 从 tarball 安装
 
 ```sh
-git clone --branch v0.3.3-alpha.5 --depth 1 https://github.com/suntianc/dsh-codex-auth.git
-cd dsh-codex-auth
-pnpm install
-pnpm pack
-dsh plugin --profile web add ./dsh-codex-auth-0.3.3-alpha.5.tgz
+npm pack dsh-codex-auth@0.3.3-alpha.6
+dsh plugin --profile web add ./dsh-codex-auth-0.3.3-alpha.6.tgz
 ```
 
 ## 升级
 
-先停止正在运行的 `dsh web`，确认 Host 本身已经是 DSH `0.1.2-alpha.5`；若不是，必须先升级 DSH。随后安装匹配的插件版本并核对 Web Profile 条目：
+先停止正在运行的 `dsh web`，确认 Host 本身已经是 DSH `0.1.2-alpha.5` 或 `0.1.3-alpha.1`；若不是，必须先升级 DSH。随后安装匹配的插件版本并核对 Web Profile 条目：
 
 ```sh
-dsh --version # 必须显示 0.1.2-alpha.5
-dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.5
+dsh --version # 必须显示 0.1.2-alpha.5 或 0.1.3-alpha.1
+dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.6
 dsh plugin --profile web list
 ```
 
-列表显示 `dsh-codex-auth@0.3.3-alpha.5` 后，重新启动 `dsh web` 并刷新浏览器。
+列表显示 `dsh-codex-auth@0.3.3-alpha.6` 后，重新启动 `dsh web` 并刷新浏览器。
 
 ## Host 配置
 

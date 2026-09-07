@@ -8,6 +8,7 @@
 import { createHash } from 'node:crypto'
 import { isPlainJsonTree, serializedJsonBytes } from './json-tree.ts'
 import { installedPackageVersion } from './package-version.ts'
+import { isSupportedDshGraph } from './runtime-compatibility.ts'
 
 /** Stable declaration-merged content tag owned by this package. */
 export const CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE = 'codex-native-checkpoint' as const
@@ -25,7 +26,7 @@ export const CODEX_NATIVE_CHECKPOINT_RETENTION_GENERATION = 1 as const
 export const CODEX_NATIVE_CHECKPOINT_ESTIMATOR = 'codex-v2-retained-json-plus-opaque-base64-v1' as const
 /** Serialized custom-block ceiling, including its JSON carrier. */
 export const MAX_CODEX_NATIVE_CHECKPOINT_BYTES = 2 * 1024 * 1024
-/** Exact alpha.5 runtime pair whose message and pi payload conversion this replay uses. */
+/** Default npm runtime pair; isSupportedDshGraph also admits the verified source graph. */
 export const CODEX_NATIVE_REPLAY_COMPATIBILITY = Object.freeze({
   dsh: '0.1.2-alpha.5',
   piAi: '0.84.4',
@@ -42,8 +43,7 @@ export interface CodexNativeReplayRuntimeVersions {
 export function isCodexNativeReplayRuntimeCompatible(
   actual: CodexNativeReplayRuntimeVersions = installedNativeReplayVersions(),
 ): boolean {
-  return actual.dshLlm === CODEX_NATIVE_REPLAY_COMPATIBILITY.dsh
-    && actual.dshPiAi === CODEX_NATIVE_REPLAY_COMPATIBILITY.dsh
+  return isSupportedDshGraph([actual.dshLlm, actual.dshPiAi])
     && actual.piAi === CODEX_NATIVE_REPLAY_COMPATIBILITY.piAi
 }
 

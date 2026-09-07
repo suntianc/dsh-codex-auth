@@ -24,6 +24,7 @@ import {
   CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
   decodeCodexNativeCheckpoint,
 } from '../../src/native-checkpoint.ts'
+import { assistantSettlement } from '../support/assistant-settlement.ts'
 
 const CONFIRMATION = 'I_UNDERSTAND_CODEX_LIVE_QUOTA'
 const LIVE_FETCH = globalThis.fetch
@@ -168,13 +169,13 @@ function appendLargeTurn(session: Session, turn: number, label: string): void {
   session.append('assistant/message', {
     turn,
     step: 1,
-    message: createAssistantMessage({
+    ...assistantSettlement(createAssistantMessage({
       content: [{
         type: 'text',
         text: `${label} retained history ${'provider continuity evidence '.repeat(5_000)}`,
       }],
       source: { provider: 'openai-codex', model: MODEL },
-    }),
+    })),
   }, { surfaceOp: 'append' })
   session.append('step/end', { turn, step: 1 })
   session.append('turn/end', { turn, reason: { kind: 'completed' } })

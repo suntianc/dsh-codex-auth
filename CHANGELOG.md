@@ -1,8 +1,10 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
+## [0.3.3-alpha.6] - 2026-09-07
 
-## [Unreleased]
+- Add explicit DSH `0.1.3-alpha.1` source compatibility alongside the npm alpha.5 baseline; keep dependency graphs separate.
+- Add reproducible isolated source-package checks and coherent lockfile validation.
+- Accept only homogeneous, verified DSH versions for compaction/native replay; retain pi-ai `0.84.4` and reject mixed graphs. Update Session v2 settlement and restore fixtures.
 
 ### Added
 
