@@ -44,7 +44,7 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
   sections before and after OAuth network I/O; a reply is persisted only while
   the account and refresh-token lineage still match.
 - Starts the official `codex login` browser or device-code flow.
-- Registers `/codex-auth [status|login]` on interactive DSH profiles, so a TUI can inspect the value-free login state or start the official browser flow without a Web settings card.
+- Registers `/codex-auth [status|login]` on interactive DSH profiles, so a loopback-bound surface can inspect the value-free login state or start the official browser flow without a Web settings card. Account operations share the account RPC's fail-closed policy: only a DSH Host bound explicitly to `127.0.0.1` executes them.
 - Shows connection state plus best-effort weekly remaining balance/reset time.
   The fixed `/backend-api/wham/usage` probe has a ten-second Host deadline and
   identifies the seven-day window by duration rather than response position.
@@ -390,7 +390,7 @@ dsh plugin --profile deepseek-tui add dsh-codex-auth
 dsh --profile deepseek-tui
 ```
 
-Use `/codex-auth` or `/codex-auth status` to inspect the value-free login state. Use `/codex-auth login` to start the official browser authorization flow. The command never displays credentials, account identifiers, or auth-file contents.
+Use `/codex-auth` or `/codex-auth status` to inspect the value-free login state. Use `/codex-auth login` to start the official browser authorization flow. Account operations run only when the DSH WebServer is bound explicitly to `127.0.0.1` (the same fail-closed policy as the account RPC); on any other composition the command answers a `loopback-required` error. The command never displays credentials, account identifiers, or auth-file contents.
 
 ## Install a prebuilt release
 

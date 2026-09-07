@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added a `/codex-auth` slash command (`status` default, `login`) for surfaces that host the DSH `commands` seam. Account operations share the account RPC's fail-closed activation policy and run only on an explicitly `127.0.0.1`-bound DSH WebServer; any other composition answers `loopback-required` without touching the auth service.
 - Surfaced GPT-6 Astra (`gpt-6-astra`) on the `openai-codex` route when the installed pi-ai catalog omits it, using the official Codex descriptor (image input, no `none` reasoning, 272K default context).
 - Extended the default-off 1M context policy to GPT-6 Astra.
 

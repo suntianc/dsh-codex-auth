@@ -1,6 +1,7 @@
 /** Human command for inspecting and starting the shared Codex login. */
 import type { CommandDefinition } from '@deepseek-ai/dsh-commands'
 import type { CodexAuthService } from './codex-auth-service.ts'
+import { LOOPBACK_REQUIRED_MESSAGE, type LoopbackRpcMode } from './loopback-rpc.ts'
 import type { CodexAuthStatusView } from './rpc-contract.ts'
 
 type AuthCommandService = Pick<CodexAuthService, 'login' | 'status'>
@@ -19,13 +20,25 @@ function formatStatus(status: CodexAuthStatusView): string {
   return `Codex auth: ${parts.join('; ')}`
 }
 
-/** Build the slash command shared by every interactive DSH surface. */
-export function createCodexAuthCommand(service: AuthCommandService): CommandDefinition {
+/**
+ * Build the slash command shared by every interactive DSH surface.
+ * @param service - the shared Host auth service.
+ * @param accountMode - live account-control activation mode (the same loopback
+ * policy the account RPC uses); when blocked the command denies every
+ * operation without touching the auth service.
+ */
+export function createCodexAuthCommand(
+  service: AuthCommandService,
+  accountMode: () => LoopbackRpcMode,
+): CommandDefinition {
   return {
     name: 'codex-auth',
     description: 'Inspect or start the Codex ChatGPT login',
     input: { hint: '[status|login]' },
     handler: async ({ rawInput }) => {
+      if (accountMode() === 'blocked') {
+        return { kind: 'error', text: LOOPBACK_REQUIRED_MESSAGE }
+      }
       const operation = rawInput.trim() || 'status'
       if (operation === 'status') {
         try {

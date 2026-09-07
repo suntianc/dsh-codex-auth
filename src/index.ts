@@ -37,7 +37,7 @@ import {
 import type { CodexLlmSettings } from './codex-context.ts'
 import { installEnvHttpProxy } from './env-proxy.ts'
 import { createCodexAuthCommand } from './auth-command.ts'
-import { createLoopbackRpcGuard } from './loopback-rpc.ts'
+import { createLoopbackRpcGuard, loopbackMode, type LoopbackRpcMode } from './loopback-rpc.ts'
 import { CODEX_AUTH_RPC_CHANNEL, handleCodexAuthRpc } from './rpc.ts'
 
 export const name = 'llm-codex-auth'
@@ -94,8 +94,12 @@ export function apply(ctx: Context, config: Config): void {
     refreshLeadMs: config.refreshLeadMs,
     fetchImpl: fetch,
   })
+  // Shared account-control activation state: the connection inject below
+  // records the WebServer bind; the slash command and account RPC consult the
+  // same policy, so a non-loopback composition denies every account operation.
+  let accountMode: LoopbackRpcMode = 'blocked'
   ctx.inject(['commands'], commandCtx => {
-    commandCtx.commands.register(createCodexAuthCommand(service))
+    commandCtx.commands.register(createCodexAuthCommand(service, () => accountMode))
   })
   const settingsEntry: CodexLlmSettings = { longContextEnabled: config.longContextEnabled }
   let currentSettings = (): CodexLlmSettings => settingsEntry
@@ -132,8 +136,10 @@ export function apply(ctx: Context, config: Config): void {
     })
   })
   ctx.inject(['connection'], connectionCtx => {
+    const webServer = connectionCtx.get('webServer')
+    accountMode = loopbackMode(webServer?.host)
     const guard = createLoopbackRpcGuard(
-      connectionCtx.get('webServer')?.host,
+      webServer?.host,
       (endpoint, payload, signal) => handleCodexAuthRpc(service, endpoint, payload, signal),
     )
     if (guard.mode === 'blocked') {

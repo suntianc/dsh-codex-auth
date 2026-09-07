@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createCodexAuthCommand } from '../src/auth-command.ts'
+import type { LoopbackRpcMode } from '../src/loopback-rpc.ts'
+
+function makeCommand(service: Record<string, ReturnType<typeof vi.fn>>, mode: LoopbackRpcMode = 'enabled') {
+  return createCodexAuthCommand(service as never, () => mode)
+}
 
 describe('Codex auth command', () => {
   it('reports value-free login status by default', async () => {
@@ -14,7 +19,7 @@ describe('Codex auth command', () => {
         authFileExists: true,
       })),
     }
-    const command = createCodexAuthCommand(service)
+    const command = makeCommand(service)
 
     await expect(command.handler({ rawInput: '' } as never)).resolves.toEqual({
       kind: 'success',
@@ -28,7 +33,7 @@ describe('Codex auth command', () => {
       login: vi.fn(async () => ({ started: true })),
       status: vi.fn(),
     }
-    const command = createCodexAuthCommand(service)
+    const command = makeCommand(service)
 
     await expect(command.handler({ rawInput: ' login ' } as never)).resolves.toEqual({
       kind: 'success',
@@ -42,7 +47,7 @@ describe('Codex auth command', () => {
       login: vi.fn(),
       status: vi.fn(),
     }
-    const command = createCodexAuthCommand(service)
+    const command = makeCommand(service)
 
     await expect(command.handler({ rawInput: 'device' } as never)).resolves.toEqual({
       kind: 'error',
@@ -51,4 +56,22 @@ describe('Codex auth command', () => {
     expect(service.login).not.toHaveBeenCalled()
     expect(service.status).not.toHaveBeenCalled()
   })
+
+  it.each(['', 'status', 'login'])(
+    'denies %s off-loopback without reaching the auth service',
+    async (rawInput) => {
+      const service = {
+        login: vi.fn(),
+        status: vi.fn(),
+      }
+      const command = makeCommand(service, 'blocked')
+
+      await expect(command.handler({ rawInput } as never)).resolves.toEqual({
+        kind: 'error',
+        text: 'Codex account controls require a loopback-bound DSH Host',
+      })
+      expect(service.login).not.toHaveBeenCalled()
+      expect(service.status).not.toHaveBeenCalled()
+    },
+  )
 })
