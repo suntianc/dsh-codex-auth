@@ -44,6 +44,7 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
   sections before and after OAuth network I/O; a reply is persisted only while
   the account and refresh-token lineage still match.
 - Starts the official `codex login` browser or device-code flow.
+- Registers `/codex-auth [status|login]` on interactive DSH profiles, so a TUI can inspect the value-free login state or start the official browser flow without a Web settings card.
 - Shows connection state plus best-effort weekly remaining balance/reset time.
   The fixed `/backend-api/wham/usage` probe has a ten-second Host deadline and
   identifies the seven-day window by duration rather than response position.
@@ -381,6 +382,15 @@ dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.6
 ```
 
 With the Web Host bound explicitly to `127.0.0.1`, restart `dsh web`, open Settings, and select **GPT Auth**.
+
+For the terminal interface, install the same bundle into its profile and start the TUI:
+
+```sh
+dsh plugin --profile deepseek-tui add dsh-codex-auth
+dsh --profile deepseek-tui
+```
+
+Use `/codex-auth` or `/codex-auth status` to inspect the value-free login state. Use `/codex-auth login` to start the official browser authorization flow. The command never displays credentials, account identifiers, or auth-file contents.
 
 ## Install a prebuilt release
 

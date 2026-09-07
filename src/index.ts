@@ -19,6 +19,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-connection'
+import type {} from '@deepseek-ai/dsh-commands'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-host-webserver'
@@ -35,6 +36,7 @@ import {
 } from './codex-context.ts'
 import type { CodexLlmSettings } from './codex-context.ts'
 import { installEnvHttpProxy } from './env-proxy.ts'
+import { createCodexAuthCommand } from './auth-command.ts'
 import { createLoopbackRpcGuard } from './loopback-rpc.ts'
 import { CODEX_AUTH_RPC_CHANNEL, handleCodexAuthRpc } from './rpc.ts'
 
@@ -91,6 +93,9 @@ export function apply(ctx: Context, config: Config): void {
     credentialRef: credentialReference,
     refreshLeadMs: config.refreshLeadMs,
     fetchImpl: fetch,
+  })
+  ctx.inject(['commands'], commandCtx => {
+    commandCtx.commands.register(createCodexAuthCommand(service))
   })
   const settingsEntry: CodexLlmSettings = { longContextEnabled: config.longContextEnabled }
   let currentSettings = (): CodexLlmSettings => settingsEntry
