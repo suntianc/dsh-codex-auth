@@ -63,6 +63,10 @@ beyond 272K may consume account quota faster, backend availability remains
 account-dependent, and enabling the switch does not expand history that DSH
 already compacted.
 
+GPT-6 Astra does not support `temperature`. Remove it from the model request;
+the plugin rejects an explicit value (including `0`) with `UNSUPPORTED_OPTION`
+before resolving credentials or sending a request.
+
 ### Experimental Dual Checkpoint compaction Adapter
 
 The package exports `dsh-codex-auth/compaction` for an explicitly selected,

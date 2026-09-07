@@ -6,6 +6,7 @@
   "include": [
     "src/**/*.ts",
     "tests/codex-auth.spec.ts",
+    "tests/codex-model-request.spec.ts",
     "tests/rpc.spec.ts",
     "tests/search.spec.ts",
     "tests/image.spec.ts",

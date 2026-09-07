@@ -41,7 +41,7 @@ import {
 } from './codex-auth.ts'
 import type { CodexAuthFile } from './codex-auth.ts'
 import type { CodexAuthService } from './codex-auth-service.ts'
-import { applyCodexContextPolicy } from './codex-context.ts'
+import { applyCodexContextPolicy, CODEX_GPT_6_ASTRA_MODEL_ID } from './codex-context.ts'
 import type { CodexLlmSettings } from './codex-context.ts'
 import { CodexNativeCheckpointReplay } from './native-checkpoint-replay.ts'
 import type { CodexProviderPayloadCallback } from './native-checkpoint-replay.ts'
@@ -352,23 +352,37 @@ export class CodexAuthAdapter extends PiAiAdapter {
     const prepared = await super.prepareCall(provider, model, signal)
     return Object.freeze({
       ...prepared,
-      stream: (options: GenerateOptions) => codexTurnStateContinuity.withAdapterGeneration(
+      stream: (options: GenerateOptions) => validateCodexStream(options, () => codexTurnStateContinuity.withAdapterGeneration(
         generation,
         () => {
           const preparedOptions = codexNativeCompactionCoordinator.preparePortableCall(options)
           return this.nativeReplay.stream(preparedOptions, prepared.stream, replayGeneration)
         },
-      ),
+      )),
     })
   }
 
   override stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const generation = this.adapterGeneration
-    return codexTurnStateContinuity.withAdapterGeneration(generation, () => {
+    return validateCodexStream(options, () => codexTurnStateContinuity.withAdapterGeneration(generation, () => {
       const preparedOptions = codexNativeCompactionCoordinator.preparePortableCall(options)
       return this.nativeReplay.stream(preparedOptions, detached => super.stream(detached))
-    })
+    }))
   }
+}
+
+/** Reject unsupported model options before auth resolution or request-state preparation. */
+async function* validateCodexStream(
+  options: GenerateOptions,
+  start: () => AsyncIterable<StreamChunk>,
+): AsyncIterable<StreamChunk> {
+  if (options.model === CODEX_GPT_6_ASTRA_MODEL_ID && options.temperature !== undefined) {
+    throw new LlmError(
+      'GPT-6 Astra does not support temperature; remove temperature from the model request',
+      'UNSUPPORTED_OPTION',
+    )
+  }
+  yield* start()
 }
 
 /**

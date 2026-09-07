@@ -54,6 +54,9 @@ DSH 会据此计算 Token 压力和压缩时机；插件不会在请求里发送
 超过 272K 的请求可能更快消耗账户配额，后端是否支持仍取决于账户，而且启用开关不会展开
 DSH 已经压缩的历史。
 
+GPT-6 Astra 不支持 `temperature`。请从模型请求中移除该参数；显式传入任何值
+（包括 `0`）都会在解析凭据或发送请求前返回 `UNSUPPORTED_OPTION`。
+
 ### 实验性 Dual Checkpoint 压缩 Adapter
 
 包额外导出 `dsh-codex-auth/compaction`，仅供用户或部署者在**自定义 Agent preset**
