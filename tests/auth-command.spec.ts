@@ -58,7 +58,7 @@ describe('Codex auth command', () => {
   })
 
   it.each(['', 'status', 'login'])(
-    'denies %s off-loopback without reaching the auth service',
+    'denies %s on a public-Web composition without reaching the auth service',
     async (rawInput) => {
       const service = {
         login: vi.fn(),
@@ -68,7 +68,7 @@ describe('Codex auth command', () => {
 
       await expect(command.handler({ rawInput } as never)).resolves.toEqual({
         kind: 'error',
-        text: 'Codex account controls require a loopback-bound DSH Host',
+        text: 'Codex account commands require a local DSH Host (no WebServer or 127.0.0.1-bound)',
       })
       expect(service.login).not.toHaveBeenCalled()
       expect(service.status).not.toHaveBeenCalled()

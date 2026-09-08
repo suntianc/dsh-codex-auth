@@ -37,7 +37,9 @@ import {
 import type { CodexLlmSettings } from './codex-context.ts'
 import { installEnvHttpProxy } from './env-proxy.ts'
 import { createCodexAuthCommand } from './auth-command.ts'
-import { createLoopbackRpcGuard, loopbackMode, type LoopbackRpcMode } from './loopback-rpc.ts'
+import {
+  commandAccountMode, createLoopbackRpcGuard, type LoopbackRpcMode,
+} from './loopback-rpc.ts'
 import { CODEX_AUTH_RPC_CHANNEL, handleCodexAuthRpc } from './rpc.ts'
 
 export const name = 'llm-codex-auth'
@@ -94,10 +96,12 @@ export function apply(ctx: Context, config: Config): void {
     refreshLeadMs: config.refreshLeadMs,
     fetchImpl: fetch,
   })
-  // Shared account-control activation state: the connection inject below
-  // records the WebServer bind; the slash command and account RPC consult the
-  // same policy, so a non-loopback composition denies every account operation.
-  let accountMode: LoopbackRpcMode = 'blocked'
+  // Account-control activation for the slash command. A terminal composition
+  // composes no public WebServer, so the command starts enabled (local-only
+  // dispatch); the connection inject below records the WebServer bind and
+  // blocks every account operation when the commands seam is exposed beyond
+  // loopback. The account RPC keeps its own ADR-0008 static loopback guard.
+  let accountMode: LoopbackRpcMode = 'enabled'
   ctx.inject(['commands'], commandCtx => {
     commandCtx.commands.register(createCodexAuthCommand(service, () => accountMode))
   })
@@ -137,7 +141,7 @@ export function apply(ctx: Context, config: Config): void {
   })
   ctx.inject(['connection'], connectionCtx => {
     const webServer = connectionCtx.get('webServer')
-    accountMode = loopbackMode(webServer?.host)
+    accountMode = commandAccountMode(webServer)
     const guard = createLoopbackRpcGuard(
       webServer?.host,
       (endpoint, payload, signal) => handleCodexAuthRpc(service, endpoint, payload, signal),

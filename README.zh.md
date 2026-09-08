@@ -40,7 +40,7 @@
 - 进程内合并并发刷新；OAuth 网络请求前后各使用一段短跨进程锁，且只有账户与
   refresh token 谱系仍和决策快照一致时才写入响应。
 - 可启动官方 `codex login` 浏览器登录或设备码登录流程。
-- 在交互式 DSH profile 中注册 `/codex-auth [status|login]`，因此 loopback 绑定的界面无需 Web 设置卡片即可检查无凭据登录状态或启动官方浏览器流程。账户操作与账户 RPC 共享 fail-closed 策略：仅当 DSH Host 显式绑定 `127.0.0.1` 时执行。
+- 在交互式 DSH profile 中注册 `/codex-auth [status|login]`，使终端界面无需 Web 设置卡片即可检查无凭据登录状态或启动官方浏览器流程。账户操作面向本地终端登录入口：本地 DSH Host（无 WebServer，或显式绑定 `127.0.0.1`）可以执行；任何 WebServer 在其它网卡上暴露共享 `commands` 缝的组合都会在不触碰认证服务的前提下拒绝。账户 RPC 仍保留仅 loopback 的 ADR-0008 守卫。
 - 设置页显示连接状态，以及尽力获取的周剩余额度和重置时间。固定的
   `/backend-api/wham/usage` 探测有 10 秒 Host 截止时间，并按窗口时长识别七天窗口。
 - 插件自有的 `/codex-auth` Connection RPC 不会向浏览器发送任何 token 值。只有 Web
@@ -320,7 +320,7 @@ dsh plugin --profile deepseek-tui add dsh-codex-auth
 dsh --profile deepseek-tui
 ```
 
-使用 `/codex-auth` 或 `/codex-auth status` 查看无凭据登录状态；使用 `/codex-auth login` 启动官方浏览器授权流程。账户操作仅在 DSH WebServer 显式绑定 `127.0.0.1` 时执行（与账户 RPC 相同的 fail-closed 策略）；其他组合下命令返回 `loopback-required` 错误。该命令绝不会显示凭据、账号标识或 auth 文件内容。
+使用 `/codex-auth` 或 `/codex-auth status` 查看无凭据登录状态；使用 `/codex-auth login` 启动官方浏览器授权流程：命令会唤起官方 `codex login` CLI（即配置的 `codexCommand`），由它打开浏览器并持有 PKCE 流程；若该 CLI 未安装，命令会给出提示。账户操作面向本地终端登录入口——在无 WebServer 或显式绑定 `127.0.0.1` 的本地 DSH Host 上执行；只要 WebServer 在其它网卡上暴露共享 `commands` 缝，命令就会在不触碰认证服务的前提下拒绝。该命令绝不会显示凭据、账号标识或 auth 文件内容。
 
 ## 安装预构建 Release
 

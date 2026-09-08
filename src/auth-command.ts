@@ -1,7 +1,7 @@
 /** Human command for inspecting and starting the shared Codex login. */
 import type { CommandDefinition } from '@deepseek-ai/dsh-commands'
 import type { CodexAuthService } from './codex-auth-service.ts'
-import { LOOPBACK_REQUIRED_MESSAGE, type LoopbackRpcMode } from './loopback-rpc.ts'
+import { ACCOUNT_COMMAND_DENIED_MESSAGE, type LoopbackRpcMode } from './loopback-rpc.ts'
 import type { CodexAuthStatusView } from './rpc-contract.ts'
 
 type AuthCommandService = Pick<CodexAuthService, 'login' | 'status'>
@@ -23,9 +23,10 @@ function formatStatus(status: CodexAuthStatusView): string {
 /**
  * Build the slash command shared by every interactive DSH surface.
  * @param service - the shared Host auth service.
- * @param accountMode - live account-control activation mode (the same loopback
- * policy the account RPC uses); when blocked the command denies every
- * operation without touching the auth service.
+ * @param accountMode - live account-control activation for this Host
+ * composition (enabled on a local terminal Host with no WebServer or a
+ * loopback-bound WebServer, blocked on a public Web bind); when blocked the
+ * command denies every operation without touching the auth service.
  */
 export function createCodexAuthCommand(
   service: AuthCommandService,
@@ -37,7 +38,7 @@ export function createCodexAuthCommand(
     input: { hint: '[status|login]' },
     handler: async ({ rawInput }) => {
       if (accountMode() === 'blocked') {
-        return { kind: 'error', text: LOOPBACK_REQUIRED_MESSAGE }
+        return { kind: 'error', text: ACCOUNT_COMMAND_DENIED_MESSAGE }
       }
       const operation = rawInput.trim() || 'status'
       if (operation === 'status') {
