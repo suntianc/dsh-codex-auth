@@ -44,6 +44,7 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
   sections before and after OAuth network I/O; a reply is persisted only while
   the account and refresh-token lineage still match.
 - Starts the official `codex login` browser or device-code flow.
+- Registers `/codex-auth [status|login]` on interactive DSH profiles, so a terminal surface can inspect the value-free login state or start the official browser flow without a Web settings card. Account operations are the terminal login entry point: a local DSH Host (no WebServer, or one bound explicitly to `127.0.0.1`) executes them; any composition whose WebServer exposes the shared commands seam on another interface denies them before touching the auth service. The account RPC keeps its own loopback-only ADR-0008 guard.
 - Shows connection state plus best-effort weekly remaining balance/reset time.
   The fixed `/backend-api/wham/usage` probe has a ten-second Host deadline and
   identifies the seven-day window by duration rather than response position.
@@ -381,6 +382,15 @@ dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.6
 ```
 
 With the Web Host bound explicitly to `127.0.0.1`, restart `dsh web`, open Settings, and select **GPT Auth**.
+
+For the terminal interface, install the same bundle into its profile and start the TUI:
+
+```sh
+dsh plugin --profile deepseek-tui add dsh-codex-auth
+dsh --profile deepseek-tui
+```
+
+Use `/codex-auth` or `/codex-auth status` to inspect the value-free login state. Use `/codex-auth login` to start the official browser authorization flow: the command spawns the official `codex login` CLI (the configured `codexCommand`), which opens the browser and owns the PKCE flow, and reports when that CLI is not installed. Account operations are the terminal login entry point — they run on a local DSH Host (no WebServer, or one bound explicitly to `127.0.0.1`) and are denied before touching the auth service whenever the WebServer exposes the shared commands seam on another interface. The command never displays credentials, account identifiers, or auth-file contents.
 
 ## Install a prebuilt release
 
