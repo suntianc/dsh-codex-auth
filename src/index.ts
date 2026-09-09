@@ -40,7 +40,8 @@ import { createCodexAuthCommand } from './auth-command.ts'
 import {
   commandAccountMode, createLoopbackRpcGuard, type LoopbackRpcMode,
 } from './loopback-rpc.ts'
-import { CODEX_AUTH_RPC_CHANNEL, handleCodexAuthRpc } from './rpc.ts'
+import { registerAccountRoutes } from './account-routes.ts'
+import { CODEX_AUTH_RPC_NAMESPACE, handleCodexAuthRpc } from './rpc.ts'
 
 export const name = 'llm-codex-auth'
 export const inject = ['llm']
@@ -149,7 +150,7 @@ export function apply(ctx: Context, config: Config): void {
     if (guard.mode === 'blocked') {
       connectionCtx.logger.warn('llm-codex-auth: account RPC is disabled because the WebServer is not loopback-bound')
     }
-    return connectionCtx.connection.rpc.handle(CODEX_AUTH_RPC_CHANNEL, guard.handler)
+    return registerAccountRoutes(connectionCtx.connection, CODEX_AUTH_RPC_NAMESPACE, ['status', 'usage', 'login'], guard.handler)
   })
   if (config.llmEnabled) {
     ctx.logger.info(

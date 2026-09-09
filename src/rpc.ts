@@ -3,7 +3,7 @@
 import type { ConnectionRpcResult as RpcResult } from '@deepseek-ai/dsh-client-connection'
 import type { CodexAuthService } from './codex-auth-service.ts'
 import type { CodexAuthLoginMode } from './rpc-contract.ts'
-export { CODEX_AUTH_RPC_CHANNEL } from './rpc-contract.ts'
+export { CODEX_AUTH_RPC_CHANNEL, CODEX_AUTH_RPC_NAMESPACE } from './rpc-contract.ts'
 
 /** Dispatch a decoded Host request without ever exposing token material. */
 export async function handleCodexAuthRpc(

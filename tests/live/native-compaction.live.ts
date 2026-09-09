@@ -333,6 +333,7 @@ describe('credential-gated Codex Native compaction live boundary', () => {
       persisted.events,
       persisted.header,
       persisted.inheritedEventCount,
+      'detached',
     )
     resumedHost.probe.expectedNative = firstState.nativeOpaque
     resumedHost.probe.portableFallback = firstState.portableFallback

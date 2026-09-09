@@ -14,6 +14,7 @@ import LlmRuntime, {
   ToolCallId,
   ReasoningEffortId,
   createAssistantMessage,
+  createSystemMessage,
   CONTEXT_WINDOW_EXCEEDED_CODE,
   createToolResultMessage,
   createUserMessage,
@@ -353,8 +354,12 @@ function mountDualCheckpointHost(options: DualHostOptions = {}): {
 function closedConversation(
   id = 'dual-checkpoint',
   reasoningEffort?: string,
+  system?: string,
 ): Session {
   const session = Session.create(SessionId(id))
+  if (system !== undefined) session.append('system/message', {
+    turn: 1, step: 1, message: createSystemMessage(system, 'test'),
+  }, { surfaceOp: 'append' })
   for (let turn = 1; turn <= 2; turn += 1) {
     session.append('turn/start', { turn })
     session.append('user/message', createUserMessage({
@@ -469,6 +474,34 @@ async function drain(stream: AsyncIterable<unknown>): Promise<void> {
 }
 
 describe('Codex Dual Checkpoint manual tracer bullet', () => {
+  it('preserves the V3 system head through Dual compaction, JSON restore, fork, and Native replay', async () => {
+    const { ctx, requests } = mountDualCheckpointHost()
+    const marker = 'V3 durable system instruction for native compaction'
+    const session = closedConversation('v3-dual', undefined, marker)
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    expect(await ctx.compaction.compactNow(idleAgent(session), new AbortController().signal)).not.toBeNull()
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(JSON.stringify(requests.find(request => request.kind === 'native')?.body)).toContain(marker)
+    const persisted = JSON.parse(JSON.stringify({
+      events: session.snapshotEvents(), header: session.header, inheritedEventCount: session.inheritedEventCount,
+    })) as { events: SessionEvent[]; header: typeof session.header; inheritedEventCount: typeof session.inheritedEventCount }
+    const restored = Session.fromRestore(session.id, persisted.events, persisted.header, persisted.inheritedEventCount, 'detached')
+    ctx.sessions.enter(restored)
+    ctx.sessions.announce(restored)
+    const fork = ctx.sessions.fork(restored, undefined, SessionId('v3-dual-fork'))
+    for (const current of [session, restored, fork]) {
+      expect(current.deriveMessages()[0]?.role).toBe('system')
+      expect(messageText(current.deriveMessages()[0]!)).toBe(marker)
+      await drain(ctx.llm.stream({
+        provider: 'openai-codex', model: MODEL, messages: current.deriveMessages(), sessionId: current.id,
+      }))
+      const body = requests.at(-1)!.body
+      expect(JSON.stringify(body)).toContain(marker)
+      expect(JSON.stringify(body.input)).toContain('opaque-remote-checkpoint')
+      expect(JSON.stringify(body.input)).not.toContain(PORTABLE_SUMMARY)
+    }
+  })
+
   it('creates one atomic Dual Checkpoint after Portable success and replays Native next', async () => {
     const { ctx, requests } = mountDualCheckpointHost()
     const debug = vi.spyOn(ctx.logger, 'debug').mockImplementation(() => undefined)
@@ -926,6 +959,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       persisted.events,
       persisted.header,
       persisted.inheritedEventCount,
+      'detached',
     )
     const detach = resumedHost.ctx.sessions.enter(resumed)
     resumedHost.ctx.sessions.announce(resumed)
@@ -949,6 +983,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       persistedFork.events,
       persistedFork.header,
       persistedFork.inheritedEventCount,
+      'detached',
     )
     expect(restoredFork.inheritedEventCount).toBe(fork.inheritedEventCount)
 
@@ -1013,6 +1048,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       persisted.events,
       persisted.header,
       persisted.inheritedEventCount,
+      'detached',
     )
     const detach = resumedHost.ctx.sessions.enter(resumed)
     resumedHost.ctx.sessions.announce(resumed)
@@ -1090,6 +1126,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       persisted.events,
       persisted.header,
       persisted.inheritedEventCount,
+      'detached',
     )
 
     expect(rollback.ctx.compaction).toBeInstanceOf(BasicCompactionEngine)

@@ -3,7 +3,8 @@
 import type { ConnectionRpcResult as RpcResult } from '@deepseek-ai/dsh-client-connection'
 
 /** Logical channel registered by the plugin's Host half and called by its browser half. */
-export const CODEX_AUTH_RPC_CHANNEL = '/codex-auth'
+export const CODEX_AUTH_RPC_CHANNEL = '/api'
+export const CODEX_AUTH_RPC_NAMESPACE = 'codex-auth'
 
 /** One official codex CLI login flow. */
 export type CodexAuthLoginMode = 'browser' | 'device'
@@ -58,19 +59,19 @@ export interface CodexAuthConnectionRpc {
 export function createCodexAuthRpcClient(rpc: CodexAuthConnectionRpc): CodexAuthRpcClient {
   return {
     status: async (signal) => {
-      const result = await rpc.call(CODEX_AUTH_RPC_CHANNEL, 'status', {}, signal)
+      const result = await rpc.call(CODEX_AUTH_RPC_CHANNEL, `${CODEX_AUTH_RPC_NAMESPACE}/status`, {}, signal)
       if (!result.ok) return result
       const status = parseStatusResult(result.value)
       return status === undefined ? invalidResponse('status') : { ok: true, value: { status } }
     },
     usage: async (signal) => {
-      const result = await rpc.call(CODEX_AUTH_RPC_CHANNEL, 'usage', {}, signal)
+      const result = await rpc.call(CODEX_AUTH_RPC_CHANNEL, `${CODEX_AUTH_RPC_NAMESPACE}/usage`, {}, signal)
       if (!result.ok) return result
       const usage = parseUsageResult(result.value)
       return usage === undefined ? invalidResponse('usage') : { ok: true, value: { usage } }
     },
     login: async (mode, signal) => {
-      const result = await rpc.call(CODEX_AUTH_RPC_CHANNEL, 'login', { mode }, signal)
+      const result = await rpc.call(CODEX_AUTH_RPC_CHANNEL, `${CODEX_AUTH_RPC_NAMESPACE}/login`, { mode }, signal)
       if (!result.ok) return result
       return isRecord(result.value) && typeof result.value.started === 'boolean'
         ? { ok: true, value: { started: result.value.started } }

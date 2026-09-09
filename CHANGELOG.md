@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Moves the development baseline to DSH `0.1.5-alpha.1` and pi-ai `0.85.1`. Native and Dual Checkpoint gates accept only that verified conversion graph; restored JSON sessions explicitly use V3 detached event ownership. Account status, usage, and login use authenticated `/api/codex-auth/*` routes, retaining the static loopback guard.
+
 ### Added
 
 - Added a `/codex-auth` slash command (`status` default, `login`) on surfaces that host the DSH `commands` seam. Account operations are the terminal login entry point: they run on a local DSH Host (no WebServer, or an explicitly `127.0.0.1`-bound one) and are denied before touching the auth service whenever the WebServer exposes the shared commands seam on another interface. `login` spawns the official `codex login` CLI, which owns the browser PKCE flow.

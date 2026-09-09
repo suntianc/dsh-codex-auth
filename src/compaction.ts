@@ -66,10 +66,10 @@ type DshRuntimePackage = typeof DSH_RUNTIME_PACKAGES[number]
 /** Conservative allowance for Basic's private framing around returned summary blocks. */
 const BASIC_FRAME_TOKEN_RESERVE = 256
 
-/** Default npm runtime pair; isSupportedDshGraph also admits the verified source graph. */
+/** Exact runtime pair verified against both npm and the matching source artifacts. */
 export const CODEX_COMPACTION_COMPATIBILITY = Object.freeze({
-  dsh: '0.1.2-alpha.5',
-  piAi: '0.84.4',
+  dsh: '0.1.5-alpha.1',
+  piAi: '0.85.1',
 })
 
 /** Runtime facts accepted by the compatibility assertion. */

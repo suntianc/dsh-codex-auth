@@ -106,9 +106,9 @@ describe('dedicated codex-auth RPC', () => {
     const client = createCodexAuthRpcClient({ call })
 
     await expect(client.status()).resolves.toEqual({ ok: true, value: { status: STATUS } })
-    expect(call).toHaveBeenCalledWith(CODEX_AUTH_RPC_CHANNEL, 'status', {}, undefined)
+    expect(call).toHaveBeenCalledWith(CODEX_AUTH_RPC_CHANNEL, 'codex-auth/status', {}, undefined)
     await expect(client.usage()).resolves.toEqual({ ok: true, value: { usage: USAGE } })
-    expect(call).toHaveBeenCalledWith(CODEX_AUTH_RPC_CHANNEL, 'usage', {}, undefined)
+    expect(call).toHaveBeenCalledWith(CODEX_AUTH_RPC_CHANNEL, 'codex-auth/usage', {}, undefined)
     const malformed = await client.login('device')
     expect(malformed.ok).toBe(false)
     if (!malformed.ok) {

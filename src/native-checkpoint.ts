@@ -26,10 +26,10 @@ export const CODEX_NATIVE_CHECKPOINT_RETENTION_GENERATION = 1 as const
 export const CODEX_NATIVE_CHECKPOINT_ESTIMATOR = 'codex-v2-retained-json-plus-opaque-base64-v1' as const
 /** Serialized custom-block ceiling, including its JSON carrier. */
 export const MAX_CODEX_NATIVE_CHECKPOINT_BYTES = 2 * 1024 * 1024
-/** Default npm runtime pair; isSupportedDshGraph also admits the verified source graph. */
+/** Exact runtime pair verified against both npm and the matching source artifacts. */
 export const CODEX_NATIVE_REPLAY_COMPATIBILITY = Object.freeze({
-  dsh: '0.1.2-alpha.5',
-  piAi: '0.84.4',
+  dsh: '0.1.5-alpha.1',
+  piAi: '0.85.1',
 })
 
 /** Installed package facts that decide whether marker replay is safe. */

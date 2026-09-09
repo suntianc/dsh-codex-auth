@@ -99,7 +99,7 @@ describe('dsh-codex-auth client apply', () => {
     const settings = b.slots.find(record => record.options.name === 'settings.section')
     const injected = (settings?.options.inject as (() => CodexCapabilitySettingsProps) | undefined)?.()
     await injected?.rpc.status()
-    expect(b.call).toHaveBeenCalledWith('/codex-auth', 'status', {}, undefined)
+    expect(b.call).toHaveBeenCalledWith('/api', 'codex-auth/status', {}, undefined)
     expect(injected?.t('nav')).toBe('GPT Auth')
 
     b.dispose()

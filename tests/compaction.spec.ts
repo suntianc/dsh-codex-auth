@@ -622,22 +622,22 @@ describe('Codex Portable Checkpoint Adapter', () => {
     expect(adapter.requests.map(request => request.purpose)).toEqual(['compaction', 'compaction'])
   })
 
-  it('accepts the resolved alpha.5 and pi-ai 0.84.4 runtime pair', () => {
+  it('accepts the resolved 0.1.5-alpha.1 and pi-ai 0.85.1 runtime pair', () => {
     expect(() => assertCodexCompactionCompatibility({
       dsh: {
-        '@deepseek-ai/dsh-agent': '0.1.2-alpha.5',
-        '@deepseek-ai/dsh-compaction': '0.1.2-alpha.5',
-        '@deepseek-ai/dsh-compaction-basic': '0.1.2-alpha.5',
-        '@deepseek-ai/dsh-llm': '0.1.2-alpha.5',
-        '@deepseek-ai/dsh-llm-pi-ai': '0.1.2-alpha.5',
-        '@deepseek-ai/dsh-session': '0.1.2-alpha.5',
-        '@deepseek-ai/dsh-token-meter': '0.1.2-alpha.5',
+        '@deepseek-ai/dsh-agent': '0.1.5-alpha.1',
+        '@deepseek-ai/dsh-compaction': '0.1.5-alpha.1',
+        '@deepseek-ai/dsh-compaction-basic': '0.1.5-alpha.1',
+        '@deepseek-ai/dsh-llm': '0.1.5-alpha.1',
+        '@deepseek-ai/dsh-llm-pi-ai': '0.1.5-alpha.1',
+        '@deepseek-ai/dsh-session': '0.1.5-alpha.1',
+        '@deepseek-ai/dsh-token-meter': '0.1.5-alpha.1',
       },
-      piAi: '0.84.4',
+      piAi: '0.85.1',
     })).not.toThrow()
   })
 
-  it('accepts the complete 0.1.3-alpha.1 graph and rejects a mixed Session runtime', () => {
+  it('rejects the previous 0.1.3-alpha.1 graph and a mixed Session runtime', () => {
     const dsh = {
       '@deepseek-ai/dsh-agent': '0.1.3-alpha.1',
       '@deepseek-ai/dsh-compaction': '0.1.3-alpha.1',
@@ -647,40 +647,40 @@ describe('Codex Portable Checkpoint Adapter', () => {
       '@deepseek-ai/dsh-session': '0.1.3-alpha.1',
       '@deepseek-ai/dsh-token-meter': '0.1.3-alpha.1',
     }
-    expect(() => assertCodexCompactionCompatibility({ dsh, piAi: '0.84.4' })).not.toThrow()
+    expect(() => assertCodexCompactionCompatibility({ dsh, piAi: '0.85.1' })).toThrow()
     expect(() => assertCodexCompactionCompatibility({
-      dsh: { ...dsh, '@deepseek-ai/dsh-session': '0.1.2-alpha.5' },
-      piAi: '0.84.4',
+      dsh: { ...dsh, '@deepseek-ai/dsh-session': '0.1.5-alpha.1' },
+      piAi: '0.85.1',
     })).toThrow()
   })
 
   it('fails loud when any experimental DSH or pi-ai runtime package leaves the pinned pair', () => {
     expect(CODEX_COMPACTION_COMPATIBILITY).toEqual({
-      dsh: '0.1.2-alpha.5',
-      piAi: '0.84.4',
+      dsh: '0.1.5-alpha.1',
+      piAi: '0.85.1',
     })
     const pinnedDsh = {
-      '@deepseek-ai/dsh-agent': '0.1.2-alpha.5',
-      '@deepseek-ai/dsh-compaction': '0.1.2-alpha.5',
-      '@deepseek-ai/dsh-compaction-basic': '0.1.2-alpha.5',
-      '@deepseek-ai/dsh-llm': '0.1.2-alpha.5',
-      '@deepseek-ai/dsh-llm-pi-ai': '0.1.2-alpha.5',
-      '@deepseek-ai/dsh-session': '0.1.2-alpha.5',
-      '@deepseek-ai/dsh-token-meter': '0.1.2-alpha.5',
+      '@deepseek-ai/dsh-agent': '0.1.5-alpha.1',
+      '@deepseek-ai/dsh-compaction': '0.1.5-alpha.1',
+      '@deepseek-ai/dsh-compaction-basic': '0.1.5-alpha.1',
+      '@deepseek-ai/dsh-llm': '0.1.5-alpha.1',
+      '@deepseek-ai/dsh-llm-pi-ai': '0.1.5-alpha.1',
+      '@deepseek-ai/dsh-session': '0.1.5-alpha.1',
+      '@deepseek-ai/dsh-token-meter': '0.1.5-alpha.1',
     }
     expect(() => assertCodexCompactionCompatibility({
       dsh: { ...pinnedDsh, '@deepseek-ai/dsh-agent': '0.1.2-alpha.4' },
-      piAi: '0.84.4',
+      piAi: '0.85.1',
     })).toThrow(
-      /requires DSH 0\.1\.2-alpha\.5.*received @deepseek-ai\/dsh-agent=0\.1\.2-alpha\.4/,
+      /requires DSH 0\.1\.5-alpha\.1.*received @deepseek-ai\/dsh-agent=0\.1\.2-alpha\.4/,
     )
     expect(() => assertCodexCompactionCompatibility({
       dsh: { ...pinnedDsh, '@deepseek-ai/dsh-llm-pi-ai': '0.1.2-alpha.4' },
-      piAi: '0.84.4',
+      piAi: '0.85.1',
     })).toThrow(/@deepseek-ai\/dsh-llm-pi-ai=0\.1\.2-alpha\.4/)
     expect(() => assertCodexCompactionCompatibility({
       dsh: pinnedDsh,
       piAi: '0.84.2',
-    })).toThrow(/requires DSH 0\.1\.2-alpha\.5.*pi-ai 0\.84\.4.*pi-ai=0\.84\.2/)
+    })).toThrow(/requires DSH 0\.1\.5-alpha\.1.*pi-ai 0\.85\.1.*pi-ai=0\.84\.2/)
   })
 })

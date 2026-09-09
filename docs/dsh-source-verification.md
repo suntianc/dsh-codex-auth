@@ -1,22 +1,21 @@
 # DSH source compatibility verification
 
-This plugin supports two separately checked DSH graphs: npm `0.1.2-alpha.5` and
-the official `0.1.3-alpha.1` source tag at
-`d347e703908d0406b7a7ef80e3a0e594d86b2215`.
-The latter was not available on npm when this upgrade was verified. Therefore the
-ordinary development dependencies and lockfile retain the installable alpha.5
-baseline. Peer ranges explicitly include the new prerelease; they do not imply
-support for arbitrary prereleases. Do not mix the two graphs.
+This checkout targets the published DSH `0.1.5-alpha.1` graph and its matching
+source tag at `5dda764ed3aa172535a7967b06ff95d9cbfe536a`. Development dependencies,
+the lockfile, peer ranges, and package smoke checks use this baseline. Codex's
+experimental compaction and Native replay additionally require pi-ai `0.85.1`
+and the exact DSH graph. Older plugin releases retain the earlier DSH support;
+the current checkout does not test or advertise that older graph.
 
 ## Build the official artifacts once
 
 Use a separate scratch directory, outside any plugin or live DSH installation:
 
 ```sh
-git clone --depth 1 --branch dsh-v0.1.3-alpha.1 https://github.com/deepseek-ai/deepseek-harness.git harness
+git clone --depth 1 --branch dsh-v0.1.5-alpha.1 https://github.com/deepseek-ai/deepseek-harness.git harness
 cd harness
 git rev-parse HEAD
-# Must be d347e703908d0406b7a7ef80e3a0e594d86b2215.
+# Must be 5dda764ed3aa172535a7967b06ff95d9cbfe536a.
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm run build:lib
 pnpm --filter './packages/**' --filter './vendor/*' -r pack --pack-destination ../dsh-packages
@@ -49,14 +48,14 @@ and generated lockfile stay in the temporary directory. They never enter this
 repository, an installed package, or a user profile.
 
 Package smoke checks accept both registry and source-artifact lock identities
-while continuing to verify the selected version. The default check remains on
-alpha.5; the source runner selects alpha.1 using `DSH_VERIFY_VERSION`.
+while continuing to verify the selected version. Both registry and source
+checks target `0.1.5-alpha.1`; source checks use `DSH_VERIFY_VERSION` explicitly.
 
 ## 中文说明
 
-本次增加对 DSH `0.1.3-alpha.1` 固定源码版本的支持，同时保留
-`0.1.2-alpha.5` 的可安装开发依赖与锁文件。原因是目标 DSH npm 包尚未发布。
-两套图分别完成验证，不能混用；这不是跳过 peer 检查。
+当前检出版本以已发布的 DSH `0.1.5-alpha.1` 为开发与最低支持基线，
+锁文件、peer 与打包检查使用同一套依赖图。Codex 实验性压缩与 Native 回放
+还要求 pi-ai `0.85.1` 及准确的 DSH 版本；旧 DSH 请保留旧插件版本。
 
 按上面的固定 tag 构建、打包一次，然后在本插件目录运行
 `pnpm run check:dsh-source -- /绝对路径/dsh-packages`。脚本在临时目录内安装

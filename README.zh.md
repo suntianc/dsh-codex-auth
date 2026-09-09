@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH 兼容性：** 已分别验证 `0.1.2-alpha.5` 与 `0.1.3-alpha.1` 两套依赖图。目标 DSH npm 包尚未发布，开发锁文件暂保留 alpha.5；新版本使用固定源码制品验证。见[源码验证说明](docs/dsh-source-verification.md)。
+> **DSH 兼容性（未发布的开发版本）：** 当前检出版本以 `0.1.5-alpha.1` 为开发与最低支持基线，依赖图必须保持一致。已发布的 alpha.6 不包含本次适配；旧 DSH 用户继续使用旧插件版本。见[验证说明](docs/dsh-source-verification.md)。
 
 [![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 [English](README.md) | 中文
 
-当前 alpha 版本：**v0.3.3-alpha.6**，支持 DSH `0.1.2-alpha.5` 与 `0.1.3-alpha.1`，使用 Cordis `4.0.2`、Schemastery `3.18.2` 与 pi-ai `0.84.4`。
+最近已发布版本：**v0.3.3-alpha.6**（适用于旧 DSH；本次适配尚未发布）。
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -23,6 +23,10 @@
 > **⚠️ 非官方通道——仅限个人开发。** 私有、受账户权限控制的
 > `chatgpt.com/backend-api` 未获官方支持、可随时撤销，也可能在没有通知的情况下被限流
 > 或变更。请勿依赖它承载生产任务。
+
+## 未发布：DSH 0.1.5 适配
+
+开发基线升级到 DSH `0.1.5-alpha.1` 与 pi-ai `0.85.1`。Native／Dual Checkpoint 门禁只接受这套经过验证的转换依赖图；JSON 会话恢复显式使用 V3 detached 事件所有权。账号状态、用量与登录使用经过认证的 `/api/codex-auth/*`，保留原有静态 loopback 限制。
 
 ## v0.3.3-alpha.5 重点更新
 
@@ -49,7 +53,7 @@
 
 ### GPT-5.6 与 GPT-6 Astra 长上下文
 
-即使已安装的 pi-ai `0.84.4` 目录尚未列出 GPT-6 Astra，`openai-codex` 路由也会
+即使已安装的 pi-ai `0.85.1` 目录尚未列出 GPT-6 Astra，`openai-codex` 路由也会
 提供 `gpt-6-astra`。GPT Auth 设置在登录卡片与能力卡片之间提供实时生效、默认关闭的
 **1M 上下文**开关。它会把 `gpt-6-astra`、`gpt-5.6-luna`、`gpt-5.6-sol`、
 `gpt-5.6-terra` 向 DSH 报告的上下文窗口从保守的 272,000 Token 提升到 1,000,000 Token。
@@ -147,7 +151,7 @@ Codex 请求会增加 Native 同级表示，任何不兼容或 Native 失败都�
 Checkpoint。即使下一次兼容 provider 请求实际回放 Native，stock conversation 视图仍会
 刻意显示 Portable 文本。
 
-该实验性导出支持完整一致的 DSH / Basic compaction `0.1.2-alpha.5` 或 `0.1.3-alpha.1` 图，均要求 pi-ai `0.84.4`；
+该实验性导出支持完整一致的 DSH / Basic compaction `0.1.5-alpha.1` 图，均要求 pi-ai `0.85.1`；
 在其他版本组合上挂载会给出可操作的兼容性错误并失败。长上下文模式可以改变 pressure
 压缩的触发时机，但不会改变 Native activation、codec、retention、v2 payload、回放兼容性
 或一次性 turn-continuation 契约。回滚时只需重新选择 DSH 内置 preset；已有会话仍可通过
@@ -184,14 +188,14 @@ Basic 负责。
 只有当 checkpoint 的 schema/codec/retention generation、provider、精确 model、哈希后的
 Codex account identity、instructions、tools、parallel/tool-choice controls、reasoning、text
 配置与 service tier 都匹配**最终生效**的 Responses 请求时，才会执行 Native 回放。Pi-ai
-`0.84.4` 可能把 GPT-5.6 的 deferred tools 编码为 `additional_tools` input item；该语义历史
+`0.85.1` 可能把 GPT-5.6 的 deferred tools 编码为 `additional_tools` input item；该语义历史
 不在当前 codec 的兼容 digest 内，因此这类 payload 在回放和新建 Native 时都会保守改用
 Portable 文本。组合的 payload callback 可以改变已有建模控制项；callback 完成后会重新判定
 并选择 Native 或 Portable。
 Request ID、prompt-cache key、临时 header、turn state 与 Long Context Mode 不参与兼容性。
 未知、损坏、超过 2 MiB、含 secret、混合格式或不兼容的状态会退化为 Portable 文本。生成的
 marker 只存在于 Host；marker 缺失、重复、嵌入、泄漏或未消费时会在网络请求之前失败。
-回放 converter 要求 DSH LLM / pi-ai Adapter 同为 `0.1.2-alpha.5` 或同为 `0.1.3-alpha.1`，且 pi-ai 为 `0.84.4`；混合或其他
+回放 converter 要求 DSH LLM / pi-ai Adapter 同为 `0.1.5-alpha.1`，且 pi-ai 为 `0.84.4`；混合或其他
 runtime 组合只使用 Portable 文本。Adapter generation 替换或 HMR 会使进程内 replay 与
 turn-continuation 状态失效，但不会修改持久化 Dual Checkpoint。
 
@@ -297,71 +301,31 @@ DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 
 
 ## 环境要求
 
-- DeepSeek Harness `0.1.2-alpha.5` 或 `0.1.3-alpha.1`（两套依赖图分别验证）；不要与旧 rc 包族混装。
+- DeepSeek Harness `0.1.5-alpha.1`（统一依赖图）；不要与旧 rc 包族混装。
 - Node.js `^22.19.0` 或 `>=24.0.0`。
 - `PATH` 中可用 `pnpm`（本项目测试版本为 `11.7.0`）。
 - `codex` CLI 已加入 `PATH`。
 - 可提前执行 `codex login`，也可在 GPT Auth 卡片中启动登录。
 
-## 从 npm 安装（推荐）
+## 安装本次开发适配
 
-npm 包已包含预构建的 Host 与浏览器 bundle，不需要安装期构建权限。请显式安装支持上述两套 DSH 依赖图的版本：
+本次改动尚未发布到 npm，不能通过安装已发布的 `0.3.3-alpha.6` 获得。在本插件检出目录构建并打包：
 
 ```sh
-dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.6
+pnpm install --frozen-lockfile
+pnpm run check
+npm pack
 ```
 
-确认 Web Host 明确绑定 `127.0.0.1` 后，重启 `dsh web`，打开设置并选择 **GPT Auth**。
-
-要在终端界面中使用，请把同一 bundle 安装到 TUI profile 并启动：
+先停止 `dsh web`，将目标 Host 升级到 DSH `0.1.5-alpha.1`，再将上一步实际生成的本地制品安装到需要升级的 profile：
 
 ```sh
-dsh plugin --profile deepseek-tui add dsh-codex-auth
-dsh --profile deepseek-tui
-```
-
-使用 `/codex-auth` 或 `/codex-auth status` 查看无凭据登录状态；使用 `/codex-auth login` 启动官方浏览器授权流程：命令会唤起官方 `codex login` CLI（即配置的 `codexCommand`），由它打开浏览器并持有 PKCE 流程；若该 CLI 未安装，命令会给出提示。账户操作面向本地终端登录入口——在无 WebServer 或显式绑定 `127.0.0.1` 的本地 DSH Host 上执行；只要 WebServer 在其它网卡上暴露共享 `commands` 缝，命令就会在不触碰认证服务的前提下拒绝。该命令绝不会显示凭据、账号标识或 auth 文件内容。
-
-## 安装预构建 Release
-
-以下 GitHub 示例固定到先前的 0.3.3-alpha.5；本次 0.3.3-alpha.6 请使用上面的 npm 安装命令。
-
-```sh
-dsh plugin --profile web add https://github.com/suntianc/dsh-codex-auth/releases/download/v0.3.3-alpha.5/dsh-codex-auth-0.3.3-alpha.5.tgz
-```
-
-确认 Web Host 明确绑定 `127.0.0.1` 后，重启 `dsh web`，打开设置并选择 **GPT Auth**。
-
-## 从 GitHub tag 源码安装
-
-以下 GitHub 示例固定到先前的 0.3.3-alpha.5；本次 0.3.3-alpha.6 请使用上面的 npm 安装命令。
-
-```sh
-dsh plugin --profile web add github:suntianc/dsh-codex-auth#v0.3.3-alpha.5
-```
-
-Git 依赖会通过包内 `prepare` 脚本从源码构建。pnpm 10+ 默认阻止该脚本，因此第一次安装
-可能打印 `allowBuilds` 键并停止。把 **dsh 输出的完整键** 加到 dsh 输出的
-`pnpm-workspace.yaml` 路径下的 `allowBuilds`，再重新执行安装。只应在审查并信任源码后授权。
-
-## 从 tarball 安装
-
-```sh
-npm pack dsh-codex-auth@0.3.3-alpha.6
+dsh --version
 dsh plugin --profile web add ./dsh-codex-auth-0.3.3-alpha.6.tgz
-```
-
-## 升级
-
-先停止正在运行的 `dsh web`，确认 Host 本身已经是 DSH `0.1.2-alpha.5` 或 `0.1.3-alpha.1`；若不是，必须先升级 DSH。随后安装匹配的插件版本并核对 Web Profile 条目：
-
-```sh
-dsh --version # 必须显示 0.1.2-alpha.5 或 0.1.3-alpha.1
-dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.6
 dsh plugin --profile web list
 ```
 
-列表显示 `dsh-codex-auth@0.3.3-alpha.6` 后，重新启动 `dsh web` 并刷新浏览器。
+核对条目后重启 `dsh web` 并刷新浏览器。后续正式发布版本应使用其准确版本号；本次开发适配没有发布、修改现用 profile 或升级全局 DSH。旧 DSH 安装继续使用 [alpha.6 发布记录](https://github.com/suntianc/dsh-codex-auth/releases)。
 
 ## Host 配置
 
