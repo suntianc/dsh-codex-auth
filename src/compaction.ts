@@ -68,7 +68,7 @@ const BASIC_FRAME_TOKEN_RESERVE = 256
 
 /** Exact runtime pair verified against both npm and the matching source artifacts. */
 export const CODEX_COMPACTION_COMPATIBILITY = Object.freeze({
-  dsh: '0.1.5-alpha.1',
+  dsh: '0.1.5-rc.1',
   piAi: '0.85.1',
 })
 

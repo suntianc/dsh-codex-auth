@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH compatibility:** v0.3.3-alpha.7 targets `0.1.5-alpha.1` as its development and minimum supported baseline, with a coherent dependency graph. Keep older plugin releases for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
+> **DSH compatibility:** `0.3.3-rc.1` targets DSH `0.1.5-rc.1` as its development and minimum supported baseline, with a coherent dependency graph. Keep compatible older plugin releases for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
 
 [![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 English | [中文](README.zh.md)
 
-Release version: **v0.3.3-alpha.7** (`alpha` channel).
+Release: **v0.3.3-rc.1** (npm tag: `rc`).
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -25,6 +25,10 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 > account-gated `chatgpt.com/backend-api` surface is unsupported, revocable, and
 > may be rate-limited or changed without notice. Do not rely on it for
 > production workloads.
+
+## 0.3.3-rc.1: DSH 0.1.5-rc.1 adaptation
+
+Targets the coherent DSH `0.1.5-rc.1` graph with pi-ai `0.85.1`. Supplies the new pi-ai model-error map so ordinary and prepared model requests reach the provider. Compaction and Native replay accept exactly RC.1, reject mixed/unverified graphs, and preserve the durable checkpoint codec and Portable fallback.
 
 ## v0.3.3-alpha.7 highlights
 
@@ -188,7 +192,7 @@ keeps the valid Portable Checkpoint. Stock conversation views intentionally show
 the Portable text even when the next compatible provider request replays Native.
 
 This experimental export supports homogeneous DSH / Basic compaction graphs at
-`0.1.5-alpha.1`, each with pi-ai `0.85.1`; a mixed or unverified pair fails with an
+`0.1.5-rc.1`, each with pi-ai `0.85.1`; a mixed or unverified pair fails with an
 actionable compatibility error. Long Context Mode may change when pressure
 compaction runs, but does not change native activation, codec, retention, v2
 payload, replay compatibility, or the one-shot turn-continuation contract.
@@ -245,7 +249,7 @@ malformed, oversized (over 2 MiB), secret-bearing, mixed, or incompatible state
 degrades to Portable text. Generated markers are Host-only and any missing,
 duplicate, embedded, leaked, or unconsumed marker fails before network I/O. The
 replay converter accepts matching DSH LLM / pi-ai Adapter versions at
-`0.1.5-alpha.1`, with pi-ai `0.85.1`; mixed or unverified runtime pairs use Portable text instead. Adapter generation
+`0.1.5-rc.1`, with pi-ai `0.85.1`; mixed or unverified runtime pairs use Portable text instead. Adapter generation
 replacement or HMR invalidates process-local replay and turn-continuation state,
 while the durable Dual Checkpoint remains unchanged for a later request.
 
@@ -392,7 +396,7 @@ assistant ImageBlock.
 
 ## Requirements
 
-- DeepSeek Harness `0.1.5-alpha.1` (tested coherent dependency graph); do not mix it with an older rc package family.
+- DeepSeek Harness `0.1.5-rc.1` (tested coherent dependency graph); do not mix it with an older rc package family.
 - Node.js `^22.19.0` or `>=24.0.0`.
 - `pnpm` available on `PATH` (`11.7.0` is the tested project package manager).
 - The `codex` CLI available on `PATH`.
@@ -400,15 +404,15 @@ assistant ImageBlock.
 
 ## Install
 
-Stop `dsh web` and ensure the target Host uses DSH `0.1.5-alpha.1` with a coherent dependency graph. Install the exact prerelease into the intended profile:
+Stop `dsh web`, ensure the target Host uses a coherent DSH `0.1.5-rc.1` graph, then install the exact prerelease into the intended profile:
 
 ```sh
 dsh --version
-dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.7
+dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.1
 dsh plugin --profile web list
 ```
 
-Verify the entry, restart `dsh web`, and refresh the browser. This prerelease uses the `alpha` npm dist-tag; an unversioned install may select an older `latest` release. Older DSH installations should retain a compatible older plugin release.
+Verify the entry, restart `dsh web`, and refresh the browser. This version uses the npm `rc` tag. An install without a version or tag selects `latest`, which does not include this RC1 adaptation. Older DSH Hosts should retain a compatible older plugin release.
 
 ## Host configuration
 

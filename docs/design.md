@@ -1,6 +1,6 @@
 # dsh-codex-auth — design record
 
-Status: **adapted in this unpublished working tree for DSH `0.1.5-alpha.1`; Workspace Export remains disabled pending a policy-aware binary workspace-write API**.
+Status: **adapted in this unpublished working tree for DSH `0.1.5-rc.1`; Workspace Export remains disabled pending a policy-aware binary workspace-write API**.
 
 The canonical project language lives in [`CONTEXT.md`](../CONTEXT.md). This document records implementation boundaries and the accepted design.
 
@@ -210,7 +210,7 @@ The independently navigable section keeps the name **GPT Auth** and the stock ic
 
 Search and Image register live settings under the plugin's DSH settings namespace. Both default enabled after installation. Disabling one immediately removes its model capability for current and future Agents without restarting. Logged-out cards are unavailable rather than probing capability endpoints.
 
-DSH `0.1.5-alpha.1` is the minimum and tested settings baseline. The Host installs each namespace through `ctx.settings.installSection()`, while the browser face owns one top-level `settings.section` and binds `codex-llm`, `codex-search`, and `codex-image` through `ctx.settingsScope`. The client registers that privileged section only when `ConnectionHandle.isLoopback` is true; image result views remain available independently. Historically, rc7 was the first Host baseline that exposed plugin namespaces to Web settings, but it is no longer in this package's supported dependency family.
+DSH `0.1.5-rc.1` is the minimum and tested settings baseline. The Host installs each namespace through `ctx.settings.installSection()`, while the browser face owns one top-level `settings.section` and binds `codex-llm`, `codex-search`, and `codex-image` through `ctx.settingsScope`. The client registers that privileged section only when `ConnectionHandle.isLoopback` is true; image result views remain available independently. Historically, rc7 was the first Host baseline that exposed plugin namespaces to Web settings, but it is no longer in this package's supported dependency family.
 
 The Login card combines locally verified connection state with a best-effort, value-free account-usage view. When a usable login exists, the Host requests the fixed `/backend-api/wham/usage` endpoint with a ten-second Host deadline, identifies the seven-day window by `limit_window_seconds`, and sends only plan/balance/reset facts to the browser. Cancellation, auth failure, malformed data, a missing weekly window, or upstream failure degrades to unknown values. The UI performs no test search or test generation. Compatibility and private-endpoint disclosures live in repository documentation, not in the settings cards.
 

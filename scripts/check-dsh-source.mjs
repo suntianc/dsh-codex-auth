@@ -74,7 +74,7 @@ await writeFile(workspacePath, workspace + '\nautoInstallPeers: true\noverrides:
   + Object.entries(overrides).map(([name, value]) => '  ' + JSON.stringify(name) + ': ' + JSON.stringify(value)).join('\n') + '\n')
 await writeFile(join(stage, 'artifacts.json'), JSON.stringify({
   target: DSH_SOURCE_VERSION,
-  expectedSourceCommit: '5dda764ed3aa172535a7967b06ff95d9cbfe536a',
+  expectedSourceCommit: '183f08e9c6dde7e36cd2318eaee70b0da08fb35e',
   // The build recipe establishes provenance. These checksums identify the supplied bytes.
   packages: receipt,
 }, null, 2) + '\n')

@@ -1,8 +1,8 @@
 /** The supported npm baseline and matching official source tag. */
-export const DSH_BASELINE = '0.1.5-alpha.1'
-export const DSH_SOURCE_VERSION = '0.1.5-alpha.1'
-export const DSH_PEER_RANGE = '^0.1.5-alpha.1'
-export const DSH_EXPERIMENTAL_PEER_RANGE = '0.1.5-alpha.1'
+export const DSH_BASELINE = '0.1.5-rc.1'
+export const DSH_SOURCE_VERSION = '0.1.5-rc.1'
+export const DSH_PEER_RANGE = '^0.1.5-rc.1'
+export const DSH_EXPERIMENTAL_PEER_RANGE = '0.1.5-rc.1'
 export const DSH_VERIFY_VERSION = process.env.DSH_VERIFY_VERSION ?? DSH_BASELINE
 if (![DSH_BASELINE, DSH_SOURCE_VERSION].includes(DSH_VERIFY_VERSION)) {
   throw new Error('Unsupported DSH verification version')

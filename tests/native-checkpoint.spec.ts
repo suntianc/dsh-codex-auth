@@ -159,24 +159,36 @@ describe('Codex Native Checkpoint codec', () => {
 
   it('pins replay to the observed DSH and pi-ai conversion pair', () => {
     expect(CODEX_NATIVE_REPLAY_COMPATIBILITY).toEqual({
-      dsh: '0.1.5-alpha.1',
+      dsh: '0.1.5-rc.1',
       piAi: '0.85.1',
     })
     expect(isCodexNativeReplayRuntimeCompatible()).toBe(true)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.5-alpha.1',
-      dshPiAi: '0.1.5-alpha.1',
+      dshLlm: '0.1.5-rc.1',
+      dshPiAi: '0.1.5-rc.1',
       piAi: '0.85.1',
     })).toBe(true)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.5-alpha.1',
+      dshLlm: '0.1.5-rc.1',
       dshPiAi: '0.1.2-alpha.6',
       piAi: '0.85.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.5-alpha.1',
-      dshPiAi: '0.1.5-alpha.1',
+      dshLlm: '0.1.5-rc.1',
+      dshPiAi: '0.1.5-rc.1',
       piAi: '0.84.2',
+    })).toBe(false)
+  })
+
+  it.each(['0.1.5-alpha.1', '0.1.5-rc.2'])('rejects the unverified %s converter and mixed RC graph', version => {
+    expect(isCodexNativeReplayRuntimeCompatible({
+      dshLlm: version, dshPiAi: version, piAi: '0.85.1',
+    })).toBe(false)
+    expect(isCodexNativeReplayRuntimeCompatible({
+      dshLlm: version, dshPiAi: '0.1.5-rc.1', piAi: '0.85.1',
+    })).toBe(false)
+    expect(isCodexNativeReplayRuntimeCompatible({
+      dshLlm: '0.1.5-rc.1', dshPiAi: version, piAi: '0.85.1',
     })).toBe(false)
   })
 
@@ -185,7 +197,7 @@ describe('Codex Native Checkpoint codec', () => {
       dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '0.85.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.5-alpha.1', piAi: '0.85.1',
+      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.5-rc.1', piAi: '0.85.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
       dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '0.84.2',
@@ -527,6 +539,7 @@ function registerPiAiAdapter(ctx: Context): { readonly provider: string; readonl
   const model = piProvider.getModels()[0]?.id
   if (model === undefined) throw new Error('pi-ai openai fixture has no model')
   const profile: ResolvedPiAiProviderProfile = {
+    modelErrors: new Map(),
     provider: piProvider.id,
     displayName: 'Foreign pi-ai fixture',
     streamIdleTimeoutMs: 5_000,

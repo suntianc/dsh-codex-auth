@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.3-rc.1] - 2026-09-10
+
+- Targets the coherent DSH `0.1.5-rc.1` graph with pi-ai `0.85.1`. Supplies the new pi-ai model-error map so ordinary and prepared model requests reach the provider. Compaction and Native replay accept exactly RC.1, reject mixed/unverified graphs, and preserve the durable checkpoint codec and Portable fallback.
 
 ## [0.3.3-alpha.7] - 2026-09-09
 

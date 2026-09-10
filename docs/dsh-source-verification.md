@@ -1,7 +1,7 @@
 # DSH source compatibility verification
 
-This checkout targets the published DSH `0.1.5-alpha.1` graph and its matching
-source tag at `5dda764ed3aa172535a7967b06ff95d9cbfe536a`. Development dependencies,
+This checkout targets the published DSH `0.1.5-rc.1` graph and its matching
+source tag at `183f08e9c6dde7e36cd2318eaee70b0da08fb35e`. Development dependencies,
 the lockfile, peer ranges, and package smoke checks use this baseline. Codex's
 experimental compaction and Native replay additionally require pi-ai `0.85.1`
 and the exact DSH graph. Older plugin releases retain the earlier DSH support;
@@ -12,10 +12,10 @@ the current checkout does not test or advertise that older graph.
 Use a separate scratch directory, outside any plugin or live DSH installation:
 
 ```sh
-git clone --depth 1 --branch dsh-v0.1.5-alpha.1 https://github.com/deepseek-ai/deepseek-harness.git harness
+git clone --depth 1 --branch dsh-v0.1.5-rc.1 https://github.com/deepseek-ai/deepseek-harness.git harness
 cd harness
 git rev-parse HEAD
-# Must be 5dda764ed3aa172535a7967b06ff95d9cbfe536a.
+# Must be 183f08e9c6dde7e36cd2318eaee70b0da08fb35e.
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm run build:lib
 pnpm --filter './packages/**' --filter './vendor/*' -r pack --pack-destination ../dsh-packages
@@ -49,11 +49,11 @@ repository, an installed package, or a user profile.
 
 Package smoke checks accept both registry and source-artifact lock identities
 while continuing to verify the selected version. Both registry and source
-checks target `0.1.5-alpha.1`; source checks use `DSH_VERIFY_VERSION` explicitly.
+checks target `0.1.5-rc.1`; source checks use `DSH_VERIFY_VERSION` explicitly.
 
 ## 中文说明
 
-当前检出版本以已发布的 DSH `0.1.5-alpha.1` 为开发与最低支持基线，
+当前检出版本以已发布的 DSH `0.1.5-rc.1` 为开发与最低支持基线，
 锁文件、peer 与打包检查使用同一套依赖图。Codex 实验性压缩与 Native 回放
 还要求 pi-ai `0.85.1` 及准确的 DSH 版本；旧 DSH 请保留旧插件版本。
 

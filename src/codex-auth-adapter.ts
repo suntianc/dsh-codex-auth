@@ -267,6 +267,7 @@ export class CodexAuthAdapter extends PiAiAdapter {
   constructor(ctx: Context, options: CodexAuthAdapterOptions) {
     const nativeReplay = new CodexNativeCheckpointReplay()
     const profile: ResolvedPiAiProviderProfile = {
+      modelErrors: new Map(),
       provider: CODEX_ROUTE,
       displayName: options.displayName,
       streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
