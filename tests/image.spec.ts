@@ -1,5 +1,6 @@
 /** Public ToolRuntime seam regressions for Codex Image Creation and Image Catalog. */
 import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -10,7 +11,7 @@ import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { describe, expect, it, vi } from 'vitest'
 import { mountCustomCompaction } from './support/compaction-fixture.ts'
 import {
-  CODEX_IMAGE_EDIT_ENDPOINT, CODEX_IMAGE_GENERATION_ENDPOINT, createCodexImageTools,
+  CODEX_IMAGE_EDIT_ENDPOINT, CODEX_IMAGE_GENERATION_ENDPOINT, Config, createCodexImageTools,
   type CodexImageSettings, type CodexImageToolOptions,
 } from '../src/image.ts'
 
@@ -126,6 +127,82 @@ async function execute(
 }
 
 describe('generate_image', () => {
+  it('keeps a valid image and reports when the backend returns a different size', async () => {
+    const b = bench()
+    const result = await execute(b.tools, 'generate_image', { prompt: 'a fox', model: 'gpt-image-2.5-sunburst', size: '1536x864' })
+    expect(result.isError).toBe(false)
+    if (!result.isError) expect(result.value).toMatchObject({
+      images: [{ attachment: { width: 1, height: 1 } }],
+      warnings: [expect.objectContaining({ code: 'IMAGE_SIZE_MISMATCH', message: expect.stringContaining('1536x864') })],
+    })
+    await b.ctx.fiber.dispose()
+  })
+
+  it('defaults new configurations to Sunburst and preserves explicit existing model settings', () => {
+    expect(z.resolve({}, Config, {})[0]).toMatchObject({ model: 'gpt-image-2.5-sunburst' })
+    expect(z.resolve({ model: 'gpt-image-2' }, Config, {})[0]).toMatchObject({ model: 'gpt-image-2' })
+    expect(z.resolve({ model: 'gpt-image-2.5-flare', quality: 'max', size: '1536x864' }, Config, {})[0]).toMatchObject({ quality: 'max', size: '1536x864' })
+    expect(() => z.resolve({ size: '256x256' }, Config, {})).toThrow()
+  })
+
+  it.each(['1536x864', '640x1024', '3840x2160', '768x2304'])('accepts a bounded custom size %s from tool arguments and saved settings', async (size) => {
+    for (const useDefaults of [false, true]) {
+      const settings = { ...SETTINGS, model: 'gpt-image-2.5-flare', size, quality: 'max' }
+      const b = bench(useDefaults ? { settings: () => settings as CodexImageSettings } : {})
+      const result = await execute(b.tools, 'generate_image', {
+        prompt: 'a fox', ...(useDefaults ? {} : { model: settings.model, size }),
+      })
+      expect(result.isError).toBe(false)
+      expect(JSON.parse(String(b.fetchImpl.mock.calls[0]?.[1]?.body))).toMatchObject({ size })
+      await b.ctx.fiber.dispose()
+    }
+  })
+
+  it.each(['1537x864', '3841x2160', '3840x3840', '256x256', '3072x768', '0x1024', '1024X1024', 'junk'])('rejects invalid custom size %s before credentials or dispatch', async (size) => {
+    const b = bench()
+    const result = await execute(b.tools, 'generate_image', { prompt: 'a fox', model: 'gpt-image-2.5-sunburst', size })
+    expect(result.isError).toBe(true)
+    expect(b.options.auth.credential).not.toHaveBeenCalled()
+    expect(b.fetchImpl).not.toHaveBeenCalled()
+    await b.ctx.fiber.dispose()
+  })
+
+  it('does not assume a legacy or custom model accepts 2.5 custom dimensions', async () => {
+    for (const model of ['gpt-image-2', 'custom-image-model']) {
+      const b = bench()
+      const result = await execute(b.tools, 'generate_image', { prompt: 'a fox', model, size: '1536x864' })
+      expect(result.isError).toBe(true)
+      expect(b.fetchImpl).not.toHaveBeenCalled()
+      await b.ctx.fiber.dispose()
+    }
+  })
+
+  it.each(['gpt-image-2.5-sunburst', 'gpt-image-2.5-flare'])('dispatches advanced quality for %s through generation and editing', async (model) => {
+    for (const quality of ['xhigh', 'max']) {
+      for (const editing of [false, true]) {
+        const b = bench()
+        const result = await execute(b.tools, 'generate_image', {
+          prompt: 'a red fox', model, quality,
+          ...(editing ? { references: [{ kind: 'workspace', path: 'assets/reference.png' }] } : {}),
+        })
+        expect(result.isError).toBe(false)
+        const [url, init] = b.fetchImpl.mock.calls[0] ?? []
+        expect(url).toBe(editing ? CODEX_IMAGE_EDIT_ENDPOINT : CODEX_IMAGE_GENERATION_ENDPOINT)
+        expect(JSON.parse(String(init?.body))).toMatchObject({ model, quality })
+        await b.ctx.fiber.dispose()
+      }
+    }
+  })
+
+  it('rejects advanced quality for an earlier model before credentials or network access', async () => {
+    const b = bench()
+    const result = await execute(b.tools, 'generate_image', { prompt: 'a fox', model: 'gpt-image-2', quality: 'max' })
+    expect(result.isError).toBe(true)
+    expect(b.options.auth.credential).not.toHaveBeenCalled()
+    expect(b.fetchImpl).not.toHaveBeenCalled()
+    await b.ctx.fiber.dispose()
+  })
+
   it.each([
     ['inactive', false],
     ['active', true],

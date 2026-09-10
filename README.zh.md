@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH 兼容性（未发布的开发版本）：** 当前检出版本以 `0.1.5-alpha.1` 为开发与最低支持基线，依赖图必须保持一致。已发布的 alpha.6 不包含本次适配；旧 DSH 用户继续使用旧插件版本。见[验证说明](docs/dsh-source-verification.md)。
+> **DSH 兼容性：** v0.3.3-alpha.7 以 `0.1.5-alpha.1` 为开发与最低支持基线，依赖图必须保持一致。旧 DSH 用户继续使用兼容的旧插件版本。见[验证说明](docs/dsh-source-verification.md)。
 
 [![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 [English](README.md) | 中文
 
-最近已发布版本：**v0.3.3-alpha.6**（适用于旧 DSH；本次适配尚未发布）。
+发行版本：**v0.3.3-alpha.7**（`alpha` 通道）。
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -24,9 +24,11 @@
 > `chatgpt.com/backend-api` 未获官方支持、可随时撤销，也可能在没有通知的情况下被限流
 > 或变更。请勿依赖它承载生产任务。
 
-## 未发布：DSH 0.1.5 适配
+## v0.3.3-alpha.7 重点更新
 
 开发基线升级到 DSH `0.1.5-alpha.1` 与 pi-ai `0.85.1`。Native／Dual Checkpoint 门禁只接受这套经过验证的转换依赖图；JSON 会话恢复显式使用 V3 detached 事件所有权。账号状态、用量与登录使用经过认证的 `/api/codex-auth/*`，保留原有静态 loopback 限制。
+
+新增 GPT Image 2.5 Sunburst／Flare、高画质选项与自定义尺寸校验。新图片配置默认使用 Sunburst，保留已明确保存的模型选择；后端返回尺寸不符时保留有效图片并给出警告。`/codex-auth` 命令提供本地终端账号状态与登录入口。
 
 ## v0.3.3-alpha.5 重点更新
 
@@ -195,7 +197,7 @@ Portable 文本。组合的 payload callback 可以改变已有建模控制项�
 Request ID、prompt-cache key、临时 header、turn state 与 Long Context Mode 不参与兼容性。
 未知、损坏、超过 2 MiB、含 secret、混合格式或不兼容的状态会退化为 Portable 文本。生成的
 marker 只存在于 Host；marker 缺失、重复、嵌入、泄漏或未消费时会在网络请求之前失败。
-回放 converter 要求 DSH LLM / pi-ai Adapter 同为 `0.1.5-alpha.1`，且 pi-ai 为 `0.84.4`；混合或其他
+回放 converter 要求 DSH LLM / pi-ai Adapter 同为 `0.1.5-alpha.1`，且 pi-ai 为 `0.85.1`；混合或其他
 runtime 组合只使用 Portable 文本。Adapter generation 替换或 HMR 会使进程内 replay 与
 turn-continuation 状态失效，但不会修改持久化 Dual Checkpoint。
 
@@ -277,11 +279,27 @@ cursor 和来源筛选，同时返回稳定 Image Handle 与真实 ImageBlock，
 | 设置 | 默认值 | 可选值 |
 |---|---:|---|
 | 启用 | `true` | 开 / 关 |
-| 图片模型 | `gpt-image-2` | 图片模型 ID |
+| 图片模型 | `gpt-image-2.5-sunburst` | Sunburst、Flare、`gpt-image-2` 或自定义模型 ID |
 | 图片数量 | `1` | 1–10 |
-| 尺寸 | `auto` | `auto`、`1024x1024`、`1536x1024`、`1024x1536` |
-| 质量 | `auto` | `auto`、`low`、`medium`、`high` |
+| 尺寸 | `auto` | `auto`、`1024x1024`、`1536x1024`、`1024x1536`，或通过校验的 GPT Image 2.5 `宽x高` |
+| 质量 | `auto` | `auto`、`low`、`medium`、`high`；GPT Image 2.5 另支持 `xhigh`、`max` |
 | 背景 | `auto` | `auto`、`opaque`、`transparent` |
+
+GPT Image 2.5 使用明确的模型 ID：`gpt-image-2.5-sunburst` 与
+`gpt-image-2.5-flare`。新配置默认使用 Sunburst，保留用户已显式保存的模型设置。
+模型输入框提供候选项，也允许自定义 ID；新画质和自定义尺寸仅对这两个已知 2.5 ID
+开放，其他 ID 保留原有参数集合。
+
+自定义尺寸要求边长为 16 的倍数、宽高比在 1:3～3:1、单边不超过 3840，
+总像素为 655,360～8,294,400；超过 2560×1440 为实验性分辨率。
+尺寸输入框在离开或按回车时保存有效值，不保存无效输入。DSH 附件部署限制仍然有效。
+参数依据见[官方图片参数文档](https://developers.openai.com/api/docs/guides/image-generation#size-and-quality-options)。
+
+Codex 端点行为仍取决于账号和后端。2026-09-09 实测两个 ID 的生成和编辑均成功，
+包括 `xhigh` / `max` 编辑请求，但显式请求 1024×1024 和 1536×864 时均返回了
+1254×1254 图片。HTTP 成功不能证明后端实际执行了指定画质或尺寸。
+插件保留有效图片；实际尺寸不符时返回含请求尺寸和真实尺寸的 `IMAGE_SIZE_MISMATCH`
+warning。详见[验证记录](docs/gpt-image-2.5-compatibility.md)。
 
 成功的 `generate_image` 结果只展示插件自有的图片画廊；`list_images` 是供模型使用的目录状态，
 不提供面向用户的结果视图。插件通过公开的会话授权附件 API 读取图片，使用有界 Blob URL 缓存，
@@ -307,25 +325,17 @@ DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 
 - `codex` CLI 已加入 `PATH`。
 - 可提前执行 `codex login`，也可在 GPT Auth 卡片中启动登录。
 
-## 安装本次开发适配
+## 安装
 
-本次改动尚未发布到 npm，不能通过安装已发布的 `0.3.3-alpha.6` 获得。在本插件检出目录构建并打包：
-
-```sh
-pnpm install --frozen-lockfile
-pnpm run check
-npm pack
-```
-
-先停止 `dsh web`，将目标 Host 升级到 DSH `0.1.5-alpha.1`，再将上一步实际生成的本地制品安装到需要升级的 profile：
+先停止 `dsh web`，确认目标 Host 使用 DSH `0.1.5-alpha.1` 且依赖图一致，再将精确预发布版本安装到目标 profile：
 
 ```sh
 dsh --version
-dsh plugin --profile web add ./dsh-codex-auth-0.3.3-alpha.6.tgz
+dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.7
 dsh plugin --profile web list
 ```
 
-核对条目后重启 `dsh web` 并刷新浏览器。后续正式发布版本应使用其准确版本号；本次开发适配没有发布、修改现用 profile 或升级全局 DSH。旧 DSH 安装继续使用 [alpha.6 发布记录](https://github.com/suntianc/dsh-codex-auth/releases)。
+核对条目后重启 `dsh web` 并刷新浏览器。本预发布版本使用 npm `alpha` 标签；不指定版本可能安装到较旧的 `latest` 版本。旧 DSH 安装应继续使用兼容的旧插件版本。
 
 ## Host 配置
 

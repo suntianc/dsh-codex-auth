@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.3-alpha.7] - 2026-09-09
+
+- Adds GPT Image 2.5 Sunburst/Flare model suggestions, `xhigh`/`max` quality, validated custom dimensions, and matching Host/client settings support. New image configurations default to Sunburst while explicit existing choices remain intact. Valid outputs whose dimensions differ from the request carry `IMAGE_SIZE_MISMATCH` warnings.
+
 - Moves the development baseline to DSH `0.1.5-alpha.1` and pi-ai `0.85.1`. Native and Dual Checkpoint gates accept only that verified conversion graph; restored JSON sessions explicitly use V3 detached event ownership. Account status, usage, and login use authenticated `/api/codex-auth/*` routes, retaining the static loopback guard.
 
 ### Added

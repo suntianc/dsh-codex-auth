@@ -48,6 +48,7 @@ try {
     throw new Error(`package smoke: CHANGELOG.md lacks release ${String(manifest.version)}`)
   }
   const requiredDocumentation = [
+    'docs/gpt-image-2.5-compatibility.md',
     'docs/design.md',
     'docs/adr/0003-isolate-experimental-codex-compaction.md',
     'docs/adr/0004-restore-native-checkpoints-with-request-markers.md',

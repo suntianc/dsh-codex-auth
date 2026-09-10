@@ -13,6 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { createCodexAuthRpcClient } from '../rpc-contract.ts'
+import { IMAGE_QUALITIES, isImageSize } from '../image-options.ts'
 import { CodexCapabilitySettings } from './CodexCapabilitySettings.tsx'
 import type {
   CodexCapabilitySettingsProps, ImageSettingsView, LlmSettingsView, SearchSettingsView,
@@ -140,8 +141,8 @@ function decodeImageSettings(value: unknown): ImageSettingsView | undefined {
     || typeof value.enabled !== 'boolean'
     || typeof value.model !== 'string'
     || !positiveInteger(value.n) || value.n > 10
-    || !oneOf(value.size, ['auto', '1024x1024', '1536x1024', '1024x1536'])
-    || !oneOf(value.quality, ['auto', 'low', 'medium', 'high'])
+    || !isImageSize(value.size)
+    || !oneOf(value.quality, IMAGE_QUALITIES)
     || !oneOf(value.background, ['auto', 'opaque', 'transparent'])) return undefined
   return {
     enabled: value.enabled,

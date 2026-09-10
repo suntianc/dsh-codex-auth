@@ -554,6 +554,13 @@
   transition: opacity 180ms ease;
 }
 
+.imageHint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .formRows[data-dimmed='true'] {
   opacity: 0.5;
   pointer-events: none;

@@ -14,6 +14,9 @@ import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { CodexAuthService, CodexCredential } from './codex-auth-service.ts'
 import { CODEX_ROUTE } from './codex-auth-adapter.ts'
 import { readBoundedResponseText } from './bounded-response.ts'
+import { IMAGE_QUALITIES, isImageSize, supportsImageQuality, supportsImageSize } from './image-options.ts'
+import type { ImageQuality, ImageSize } from './image-options.ts'
+export type { ImageQuality, ImageSize } from './image-options.ts'
 
 export const GENERATE_IMAGE_TOOL_NAME = 'generate_image'
 export const LIST_IMAGES_TOOL_NAME = 'list_images'
@@ -22,15 +25,11 @@ export const CODEX_IMAGE_EDIT_ENDPOINT = 'https://chatgpt.com/backend-api/codex/
 export const CODEX_IMAGE_SETTINGS_NAMESPACE = 'codex-image'
 
 const IMAGE_ORIGINS = ['all', 'generated', 'reference', 'user'] as const
-const IMAGE_SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536'] as const
-const IMAGE_QUALITIES = ['auto', 'low', 'medium', 'high'] as const
 const IMAGE_BACKGROUNDS = ['auto', 'opaque', 'transparent'] as const
 const MAX_REFERENCES = 5
 const MAX_GENERATED_IMAGES = 10
 
 export type ImageOriginFilter = (typeof IMAGE_ORIGINS)[number]
-export type ImageSize = (typeof IMAGE_SIZES)[number]
-export type ImageQuality = (typeof IMAGE_QUALITIES)[number]
 export type ImageBackground = (typeof IMAGE_BACKGROUNDS)[number]
 
 /** Independently live Image Creation settings. */
@@ -47,9 +46,12 @@ export interface Config extends CodexImageSettings {}
 
 export const Config: z<Config> = z.object({
   enabled: z.boolean().default(true),
-  model: z.string().default('gpt-image-2'),
+  model: z.string().default('gpt-image-2.5-sunburst'),
   n: z.number().step(1).min(1).max(MAX_GENERATED_IMAGES).default(1),
-  size: z.union(IMAGE_SIZES.map(value => z.const(value))).default('auto'),
+  size: z.transform(z.string(), (value) => {
+    if (!isImageSize(value)) throw new Error('Invalid image dimensions')
+    return value
+  }).default('auto'),
   quality: z.union(IMAGE_QUALITIES.map(value => z.const(value))).default('auto'),
   background: z.union(IMAGE_BACKGROUNDS.map(value => z.const(value))).default('auto'),
 }) as z<Config>
@@ -163,7 +165,7 @@ function createGenerateImageTool(options: CodexImageToolOptions): ToolDefinition
         },
         model: { type: 'string', description: 'Optional image-model override.' },
         n: { type: 'integer', minimum: 1, maximum: MAX_GENERATED_IMAGES },
-        size: { type: 'string', enum: [...IMAGE_SIZES] },
+        size: { type: 'string', description: 'auto or WIDTHxHEIGHT. Custom sizes require GPT Image 2.5: multiples of 16, aspect ratio 1:3 to 3:1, each edge at most 3840, total pixels 655360–8294400. Above 2560x1440 is experimental.' },
         quality: { type: 'string', enum: [...IMAGE_QUALITIES] },
         background: { type: 'string', enum: [...IMAGE_BACKGROUNDS] },
       },
@@ -237,6 +239,10 @@ async function executeGenerateImage(
     try {
       const attachment = await options.attachments.saveImage(candidate.input)
       images.push({ handle: imageHandle(attachment), attachment, origin: 'generated' })
+      const actualSize = `${String(attachment.width)}x${String(attachment.height)}`
+      if (args.size !== 'auto' && actualSize !== args.size) {
+        warnings.push({ index: candidate.index, code: 'IMAGE_SIZE_MISMATCH', message: `Requested ${args.size}; the backend returned ${actualSize}.` })
+      }
     } catch {
       warnings.push({ index: candidate.index, code: 'IMAGE_STORAGE_FAILED', message: 'The validated image could not be stored durably.' })
     }
@@ -499,8 +505,14 @@ function parseGenerateArgs(value: unknown, defaults: CodexImageSettings): Genera
   const references = value.references === undefined ? [] : parseReferences(value.references)
   const model = value.model === undefined ? defaults.model : nonBlankString(value.model, 'model')
   const n = value.n === undefined ? defaults.n : boundedInteger(value.n, 1, MAX_GENERATED_IMAGES, 'n')
-  const size = value.size === undefined ? defaults.size : enumValue(value.size, IMAGE_SIZES, 'size')
+  const size = value.size === undefined ? defaults.size : value.size
+  if (!isImageSize(size) || !supportsImageSize(model, size)) {
+    throw new ImageCapabilityError('size must be auto or a supported WIDTHxHEIGHT; custom GPT Image 2.5 sizes require multiples of 16, ratio 1:3–3:1, edges <=3840, and 655360–8294400 pixels', 'INVALID_ARGS')
+  }
   const quality = value.quality === undefined ? defaults.quality : enumValue(value.quality, IMAGE_QUALITIES, 'quality')
+  if (!supportsImageQuality(model, quality)) {
+    throw new ImageCapabilityError('xhigh and max quality require gpt-image-2.5-sunburst or gpt-image-2.5-flare', 'INVALID_ARGS')
+  }
   const background = value.background === undefined ? defaults.background : enumValue(value.background, IMAGE_BACKGROUNDS, 'background')
   return { prompt: value.prompt.trim(), references, model, n, size, quality, background }
 }

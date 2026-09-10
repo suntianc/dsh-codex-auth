@@ -95,6 +95,28 @@ const subscribe = (): (() => void) => () => {}
 afterEach(() => cleanup())
 
 describe('Codex Capability Bundle settings', () => {
+  it('saves GPT Image 2.5 quality and custom dimensions while rejecting incomplete sizes', async () => {
+    const image = fakeScope({ ...IMAGE, model: 'gpt-image-2.5-sunburst' })
+    render(<CodexCapabilitySettings rpc={rpc(authStatus({ planType: 'plus' }))} t={t} subscribe={subscribe}
+      llmScope={fakeScope(LLM).scope} searchScope={fakeScope(SEARCH).scope} imageScope={image.scope} />)
+    await screen.findByText('Active')
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Image Creation settings' }))
+    const modelOptions = (screen.getByLabelText('Image model') as HTMLInputElement).list?.options
+    expect(Array.from(modelOptions ?? [], option => option.value)).toContain('gpt-image-2.5-flare')
+    fireEvent.change(screen.getByLabelText('Default quality'), { target: { value: 'max' } })
+    await waitFor(() => expect(image.set).toHaveBeenCalledWith('quality', 'max'))
+    const size = screen.getByLabelText('Default size')
+    fireEvent.change(size, { target: { value: '1536x' } })
+    fireEvent.blur(size)
+    expect(image.set).not.toHaveBeenCalledWith('size', expect.anything())
+    fireEvent.change(size, { target: { value: '1536x864' } })
+    fireEvent.blur(size)
+    await waitFor(() => expect(image.set).toHaveBeenCalledWith('size', '1536x864'))
+    fireEvent.change(screen.getByLabelText('Image model'), { target: { value: 'gpt-image-2' } })
+    await waitFor(() => expect(image.set).toHaveBeenCalledWith('model', 'gpt-image-2'))
+    expect((screen.getByRole('option', { name: 'Maximum' }) as HTMLOptionElement).disabled).toBe(true)
+  })
+
   it('renders Login, LLM Context, Search, and Image Creation as one live four-card section', async () => {
     const llm = fakeScope(LLM)
     const search = fakeScope(SEARCH)
@@ -279,7 +301,14 @@ describe('client plugin registration', () => {
         },
       },
       settingsScope: {
-        bind: ({ namespace }: { namespace: string }) => scopes.get(namespace),
+        bind: ({ namespace, decode }: { namespace: string; decode: (value: unknown) => unknown }) => {
+          if (namespace === 'codex-image') {
+            const extended = { ...IMAGE, model: 'gpt-image-2.5-flare', quality: 'max', size: '1536x864' }
+            expect(decode(extended)).toEqual(extended)
+            expect(decode({ ...extended, size: '256x256' })).toBeUndefined()
+          }
+          return scopes.get(namespace)
+        },
       },
     }
 

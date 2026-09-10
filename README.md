@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH compatibility (unreleased development):** This checkout targets `0.1.5-alpha.1` as its development and minimum supported baseline, with a coherent dependency graph. Published alpha.6 packages do not include this adaptation; keep older plugin releases for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
+> **DSH compatibility:** v0.3.3-alpha.7 targets `0.1.5-alpha.1` as its development and minimum supported baseline, with a coherent dependency graph. Keep older plugin releases for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
 
 [![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 English | [中文](README.zh.md)
 
-Latest published release: **v0.3.3-alpha.6** (for older DSH; this adaptation is not published).
+Release version: **v0.3.3-alpha.7** (`alpha` channel).
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -26,9 +26,11 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 > may be rate-limited or changed without notice. Do not rely on it for
 > production workloads.
 
-## Unreleased: DSH 0.1.5 adaptation
+## v0.3.3-alpha.7 highlights
 
 Moves the development baseline to DSH `0.1.5-alpha.1` and pi-ai `0.85.1`. Native and Dual Checkpoint gates accept only that verified conversion graph; restored JSON sessions explicitly use V3 detached event ownership. Account status, usage, and login use authenticated `/api/codex-auth/*` routes, retaining the static loopback guard.
+
+Adds GPT Image 2.5 Sunburst/Flare, advanced quality, and validated custom dimensions. New image configurations default to Sunburst; explicit saved model choices remain intact. Returned images are retained with a warning if the backend does not honor the requested size. The `/codex-auth` command provides local terminal account status and login.
 
 ## v0.3.3-alpha.5 highlights
 
@@ -340,11 +342,31 @@ Live Image settings:
 | Setting | Default | Values |
 |---|---:|---|
 | Enabled | `true` | on / off |
-| Image model | `gpt-image-2` | image model ID |
+| Image model | `gpt-image-2.5-sunburst` | Sunburst, Flare, `gpt-image-2`, or a custom model ID |
 | Image count | `1` | 1–10 |
-| Size | `auto` | `auto`, `1024x1024`, `1536x1024`, `1024x1536` |
-| Quality | `auto` | `auto`, `low`, `medium`, `high` |
+| Size | `auto` | `auto`, `1024x1024`, `1536x1024`, `1024x1536`, or validated GPT Image 2.5 `WIDTHxHEIGHT` |
+| Quality | `auto` | `auto`, `low`, `medium`, `high`; GPT Image 2.5 also accepts `xhigh`, `max` |
 | Background | `auto` | `auto`, `opaque`, `transparent` |
+
+GPT Image 2.5 uses the explicit IDs `gpt-image-2.5-sunburst` and
+`gpt-image-2.5-flare`. New configurations default to Sunburst; existing explicit
+model settings are preserved. The model field offers suggestions and still
+accepts custom IDs. Advanced quality and custom dimensions are enabled only
+for those two known 2.5 IDs; other IDs retain the existing parameter set.
+
+Custom dimensions must be multiples of 16, have an aspect ratio from 1:3 to
+3:1, use edges no larger than 3840, and contain 655,360–8,294,400 pixels.
+Above 2560×1440 is experimental. The settings field saves a valid size on blur
+or Enter; invalid input is not persisted. Deployment attachment limits still
+apply. See the [official image parameter guide](https://developers.openai.com/api/docs/guides/image-generation#size-and-quality-options).
+
+Codex endpoint behavior remains account/backend dependent. The September 9,
+2026 verification accepted generation and editing for both IDs, including
+`xhigh`/`max` edits, but returned 1254×1254 images even for explicit 1024×1024
+and 1536×864 requests. HTTP success does not establish that quality or size was
+honored. A valid image with different dimensions is retained and accompanied
+by an `IMAGE_SIZE_MISMATCH` warning containing the requested and actual sizes.
+See [verification details](docs/gpt-image-2.5-compatibility.md).
 
 A successful `generate_image` result displays only the plugin-owned image gallery;
 `list_images` is model-facing catalog state and has no user-facing result view. A
@@ -376,25 +398,17 @@ assistant ImageBlock.
 - The `codex` CLI available on `PATH`.
 - Run `codex login` before use, or start login from the GPT Auth card.
 
-## Install this development adaptation
+## Install
 
-This change is not published to npm; installing the published `0.3.3-alpha.6` does not obtain it. Build and pack from this plugin checkout:
-
-```sh
-pnpm install --frozen-lockfile
-pnpm run check
-npm pack
-```
-
-Stop `dsh web`, upgrade the target Host to DSH `0.1.5-alpha.1`, then install the local artifact produced above into the profile you intend to upgrade:
+Stop `dsh web` and ensure the target Host uses DSH `0.1.5-alpha.1` with a coherent dependency graph. Install the exact prerelease into the intended profile:
 
 ```sh
 dsh --version
-dsh plugin --profile web add ./dsh-codex-auth-0.3.3-alpha.6.tgz
+dsh plugin --profile web add dsh-codex-auth@0.3.3-alpha.7
 dsh plugin --profile web list
 ```
 
-Verify the entry, restart `dsh web`, and refresh the browser. Use the exact new version after a formal release. This development adaptation does not itself publish, edit a live profile, or upgrade global DSH. Older DSH installations can retain the [alpha.6 release](https://github.com/suntianc/dsh-codex-auth/releases).
+Verify the entry, restart `dsh web`, and refresh the browser. This prerelease uses the `alpha` npm dist-tag; an unversioned install may select an older `latest` release. Older DSH installations should retain a compatible older plugin release.
 
 ## Host configuration
 

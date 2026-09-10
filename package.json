@@ -1,7 +1,7 @@
 {
   "name": "dsh-codex-auth",
   "description": "One DeepSeek Harness Codex capability bundle for ChatGPT login, LLM access, Web Search, and durable Image Creation",
-  "version": "0.3.3-alpha.6",
+  "version": "0.3.3-alpha.7",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -77,7 +77,8 @@
     "README.md",
     "README.zh.md",
     "LICENSE",
-    "docs/dsh-source-verification.md"
+    "docs/dsh-source-verification.md",
+    "docs/gpt-image-2.5-compatibility.md"
   ],
   "scripts": {
     "build": "node scripts/clean.mjs && tsc -p tsconfig.build.host.json && tsc -p tsconfig.build.client.json && tsdown",

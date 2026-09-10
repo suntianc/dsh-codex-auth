@@ -7,6 +7,8 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CodexAuthRpcClient, CodexAuthStatusView, CodexUsageView } from '../rpc-contract.ts'
 import type { CodexAuthKey } from './locales.ts'
+import { IMAGE_MODELS, IMAGE_SIZES, isImageSize, supportsImageQuality, supportsImageSize } from '../image-options.ts'
+import type { ImageQuality, ImageSize } from '../image-options.ts'
 import classes from './CodexCapabilitySettings.module.css'
 
 export interface LlmSettingsView {
@@ -25,8 +27,8 @@ export interface ImageSettingsView {
   enabled: boolean
   model: string
   n: number
-  size: 'auto' | '1024x1024' | '1536x1024' | '1024x1536'
-  quality: 'auto' | 'low' | 'medium' | 'high'
+  size: ImageSize
+  quality: ImageQuality
   background: 'auto' | 'opaque' | 'transparent'
 }
 
@@ -581,10 +583,25 @@ function ImageControls({
   const value = snapshot.value as ImageSettingsView
   const disabled = !snapshot.writable || unavailable || !value.enabled
   const write = writer(scope, onError, t)
+  const modelsId = useId()
+  const sizesId = useId()
+  const sizeHintId = useId()
+  const [sizeDraft, setSizeDraft] = useState<string>(value.size)
+  useEffect(() => { setSizeDraft(value.size) }, [value.size])
+  const saveSize = (): void => {
+    const size = sizeDraft.trim()
+    if (!isImageSize(size) || !supportsImageSize(value.model, size)) {
+      onError(t('invalidImageSize'))
+      return
+    }
+    if (size !== value.size) void write('size', size)
+    else onError(null)
+  }
   return (
     <div className={classes.formRows} data-dimmed={!value.enabled || unavailable}>
       <Control label={t('imageModel')}>
-        <input aria-label={t('imageModel')} value={value.model} disabled={disabled} onChange={event => { void write('model', event.target.value) }} />
+        <input aria-label={t('imageModel')} list={modelsId} value={value.model} disabled={disabled} onChange={event => { void write('model', event.target.value) }} />
+        <datalist id={modelsId}>{IMAGE_MODELS.map(model => <option key={model} value={model} />)}</datalist>
       </Control>
       <Control label={t('defaultImageCount')}>
         <select aria-label={t('defaultImageCount')} value={value.n} disabled={disabled} onChange={event => { void write('n', Number(event.target.value)) }}>
@@ -592,15 +609,21 @@ function ImageControls({
         </select>
       </Control>
       <Control label={t('defaultSize')}>
-        <select aria-label={t('defaultSize')} value={value.size} disabled={disabled} onChange={event => { void write('size', event.target.value) }}>
-          <option value="auto">{t('automatic')}</option><option value="1024x1024">1024 × 1024</option><option value="1536x1024">1536 × 1024</option><option value="1024x1536">1024 × 1536</option>
-        </select>
+        <input aria-label={t('defaultSize')} aria-describedby={sizeHintId} list={sizesId} value={sizeDraft} disabled={disabled}
+          onChange={event => { setSizeDraft(event.target.value) }} onBlur={saveSize}
+          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); saveSize() } }} />
+        <datalist id={sizesId}>{IMAGE_SIZES.map(size => <option key={size} value={size} />)}</datalist>
       </Control>
+      <p className={classes.imageHint} id={sizeHintId}>{t('imageSizeHint')}</p>
+      {!supportsImageSize(value.model, value.size) && <p className={classes.imageHint} role="alert">{t('invalidImageSize')}</p>}
       <Control label={t('defaultQuality')}>
         <select aria-label={t('defaultQuality')} value={value.quality} disabled={disabled} onChange={event => { void write('quality', event.target.value) }}>
           <option value="auto">{t('automatic')}</option><option value="low">{t('low')}</option><option value="medium">{t('medium')}</option><option value="high">{t('high')}</option>
+          <option value="xhigh" disabled={!supportsImageQuality(value.model, 'xhigh')}>{t('xhigh')}</option>
+          <option value="max" disabled={!supportsImageQuality(value.model, 'max')}>{t('maxQuality')}</option>
         </select>
       </Control>
+      {!supportsImageQuality(value.model, value.quality) && <p className={classes.imageHint} role="alert">{t('invalidImageQuality')}</p>}
       <Control label={t('defaultBackground')}>
         <select aria-label={t('defaultBackground')} value={value.background} disabled={disabled} onChange={event => { void write('background', event.target.value) }}>
           <option value="auto">{t('automatic')}</option><option value="opaque">{t('opaque')}</option><option value="transparent">{t('transparent')}</option>
