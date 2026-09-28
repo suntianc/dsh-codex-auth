@@ -57,18 +57,22 @@
   bind 明确为 `127.0.0.1` 时才注册真实 dispatcher；bind 缺失、面向所有接口或未知时都只返回
   相同且不含状态值的 `loopback-required` 拒绝。
 
-### GPT-5.6 与 GPT-6 Astra 长上下文
+### GPT-5.6 与 GPT-6 长上下文
 
-即使已安装的 pi-ai `0.85.1` 目录尚未列出 GPT-6 Astra，`openai-codex` 路由也会
-提供 `gpt-6-astra`。GPT Auth 设置在登录卡片与能力卡片之间提供实时生效、默认关闭的
-**1M 上下文**开关。它会把 `gpt-6-astra`、`gpt-5.6-luna`、`gpt-5.6-sol`、
-`gpt-5.6-terra` 向 DSH 报告的上下文窗口从保守的 272,000 Token 提升到 1,000,000 Token。
+本仓库锁定的 pi-ai `0.85.1` 目录包含 GPT-6 Astra（`gpt-6-astra`），但尚未列出
+Sol（`gpt-6-sol`）和 Luna（`gpt-6-luna`）。插件会在缺项时以对应的 GPT-5.6
+描述符为模板，将这两个模型补入 `openai-codex` 目录；若 pi-ai 已提供条目，则保留上游条目。
+GPT Auth 设置在登录卡片与能力卡片之间提供实时生效、默认关闭的 **1M 上下文**开关。
+它会把这些 GPT-6 模型及 `gpt-5.6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`
+向 DSH 报告的上下文窗口从保守的 272,000 Token 提升到 1,000,000 Token。
 DSH 会据此计算 Token 压力和压缩时机；插件不会在请求里发送用于和后端协商容量的参数。
 超过 272K 的请求可能更快消耗账户配额，后端是否支持仍取决于账户，而且启用开关不会展开
 DSH 已经压缩的历史。
 
-GPT-6 Astra 不支持 `temperature`。请从模型请求中移除该参数；显式传入任何值
-（包括 `0`）都会在解析凭据或发送请求前返回 `UNSUPPORTED_OPTION`。
+GPT-6 Astra 不支持 `temperature`。Sol 和 Luna 在此路由也会拒绝它，因为 DSH 会省略
+`off` 推理档位，而非显式发送 `none`，最终有效档位可能仍为 `medium`。请从 GPT-6 模型
+请求中移除 `temperature`；显式传入任何值（包括 `0`）都会在解析凭据或发送请求前返回
+`UNSUPPORTED_OPTION`。
 
 ### 实验性 Dual Checkpoint 压缩 Adapter
 
@@ -362,7 +366,7 @@ dsh plugin --profile web list
 | `refreshLeadMs` | `300000` | token 到期前的刷新提前量（毫秒） |
 | `codexCommand` | `codex` | 登录和版本探测使用的 CLI 命令 |
 | `displayName` | `OpenAI Codex (chatgpt)` | 模型选择器中的 provider 名称 |
-| `longContextEnabled` | `false` | GPT-6 Astra / GPT-5.6 实时 1M 上下文策略的基础值；GPT Auth 设置可在 `codex-llm` namespace 覆盖它 |
+| `longContextEnabled` | `false` | GPT-6 / GPT-5.6 实时 1M 上下文策略的基础值；GPT Auth 设置可在 `codex-llm` namespace 覆盖它 |
 | `transport` | `sse` | 流式传输方式：`sse`、`websocket` 或 `auto`（优先 WebSocket、失败回退 SSE）。默认 SSE：WebSocket 升级在常见 HTTP 代理下不稳定，且 `auto` 模式下每个新对话都要先付出连接超时才会回退 |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket 连接超时（毫秒，仅当 `transport` 不是 `sse` 时生效；`0` 表示禁用） |
 | `timeoutMs` | `120000` | 请求超时（毫秒，SSE 响应头阶段；同时作为 WebSocket 消息空闲间隔；`0` 表示禁用） |

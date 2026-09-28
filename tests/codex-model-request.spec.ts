@@ -6,7 +6,13 @@ import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CodexAuthAdapter } from '../src/codex-auth-adapter.ts'
-import { CODEX_GPT_6_ASTRA_MODEL_ID } from '../src/codex-context.ts'
+import {
+  CODEX_GPT_6_ASTRA_MODEL_ID,
+  CODEX_GPT_6_LUNA_MODEL_ID,
+  CODEX_GPT_6_SOL_MODEL_ID,
+} from '../src/codex-context.ts'
+
+const NEW_MODELS = [CODEX_GPT_6_SOL_MODEL_ID, CODEX_GPT_6_LUNA_MODEL_ID] as const
 
 let context: Context | undefined
 
@@ -99,6 +105,32 @@ describe('Codex model request policy', () => {
       expect(payloads[0]?.model).toBe(CODEX_GPT_6_ASTRA_MODEL_ID)
       expect(payloads[0]).not.toHaveProperty('temperature')
     })
+
+    it.each(NEW_MODELS)('sends %s through the real provider', async model => {
+      const { adapter, payloads } = fixture()
+      const options = request({ model })
+      const call = mode === 'prepared'
+        ? await adapter.prepareCall(options.provider, options.model)
+        : adapter
+
+      await drain(call.stream(options))
+
+      expect(payloads).toHaveLength(1)
+      expect(payloads[0]?.model).toBe(model)
+      expect(payloads[0]).not.toHaveProperty('temperature')
+    })
+
+    it.each(NEW_MODELS)('rejects %s temperature before resolving credentials', async model => {
+      const { adapter, credential, fetchMock } = fixture()
+      const options = request({ model, temperature: 0.7, reasoningEffort: ReasoningEffortId('off') })
+      const call = mode === 'prepared'
+        ? await adapter.prepareCall(options.provider, options.model)
+        : adapter
+
+      await expect(drain(call.stream(options))).rejects.toMatchObject({ code: 'UNSUPPORTED_OPTION' })
+      expect(credential).not.toHaveBeenCalled()
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
   })
 
   it.each(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const)(
@@ -114,6 +146,25 @@ describe('Codex model request policy', () => {
       expect(payloads[0]).not.toHaveProperty('temperature')
     },
   )
+
+  describe.each(['direct', 'prepared'] as const)('%s GPT-6 Sol/Luna reasoning', mode => {
+    it.each(NEW_MODELS.flatMap(model =>
+      (['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const)
+        .map(level => ({ model, level })),
+    ))('maps $model $level while preserving DSH off behavior', async ({ model, level }) => {
+      const { adapter, payloads } = fixture()
+      const options = request({ model, reasoningEffort: ReasoningEffortId(level) })
+      const call = mode === 'prepared'
+        ? await adapter.prepareCall(options.provider, options.model)
+        : adapter
+
+      await drain(call.stream(options))
+
+      expect(payloads).toHaveLength(1)
+      if (level === 'off') expect(payloads[0]).not.toHaveProperty('reasoning')
+      else expect(payloads[0]).toMatchObject({ reasoning: { effort: level === 'minimal' ? 'low' : level } })
+    })
+  })
 
   it('keeps temperature handling provider-owned for other models', async () => {
     const { adapter, payloads } = fixture()

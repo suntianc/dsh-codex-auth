@@ -63,12 +63,14 @@ Adds GPT Image 2.5 Sunburst/Flare, advanced quality, and validated custom dimens
   `127.0.0.1` Web bind; every absent, all-interface, or unknown bind receives
   the same value-free `loopback-required` denial.
 
-### GPT-5.6 and GPT-6 Astra long context
+### GPT-5.6 and GPT-6 long context
 
-The `openai-codex` route includes GPT-6 Astra (`gpt-6-astra`) even when the
-installed pi-ai `0.85.1` catalog does not list it. GPT Auth Settings exposes a
+The pi-ai `0.85.1` version pinned for this repository includes GPT-6 Astra
+(`gpt-6-astra`) but not Sol (`gpt-6-sol`) or Luna (`gpt-6-luna`). The plugin adds
+those two models to the `openai-codex` catalog from matching GPT-5.6 descriptors
+when missing and keeps any descriptor supplied by pi-ai. GPT Auth Settings exposes a
 live, default-off **1M context** switch between the Login and capability cards.
-It changes the reported context window for `gpt-6-astra`, `gpt-5.6-luna`,
+It changes the reported context window for these GPT-6 models and `gpt-5.6-luna`,
 `gpt-5.6-sol`, and `gpt-5.6-terra` from the conservative 272,000-token default
 to 1,000,000 tokens. DSH uses that capacity for token pressure and compaction
 decisions; no request parameter negotiates capacity with the backend. Requests
@@ -76,9 +78,11 @@ beyond 272K may consume account quota faster, backend availability remains
 account-dependent, and enabling the switch does not expand history that DSH
 already compacted.
 
-GPT-6 Astra does not support `temperature`. Remove it from the model request;
-the plugin rejects an explicit value (including `0`) with `UNSUPPORTED_OPTION`
-before resolving credentials or sending a request.
+GPT-6 Astra does not support `temperature`. Sol and Luna reject it on this route
+because DSH omits `off` reasoning rather than sending an explicit `none` effort;
+the effective effort may remain `medium`. Remove `temperature` from GPT-6 model
+requests; an explicit value (including `0`) returns `UNSUPPORTED_OPTION` before
+resolving credentials or sending a request.
 
 ### Experimental Dual Checkpoint compaction Adapter
 
@@ -435,7 +439,7 @@ Login State coordinator available to Search/Image without owning an LLM route:
 | `refreshLeadMs` | `300000` | Refresh lead time in milliseconds |
 | `codexCommand` | `codex` | CLI command used for login and version probing |
 | `displayName` | `OpenAI Codex (chatgpt)` | Provider label in model selectors |
-| `longContextEnabled` | `false` | Base value for the live GPT-6 Astra / GPT-5.6 1M context policy; GPT Auth Settings may override it in the `codex-llm` namespace |
+| `longContextEnabled` | `false` | Base value for the live GPT-6 / GPT-5.6 1M context policy; GPT Auth Settings may override it in the `codex-llm` namespace |
 | `transport` | `sse` | Streaming transport: `sse`, `websocket`, or `auto` (WebSocket first with SSE fallback). SSE is the default: the WebSocket upgrade is unreliable through common HTTP proxies, and every new conversation pays the connect timeout before `auto` falls back |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket connect timeout in milliseconds (used only when `transport` is not `sse`; `0` disables it) |
 | `timeoutMs` | `120000` | Request timeout in milliseconds (SSE response-header phase; also the WebSocket message idle interval; `0` disables it) |

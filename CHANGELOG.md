@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add GPT-6 Sol and Luna to the `openai-codex` model catalog when pi-ai omits them, with model-specific pricing, reasoning levels, and the existing opt-in 1M context policy. Reject unsupported explicit `temperature` before credential resolution.
+
 ## [0.3.3-rc.1] - 2026-09-10
 
 - Targets the coherent DSH `0.1.5-rc.1` graph with pi-ai `0.85.1`. Supplies the new pi-ai model-error map so ordinary and prepared model requests reach the provider. Compaction and Native replay accept exactly RC.1, reject mixed/unverified graphs, and preserve the durable checkpoint codec and Portable fallback.
