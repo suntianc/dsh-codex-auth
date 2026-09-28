@@ -1,6 +1,7 @@
 /** Codex Image Creation tools, Durable Media Asset catalog, and Image row. */
 import { basename } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {
@@ -15,6 +16,7 @@ import type { CodexAuthService, CodexCredential } from './codex-auth-service.ts'
 import { CODEX_ROUTE } from './codex-auth-adapter.ts'
 import { readBoundedResponseText } from './bounded-response.ts'
 import { IMAGE_QUALITIES, isImageSize, supportsImageQuality, supportsImageSize } from './image-options.ts'
+import { liveValue, type LiveValue } from './volatile-config.ts'
 import type { ImageQuality, ImageSize } from './image-options.ts'
 export type { ImageQuality, ImageSize } from './image-options.ts'
 
@@ -42,19 +44,37 @@ export interface CodexImageSettings {
   background: ImageBackground
 }
 
-export interface Config extends CodexImageSettings {}
+export interface Config {
+  enabled: LiveValue<boolean>
+  model: LiveValue<string>
+  n: LiveValue<number>
+  size: LiveValue<ImageSize>
+  quality: LiveValue<ImageQuality>
+  background: LiveValue<ImageBackground>
+}
 
 export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(true),
-  model: z.string().default('gpt-image-2.5-sunburst'),
-  n: z.number().step(1).min(1).max(MAX_GENERATED_IMAGES).default(1),
+  enabled: z.boolean().default(true).volatile(),
+  model: z.string().default('gpt-image-2.5-sunburst').volatile(),
+  n: z.number().step(1).min(1).max(MAX_GENERATED_IMAGES).default(1).volatile(),
   size: z.transform(z.string(), (value) => {
     if (!isImageSize(value)) throw new Error('Invalid image dimensions')
     return value
-  }).default('auto'),
-  quality: z.union(IMAGE_QUALITIES.map(value => z.const(value))).default('auto'),
-  background: z.union(IMAGE_BACKGROUNDS.map(value => z.const(value))).default('auto'),
+  }).default('auto').volatile(),
+  quality: z.union(IMAGE_QUALITIES.map(value => z.const(value))).default('auto').volatile(),
+  background: z.union(IMAGE_BACKGROUNDS.map(value => z.const(value))).default('auto').volatile(),
 }) as z<Config>
+
+function imageSettings(config: Config): CodexImageSettings {
+  return {
+    enabled: liveValue(config.enabled),
+    model: liveValue(config.model),
+    n: liveValue(config.n),
+    size: liveValue(config.size),
+    quality: liveValue(config.quality),
+    background: liveValue(config.background),
+  }
+}
 
 /** Narrow dependency surface used by both public Tool definitions. */
 export interface CodexImageToolOptions {
@@ -839,7 +859,7 @@ export const inject = ['tools', 'llm', 'agents', 'attachments', 'fs', 'codexAuth
 export function apply(ctx: Context, config: Config): void {
   const auth = ctx.get('codexAuth') as CodexAuthService | undefined
   if (auth === undefined) throw new Error('codex-image: shared codexAuth service is unavailable')
-  let current = (): CodexImageSettings => config
+  const current = (): CodexImageSettings => imageSettings(config)
   const registrations = new Map<Agent, () => void>()
   const generations = new Map<Agent, number>()
   let disposed = false
@@ -881,11 +901,9 @@ export function apply(ctx: Context, config: Config): void {
   }, 'codex-image: scoped tool cleanup')
 
   ctx.inject(['settings'], settingsCtx => {
-    settingsCtx.settings.installSection(ctx, CODEX_IMAGE_SETTINGS_NAMESPACE, Config, config, {
-      setSource: source => { current = source },
-      onChange: refreshAll,
-    })
+    settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
   })
+  ctx.on('loader/volatile-update', refreshAll)
   ctx.on('agent/created', ({ agent }) => { void refreshAgent(agent) })
   ctx.on('agent/request', async ({ agent }, next) => {
     const route = await next()

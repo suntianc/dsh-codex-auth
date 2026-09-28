@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Button, IconRefreshOutline16, StateDot,
+  Button, IconRefreshOutlineMedium, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CodexAuthRpcClient, CodexAuthStatusView } from '../rpc-contract.ts'
@@ -119,7 +119,7 @@ export function CodexAuthCard({ rpc, t, subscribe }: CodexAuthCardInjected): Rea
         <Button
           variant="ghost"
           className={classes.refresh}
-          icon={<IconRefreshOutline16 size={16} />}
+          icon={<IconRefreshOutlineMedium size={16} />}
           disabled={loadState === 'loading'}
           onClick={() => { void load() }}
         >

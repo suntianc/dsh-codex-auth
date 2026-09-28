@@ -281,7 +281,7 @@ describe('client plugin registration', () => {
   it('registers one settings row and keyed views for both image tools', () => {
     const registered: Array<Record<string, unknown>> = []
     const scopes = new Map([
-      ['codex-llm', fakeScope(LLM).scope],
+      ['llm-codex-auth', fakeScope(LLM).scope],
       ['codex-search', fakeScope(SEARCH).scope],
       ['codex-image', fakeScope(IMAGE).scope],
     ])
@@ -300,21 +300,12 @@ describe('client plugin registration', () => {
           return () => {}
         },
       },
-      settingsScope: {
-        bind: ({ namespace, decode }: { namespace: string; decode: (value: unknown) => unknown }) => {
-          if (namespace === 'codex-image') {
-            const extended = { ...IMAGE, model: 'gpt-image-2.5-flare', quality: 'max', size: '1536x864' }
-            expect(decode(extended)).toEqual(extended)
-            expect(decode({ ...extended, size: '256x256' })).toBeUndefined()
-          }
-          return scopes.get(namespace)
-        },
-      },
+      configForms: { get: (entryId: string) => scopes.get(entryId) },
     }
 
     apply(ctx as never)
 
-    expect(inject).toEqual(expect.arrayContaining(['remote', 'settingsScope', 'sessions']))
+    expect(inject).toEqual(expect.arrayContaining(['remote', 'configForms', 'sessions']))
     expect(registered).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'settings.section', id: 'codex-auth' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),

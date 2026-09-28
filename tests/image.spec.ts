@@ -139,9 +139,11 @@ describe('generate_image', () => {
   })
 
   it('defaults new configurations to Sunburst and preserves explicit existing model settings', () => {
-    expect(z.resolve({}, Config, {})[0]).toMatchObject({ model: 'gpt-image-2.5-sunburst' })
-    expect(z.resolve({ model: 'gpt-image-2' }, Config, {})[0]).toMatchObject({ model: 'gpt-image-2' })
-    expect(z.resolve({ model: 'gpt-image-2.5-flare', quality: 'max', size: '1536x864' }, Config, {})[0]).toMatchObject({ quality: 'max', size: '1536x864' })
+    expect(z.resolve({}, Config, {})[0].model.get()).toBe('gpt-image-2.5-sunburst')
+    expect(z.resolve({ model: 'gpt-image-2' }, Config, {})[0].model.get()).toBe('gpt-image-2')
+    const explicit = z.resolve({ model: 'gpt-image-2.5-flare', quality: 'max', size: '1536x864' }, Config, {})[0]
+    expect(explicit.quality.get()).toBe('max')
+    expect(explicit.size.get()).toBe('1536x864')
     expect(() => z.resolve({ size: '256x256' }, Config, {})).toThrow()
   })
 

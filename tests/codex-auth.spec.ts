@@ -268,11 +268,11 @@ describe('resolveCodexAccessToken', () => {
 describe('Auth / LLM row configuration', () => {
   it('keeps the route enabled by default and permits coordinator-only composition', () => {
     const parse = PluginConfig as unknown as (input: Partial<PluginConfigView>) => PluginConfigView
-    expect(parse({})).toMatchObject({ llmEnabled: true, longContextEnabled: false })
-    expect(parse({ llmEnabled: false, longContextEnabled: true })).toMatchObject({
-      llmEnabled: false,
-      longContextEnabled: true,
-    })
+    expect(parse({}).llmEnabled).toBe(true)
+    expect((parse({}).longContextEnabled as { get(): boolean }).get()).toBe(false)
+    const disabled = parse({ llmEnabled: false, longContextEnabled: true })
+    expect(disabled.llmEnabled).toBe(false)
+    expect((disabled.longContextEnabled as { get(): boolean }).get()).toBe(true)
   })
 
   it('keeps the independent live LLM context policy default-off', () => {

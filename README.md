@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH compatibility:** `0.3.3-rc.1` targets DSH `0.1.5-rc.1` as its development and minimum supported baseline, with a coherent dependency graph. Keep compatible older plugin releases for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
+> **DSH compatibility:** `0.3.3-rc.2` targets DSH `0.2.0-rc.1` as its minimum and tested development baseline. Use compatible older plugin versions for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
 
 [![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 English | [中文](README.zh.md)
 
-Release: **v0.3.3-rc.1** (npm tag: `rc`).
+Release: **v0.3.3-rc.2** (npm tag: `rc`).
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -25,6 +25,12 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 > account-gated `chatgpt.com/backend-api` surface is unsupported, revocable, and
 > may be rate-limited or changed without notice. Do not rely on it for
 > production workloads.
+
+## 0.3.3-rc.2: DSH 0.2.0-rc.1 adaptation
+
+This release updates the DSH dependency graph, uses Config Forms and volatile settings, forwards the current Connection RPC operator, and accepts V4 role `tool` messages. Native checkpoint compatibility is pinned to this exact DSH release; a public LLM middleware projects Portable checkpoint text for non-Codex providers. The complete package and tagged-source checks pass; live Codex authentication and provider replay remain unverified.
+
+The custom preset directory recipe later in this README documents earlier DSH releases. DSH `0.2.0-rc.1` ships `standard.patch.yml` in `@deepseek-ai/dsh-web-app/presets`; its `preset-standard` entry contains the full `config.plugins` list. A 0.2 custom preset must clone that complete entry under a new preset id and replace its `compaction` group with this package's example group. Do not use the retired `@deepseek-ai/dsh-agent-presets` path with 0.2.
 
 ## 0.3.3-rc.1: DSH 0.1.5-rc.1 adaptation
 
@@ -145,7 +151,7 @@ consumes Codex quota; its credential-free opaque state is still sensitive
 conversation data and is duplicated by alpha.5 in the summary event and replacement
 message.
 
-#### Enable and use Dual Checkpoint compaction
+#### Legacy custom-preset recipe (DSH 0.1.x)
 
 Installing the normal Codex Capability Bundle does not activate this Adapter.
 `cordis.patch.yml` and DSH's shipped presets continue to select stock Basic
@@ -253,7 +259,7 @@ malformed, oversized (over 2 MiB), secret-bearing, mixed, or incompatible state
 degrades to Portable text. Generated markers are Host-only and any missing,
 duplicate, embedded, leaked, or unconsumed marker fails before network I/O. The
 replay converter accepts matching DSH LLM / pi-ai Adapter versions at
-`0.1.5-rc.1`, with pi-ai `0.85.1`; mixed or unverified runtime pairs use Portable text instead. Adapter generation
+`0.2.0-rc.1`, with pi-ai `0.85.1`; mixed or unverified runtime pairs use Portable text instead. Adapter generation
 replacement or HMR invalidates process-local replay and turn-continuation state,
 while the durable Dual Checkpoint remains unchanged for a later request.
 
@@ -400,7 +406,7 @@ assistant ImageBlock.
 
 ## Requirements
 
-- DeepSeek Harness `0.1.5-rc.1` (tested coherent dependency graph); do not mix it with an older rc package family.
+- DeepSeek Harness `0.2.0-rc.1` (tested coherent dependency graph); do not mix it with an older rc package family.
 - Node.js `^22.19.0` or `>=24.0.0`.
 - `pnpm` available on `PATH` (`11.7.0` is the tested project package manager).
 - The `codex` CLI available on `PATH`.
@@ -408,15 +414,15 @@ assistant ImageBlock.
 
 ## Install
 
-Stop `dsh web`, ensure the target Host uses a coherent DSH `0.1.5-rc.1` graph, then install the exact prerelease into the intended profile:
+Stop `dsh web`, ensure the target Host uses a coherent DSH `0.2.0-rc.1` graph, then install this exact prerelease into the intended profile:
 
 ```sh
 dsh --version
-dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.1
+dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.2
 dsh plugin --profile web list
 ```
 
-Verify the entry, restart `dsh web`, and refresh the browser. This version uses the npm `rc` tag. An install without a version or tag selects `latest`, which does not include this RC1 adaptation. Older DSH Hosts should retain a compatible older plugin release.
+Verify the entry, restart `dsh web`, and refresh the browser. This version uses the npm `rc` tag. An install without a version or tag selects `latest`, which does not include this DSH 0.2 adaptation. Older DSH Hosts should retain a compatible older plugin release.
 
 ## Host configuration
 

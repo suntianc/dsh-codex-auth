@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Stock alpha.5 presentation of one plugin-owned Dual Checkpoint. */
+/** Stock 0.2 presentation of one plugin-owned Dual Checkpoint. */
 import type {
   ClientBootstrapModule,
   ClientBundleRegistration,
@@ -105,9 +105,11 @@ async function loadStockClients(): Promise<{
   const registration = pendingQueue[registrationIndex]
   if (registration === undefined) throw new Error('client module bootstrap did not register')
   pendingQueue.splice(registrationIndex, 1)
-  const bootstrapExports = registration.factory((specifier) => {
-    throw new Error(`unexpected bootstrap dependency: ${specifier}`)
-  })
+  const requireBootstrap = Object.assign(
+    (specifier: string): never => { throw new Error(`unexpected bootstrap dependency: ${specifier}`) },
+    { async: async (specifier: string): Promise<never> => { throw new Error(`unexpected bootstrap chunk: ${specifier}`) } },
+  )
+  const bootstrapExports = registration.factory(requireBootstrap)
   const createClientModuleSystem = bootstrapExports.createClientModuleSystem
   if (typeof createClientModuleSystem !== 'function') {
     throw new TypeError('client module bootstrap has no createClientModuleSystem export')
@@ -303,10 +305,17 @@ function renderConversationCheckpoint(conversationClient: StockClientExports) {
         registerFallback: () => () => {},
       },
       views: { register: () => () => {} },
+      groups: { register: () => () => {} },
     },
     uiSession: { provide: () => () => {} },
+    configForms: { get: () => ({ getSnapshot: () => ({ value: {} }), subscribe: () => () => {}, set: async () => true }) },
+    inject: () => {},
+    locale: { register: () => () => {}, bind: () => (key: string) => key },
     slots: {
-      inject(_name: string, register: () => () => void) { return register() },
+      inject(name: string, register: () => () => void) {
+        if (name === 'settings.general.item') throw registrationComplete
+        return register()
+      },
       register(options: Record<string, unknown>, component: unknown) {
         if (options.name === 'conversation.chat.node' && options.key === 'compaction') {
           compactionView = component
@@ -314,7 +323,7 @@ function renderConversationCheckpoint(conversationClient: StockClientExports) {
         return () => {}
       },
     },
-    effect: () => { throw registrationComplete },
+    effect: (setup: () => unknown) => setup(),
   }
   try {
     conversationClient.apply(ctx)
@@ -348,8 +357,7 @@ function renderConversationCheckpoint(conversationClient: StockClientExports) {
       surfaceOp: 'replace',
       data: {
         source: {
-          kind: 'plugin',
-          plugin: 'compact',
+          kind: 'compact-checkpoint',
           compactionId: 'cmp-presentation',
         },
       },

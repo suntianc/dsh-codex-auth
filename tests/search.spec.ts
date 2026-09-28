@@ -44,7 +44,7 @@ function provider(
 describe('Global Codex Search Provider', () => {
   it('defaults the ChatGPT-sign-in fallback model to gpt-5.6-terra', () => {
     const parse = SearchConfig as unknown as (input: Record<string, unknown>) => CodexSearchSettings
-    expect(parse({})).toMatchObject({ fallbackModel: DEFAULT_CODEX_SEARCH_FALLBACK_MODEL })
+    expect((parse({}).fallbackModel as unknown as { get(): string }).get()).toBe(DEFAULT_CODEX_SEARCH_FALLBACK_MODEL)
   })
 
   it.each([

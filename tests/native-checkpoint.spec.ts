@@ -16,6 +16,7 @@ import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-dee
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import { CodexAuthAdapter } from '../src/codex-auth-adapter.ts'
+import { installForeignCheckpointProjection } from '../src/foreign-checkpoint-projection.ts'
 import type { CodexAuthAdapterOptions, CodexAuthTransport } from '../src/codex-auth-adapter.ts'
 import {
   codexNativeCheckpointCompatibilityDigest,
@@ -159,23 +160,23 @@ describe('Codex Native Checkpoint codec', () => {
 
   it('pins replay to the observed DSH and pi-ai conversion pair', () => {
     expect(CODEX_NATIVE_REPLAY_COMPATIBILITY).toEqual({
-      dsh: '0.1.5-rc.1',
+      dsh: '0.2.0-rc.1',
       piAi: '0.85.1',
     })
     expect(isCodexNativeReplayRuntimeCompatible()).toBe(true)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.5-rc.1',
-      dshPiAi: '0.1.5-rc.1',
+      dshLlm: '0.2.0-rc.1',
+      dshPiAi: '0.2.0-rc.1',
       piAi: '0.85.1',
     })).toBe(true)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.5-rc.1',
+      dshLlm: '0.2.0-rc.1',
       dshPiAi: '0.1.2-alpha.6',
       piAi: '0.85.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.5-rc.1',
-      dshPiAi: '0.1.5-rc.1',
+      dshLlm: '0.2.0-rc.1',
+      dshPiAi: '0.2.0-rc.1',
       piAi: '0.84.2',
     })).toBe(false)
   })
@@ -185,10 +186,10 @@ describe('Codex Native Checkpoint codec', () => {
       dshLlm: version, dshPiAi: version, piAi: '0.85.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: version, dshPiAi: '0.1.5-rc.1', piAi: '0.85.1',
+      dshLlm: version, dshPiAi: '0.2.0-rc.1', piAi: '0.85.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.5-rc.1', dshPiAi: version, piAi: '0.85.1',
+      dshLlm: '0.2.0-rc.1', dshPiAi: version, piAi: '0.85.1',
     })).toBe(false)
   })
 
@@ -197,7 +198,7 @@ describe('Codex Native Checkpoint codec', () => {
       dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '0.85.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.5-rc.1', piAi: '0.85.1',
+      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.2.0-rc.1', piAi: '0.85.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
       dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '0.84.2',
@@ -504,6 +505,7 @@ function mountCodexAdapter(
 ): { ctx: Context; adapter: CodexAuthAdapter; release: () => void; fetchMock: typeof fetch } {
   context = new Context()
   void new LlmRuntime(context)
+  installForeignCheckpointProjection(context)
   const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     payloads.push(requestBodyJson(init))
     return new Response('fixture stop', { status: 400 })
@@ -523,7 +525,7 @@ function registerDeepSeekAdapter(ctx: Context): { readonly provider: string; rea
   })
   ctx.llm.registerAdapter([provider], new DeepSeekAdapter({
     options: () => connection,
-    resolveApiKey: () => Promise.resolve('deepseek-test-key'),
+    resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'deepseek-test-key' } }),
     resolveUserId: () => 'anonymous-test-user' as never,
     prepareExtensions: () => Promise.resolve({
       fields: {},
