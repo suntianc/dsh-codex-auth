@@ -42,7 +42,6 @@ async function mountComposition(options: { connection?: boolean; webServer?: str
       return () => undefined
     },
   })
-  ctx.provide('settings', { installSection: vi.fn() })
   if (options.connection) {
     ctx.provide('connection', { rpc: { handle: vi.fn(() => vi.fn()) } })
   }

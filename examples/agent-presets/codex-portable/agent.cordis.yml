@@ -16,6 +16,11 @@
       name: 'dsh-codex-auth/compaction'
       config:
         auto: true
+        # DSH 0.1.7 reserves completion tokens plus a headroom before the
+        # pressure fraction; pin the 0.1.5-equivalent budget (no extra headroom,
+        # explicit summary cap) so small-window test adapters still compact.
+        headroomTokens: 0
+        maxTokens: 8192
 
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'

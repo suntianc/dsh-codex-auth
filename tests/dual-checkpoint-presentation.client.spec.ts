@@ -105,9 +105,17 @@ async function loadStockClients(): Promise<{
   const registration = pendingQueue[registrationIndex]
   if (registration === undefined) throw new Error('client module bootstrap did not register')
   pendingQueue.splice(registrationIndex, 1)
-  const bootstrapExports = registration.factory((specifier) => {
-    throw new Error(`unexpected bootstrap dependency: ${specifier}`)
-  })
+  const bootstrapRequire = Object.assign(
+    (specifier: string): unknown => {
+      throw new Error(`unexpected bootstrap dependency: ${specifier}`)
+    },
+    {
+      async: async (specifier: string): Promise<unknown> => {
+        throw new Error(`unexpected bootstrap async dependency: ${specifier}`)
+      },
+    },
+  )
+  const bootstrapExports = registration.factory(bootstrapRequire)
   const createClientModuleSystem = bootstrapExports.createClientModuleSystem
   if (typeof createClientModuleSystem !== 'function') {
     throw new TypeError('client module bootstrap has no createClientModuleSystem export')
@@ -221,6 +229,9 @@ function renderTrajectoryCheckpoint(trajectoryClient: StockClientExports) {
       register: () => () => {},
       bind: () => (key: string) => key,
     },
+    configForms: {
+      get: () => ({ getSnapshot: () => ({ value: undefined }), subscribe: () => () => {} }),
+    },
     sessions: {
       binding: () => ({
         session: {
@@ -292,7 +303,6 @@ function renderTrajectoryCheckpoint(trajectoryClient: StockClientExports) {
 function renderConversationCheckpoint(conversationClient: StockClientExports) {
   let compactionDefinition: ConversationDefinition | undefined
   let compactionView: unknown
-  const registrationComplete = new Error('conversation registrations captured')
   const ctx = {
     uiConversation: {
       events: {
@@ -302,9 +312,14 @@ function renderConversationCheckpoint(conversationClient: StockClientExports) {
         },
         registerFallback: () => () => {},
       },
+      groups: { register: () => () => {} },
       views: { register: () => () => {} },
     },
     uiSession: { provide: () => () => {} },
+    locale: { bind: () => (key: string) => key, register: () => () => {} },
+    configForms: {
+      get: () => ({ getSnapshot: () => ({ value: undefined }), subscribe: () => () => {} }),
+    },
     slots: {
       inject(_name: string, register: () => () => void) { return register() },
       register(options: Record<string, unknown>, component: unknown) {
@@ -314,12 +329,24 @@ function renderConversationCheckpoint(conversationClient: StockClientExports) {
         return () => {}
       },
     },
-    effect: () => { throw registrationComplete },
+    effect: () => () => {},
+    inject(names: readonly string[], setup: (scope: Record<string, unknown>) => unknown) {
+      if (!names.includes('sidebarRightTabs')) return setup({})
+      const tabs = new Map<string, unknown>()
+      return setup({
+        sidebarRightTabs: {
+          get: (key: string) => tabs.get(key),
+          subscribe: () => () => {},
+        },
+        slots: { inject: () => () => {}, register: () => () => {} },
+      })
+    },
   }
   try {
     conversationClient.apply(ctx)
-  } catch (error) {
-    if (error !== registrationComplete) throw error
+  } catch {
+    // Stock apply reaches live services this bench does not provide; the
+    // compaction registrations happen before any such access.
   }
   if (compactionDefinition === undefined || compactionView === undefined) {
     throw new Error('conversation compaction projection did not register')
@@ -348,8 +375,7 @@ function renderConversationCheckpoint(conversationClient: StockClientExports) {
       surfaceOp: 'replace',
       data: {
         source: {
-          kind: 'plugin',
-          plugin: 'compact',
+          kind: 'compact-checkpoint',
           compactionId: 'cmp-presentation',
         },
       },

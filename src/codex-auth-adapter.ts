@@ -43,7 +43,7 @@ import type { CodexAuthFile } from './codex-auth.ts'
 import type { CodexAuthService } from './codex-auth-service.ts'
 import { applyCodexContextPolicy, CODEX_GPT_6_ASTRA_MODEL_ID } from './codex-context.ts'
 import type { CodexLlmSettings } from './codex-context.ts'
-import { CodexNativeCheckpointReplay } from './native-checkpoint-replay.ts'
+import { CodexNativeCheckpointReplay, dispatchForeignCheckpointStream } from './native-checkpoint-replay.ts'
 import type { CodexProviderPayloadCallback } from './native-checkpoint-replay.ts'
 import { codexNativeCompactionCoordinator } from './native-compaction.ts'
 import {
@@ -325,6 +325,8 @@ export class CodexAuthAdapter extends PiAiAdapter {
     this.adapterGeneration = codexTurnStateContinuity.createGeneration()
     ctx.on('llm/stream', (request, next) =>
       codexTurnStateContinuity.observeLlmStream(request, next))
+    ctx.on('llm/stream', (request, next) =>
+      dispatchForeignCheckpointStream(CODEX_ROUTE, request, modified => ctx.llm.stream(modified)) ?? next())
     ctx.effect(
       () => () => this.retireProcessLocalState(this.adapterGeneration),
       'llm-codex-auth: process-local replay cleanup',

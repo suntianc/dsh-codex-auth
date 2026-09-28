@@ -13,7 +13,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { createCodexAuthRpcClient } from '../rpc-contract.ts'
-import { IMAGE_QUALITIES, isImageSize } from '../image-options.ts'
 import { CodexCapabilitySettings } from './CodexCapabilitySettings.tsx'
 import type {
   CodexCapabilitySettingsProps, ImageSettingsView, LlmSettingsView, SearchSettingsView,
@@ -37,12 +36,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 const NS = 'settings.codexAuth'
-const LLM_NAMESPACE = 'codex-llm'
-const SEARCH_NAMESPACE = 'codex-search'
-const IMAGE_NAMESPACE = 'codex-image'
+const LLM_ENTRY_ID = 'llm-codex-auth'
+const SEARCH_ENTRY_ID = 'codex-search'
+const IMAGE_ENTRY_ID = 'codex-image'
 
 /** Required browser services, including session-authorized attachment reads. */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope', 'sessions']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'configForms', 'sessions']
 
 /** Register the four-card settings section and keyed image result renderers. */
 export function apply(ctx: ClientContext): void {
@@ -65,18 +64,9 @@ export function apply(ctx: ClientContext): void {
   if (connection.isLoopback) {
     const rpc = createCodexAuthRpcClient(connection.rpc)
     const t = ctx.locale.bind(NS) as CodexCapabilitySettingsProps['t']
-    const llmScope = ctx.settingsScope.bind<LlmSettingsView>({
-      namespace: LLM_NAMESPACE,
-      decode: decodeLlmSettings,
-    })
-    const searchScope = ctx.settingsScope.bind<SearchSettingsView>({
-      namespace: SEARCH_NAMESPACE,
-      decode: decodeSearchSettings,
-    })
-    const imageScope = ctx.settingsScope.bind<ImageSettingsView>({
-      namespace: IMAGE_NAMESPACE,
-      decode: decodeImageSettings,
-    })
+    const llmScope = ctx.configForms.get<LlmSettingsView>(LLM_ENTRY_ID)
+    const searchScope = ctx.configForms.get<SearchSettingsView>(SEARCH_ENTRY_ID)
+    const imageScope = ctx.configForms.get<ImageSettingsView>(IMAGE_ENTRY_ID)
     ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',
       id: 'codex-auth',
@@ -113,55 +103,4 @@ function imageToolView(imageUrls: SessionImageUrls): (props: LocalizedToolViewPr
     )
     return createElement(CodexImageToolView, { block: props.block, loadImage, t: props.t })
   }
-}
-
-function decodeLlmSettings(value: unknown): LlmSettingsView | undefined {
-  if (!isRecord(value) || typeof value.longContextEnabled !== 'boolean') return undefined
-  return { longContextEnabled: value.longContextEnabled }
-}
-
-function decodeSearchSettings(value: unknown): SearchSettingsView | undefined {
-  if (!isRecord(value)
-    || typeof value.enabled !== 'boolean'
-    || !oneOf(value.mode, ['live', 'cached', 'indexed'])
-    || !oneOf(value.contextSize, ['low', 'medium', 'high'])
-    || typeof value.fallbackModel !== 'string'
-    || !positiveInteger(value.maxOutputTokens)) return undefined
-  return {
-    enabled: value.enabled,
-    mode: value.mode,
-    contextSize: value.contextSize,
-    fallbackModel: value.fallbackModel,
-    maxOutputTokens: value.maxOutputTokens,
-  }
-}
-
-function decodeImageSettings(value: unknown): ImageSettingsView | undefined {
-  if (!isRecord(value)
-    || typeof value.enabled !== 'boolean'
-    || typeof value.model !== 'string'
-    || !positiveInteger(value.n) || value.n > 10
-    || !isImageSize(value.size)
-    || !oneOf(value.quality, IMAGE_QUALITIES)
-    || !oneOf(value.background, ['auto', 'opaque', 'transparent'])) return undefined
-  return {
-    enabled: value.enabled,
-    model: value.model,
-    n: value.n,
-    size: value.size,
-    quality: value.quality,
-    background: value.background,
-  }
-}
-
-function oneOf<const T extends string>(value: unknown, choices: readonly T[]): value is T {
-  return typeof value === 'string' && choices.includes(value as T)
-}
-
-function positiveInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) > 0
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

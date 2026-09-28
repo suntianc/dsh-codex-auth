@@ -26,7 +26,7 @@ function bench(isLoopback = true) {
   const dictionaries = new Map<string, { zh: Dictionary; en: Dictionary }>()
   const slots: SlotRecord[] = []
   const listeners = new Set<() => void>()
-  const bindScope = vi.fn(({ namespace }: { namespace: string }) => ({ namespace }))
+  const getForm = vi.fn((entryId: string) => ({ entryId }))
 
   const ctx = {
     locale: {
@@ -38,7 +38,7 @@ function bench(isLoopback = true) {
         return (key: CodexAuthKey) => dictionaries.get(namespace)?.en[key] ?? key
       },
     },
-    settingsScope: { bind: bindScope },
+    configForms: { get: getForm },
     sessions: { binding: vi.fn() },
     slots: {
       inject(_name: string, register: () => () => void) { disposers.push(register()) },
@@ -69,7 +69,7 @@ function bench(isLoopback = true) {
 
   apply(ctx as unknown as ClientContext)
   return {
-    bindScope,
+    getForm,
     call,
     dictionaries,
     listeners,
@@ -80,14 +80,14 @@ function bench(isLoopback = true) {
 
 describe('dsh-codex-auth client apply', () => {
   it('declares every stock service it consumes', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope', 'sessions'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'configForms', 'sessions'])
   })
 
   it('registers only settings and image views, never a native conversation renderer', async () => {
     const b = bench()
-    expect(b.bindScope).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'codex-llm' }))
-    expect(b.bindScope).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'codex-search' }))
-    expect(b.bindScope).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'codex-image' }))
+    expect(b.getForm).toHaveBeenCalledWith('llm-codex-auth')
+    expect(b.getForm).toHaveBeenCalledWith('codex-search')
+    expect(b.getForm).toHaveBeenCalledWith('codex-image')
     expect(b.slots).toHaveLength(3)
     expect(b.slots.map(record => record.options)).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'settings.section', id: 'codex-auth', order: 20 }),
@@ -111,7 +111,7 @@ describe('dsh-codex-auth client apply', () => {
   it('keeps image result views but omits privileged settings off loopback', () => {
     const b = bench(false)
 
-    expect(b.bindScope).not.toHaveBeenCalled()
+    expect(b.getForm).not.toHaveBeenCalled()
     expect(b.slots).toHaveLength(2)
     expect(b.slots.map(record => record.options)).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),

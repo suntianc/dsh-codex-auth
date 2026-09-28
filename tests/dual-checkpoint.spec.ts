@@ -358,7 +358,7 @@ function closedConversation(
 ): Session {
   const session = Session.create(SessionId(id))
   if (system !== undefined) session.append('system/message', {
-    turn: 1, step: 1, message: createSystemMessage(system, 'test'),
+    turn: 1, step: 1, message: createSystemMessage(system),
   }, { surfaceOp: 'append' })
   for (let turn = 1; turn <= 2; turn += 1) {
     session.append('turn/start', { turn })

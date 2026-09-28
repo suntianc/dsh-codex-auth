@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url'
 import semver from 'semver'
 import { DSH_BASELINE, DSH_SOURCE_VERSION, DSH_VERIFY_VERSION, DSH_EXPERIMENTAL_PEER_RANGE, resolvedDshPackages } from './dsh-compatibility.mjs'
 
-const CODEX_COMPACTION_DSH_VERSION = '0.1.5-rc.1'
+const CODEX_COMPACTION_DSH_VERSION = '0.1.7-rc.2'
 const EXPERIMENTAL_DSH_PEERS = [
   '@deepseek-ai/dsh-compaction',
   '@deepseek-ai/dsh-compaction-basic',
@@ -16,8 +16,8 @@ const EXPERIMENTAL_DSH_PEERS = [
 ]
 const PI_AI_VERSION = '0.85.1'
 const EXACT_SUPPORT_PACKAGES = {
-  '@deepseek-ai/cordis': '4.0.2',
-  '@deepseek-ai/schemastery': '3.18.2',
+  '@deepseek-ai/cordis': '4.0.4',
+  '@deepseek-ai/schemastery': '3.18.4',
 }
 const RETIRED_DSH_PACKAGES = [
   '@deepseek-ai/dsh-client-runtime',

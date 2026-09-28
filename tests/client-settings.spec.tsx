@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ComponentType } from 'react'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { CodexImageSettings } from '../src/image.ts'
 import type { CodexSearchSettings } from '../src/search.ts'
@@ -39,9 +39,9 @@ const IMAGE: CodexImageSettings = {
 
 function fakeScope<T>(
   initial: T,
-  status: SettingsScopeSnapshot<T>['status'] = 'ready',
-): { scope: SettingsScope<T>; set: ReturnType<typeof vi.fn> } {
-  let snapshot: SettingsScopeSnapshot<T> = {
+  status: ConfigFormSnapshot<T>['status'] = 'ready',
+): { scope: ConfigForm<T>; set: ReturnType<typeof vi.fn> } {
+  let snapshot: ConfigFormSnapshot<T> = {
     status,
     value: initial,
     base: initial,
@@ -57,17 +57,17 @@ function fakeScope<T>(
   })
   const scope = {
     getSnapshot() {
-      if (this !== scope) throw new Error('getSnapshot lost its SettingsScope receiver')
+      if (this !== scope) throw new Error('getSnapshot lost its ConfigForm receiver')
       return snapshot
     },
     subscribe(listener: () => void) {
-      if (this !== scope) throw new Error('subscribe lost its SettingsScope receiver')
+      if (this !== scope) throw new Error('subscribe lost its ConfigForm receiver')
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
     set,
     unset: vi.fn(async () => {}),
-  } satisfies SettingsScope<T>
+  } satisfies ConfigForm<T>
   return { set, scope }
 }
 
@@ -281,7 +281,7 @@ describe('client plugin registration', () => {
   it('registers one settings row and keyed views for both image tools', () => {
     const registered: Array<Record<string, unknown>> = []
     const scopes = new Map([
-      ['codex-llm', fakeScope(LLM).scope],
+      ['llm-codex-auth', fakeScope(LLM).scope],
       ['codex-search', fakeScope(SEARCH).scope],
       ['codex-image', fakeScope(IMAGE).scope],
     ])
@@ -300,21 +300,18 @@ describe('client plugin registration', () => {
           return () => {}
         },
       },
-      settingsScope: {
-        bind: ({ namespace, decode }: { namespace: string; decode: (value: unknown) => unknown }) => {
-          if (namespace === 'codex-image') {
-            const extended = { ...IMAGE, model: 'gpt-image-2.5-flare', quality: 'max', size: '1536x864' }
-            expect(decode(extended)).toEqual(extended)
-            expect(decode({ ...extended, size: '256x256' })).toBeUndefined()
-          }
-          return scopes.get(namespace)
+      configForms: {
+        get: (entryId: string) => {
+          const scope = scopes.get(entryId)
+          if (scope === undefined) throw new Error(`unexpected config form entry: ${entryId}`)
+          return scope
         },
       },
     }
 
     apply(ctx as never)
 
-    expect(inject).toEqual(expect.arrayContaining(['remote', 'settingsScope', 'sessions']))
+    expect(inject).toEqual(expect.arrayContaining(['remote', 'configForms', 'sessions']))
     expect(registered).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'settings.section', id: 'codex-auth' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),

@@ -839,7 +839,7 @@ export const inject = ['tools', 'llm', 'agents', 'attachments', 'fs', 'codexAuth
 export function apply(ctx: Context, config: Config): void {
   const auth = ctx.get('codexAuth') as CodexAuthService | undefined
   if (auth === undefined) throw new Error('codex-image: shared codexAuth service is unavailable')
-  let current = (): CodexImageSettings => config
+  const current = (): CodexImageSettings => config
   const registrations = new Map<Agent, () => void>()
   const generations = new Map<Agent, number>()
   let disposed = false
@@ -880,12 +880,6 @@ export function apply(ctx: Context, config: Config): void {
     generations.clear()
   }, 'codex-image: scoped tool cleanup')
 
-  ctx.inject(['settings'], settingsCtx => {
-    settingsCtx.settings.installSection(ctx, CODEX_IMAGE_SETTINGS_NAMESPACE, Config, config, {
-      setSource: source => { current = source },
-      onChange: refreshAll,
-    })
-  })
   ctx.on('agent/created', ({ agent }) => { void refreshAgent(agent) })
   ctx.on('agent/request', async ({ agent }, next) => {
     const route = await next()

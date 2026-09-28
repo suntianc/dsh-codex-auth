@@ -1,14 +1,15 @@
 /** Static fail-closed guard for account RPC after DSH removed per-channel authority. */
 
-import type { ConnectionRpcHandler, ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
+import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
+import type { AccountRpcHandler } from './account-routes.ts'
 
 export type LoopbackRpcMode = 'enabled' | 'blocked'
 
 export interface LoopbackRpcGuard {
   /** Why the guarded handler is available or blocked for this Host composition. */
   readonly mode: LoopbackRpcMode
-  /** Handler safe to register on the public Connection service. */
-  readonly handler: ConnectionRpcHandler
+  /** Handler safe to register on the plugin's exact /api account routes. */
+  readonly handler: AccountRpcHandler
 }
 
 export const LOOPBACK_REQUIRED_MESSAGE = 'Codex account controls require a loopback-bound DSH Host'
@@ -52,7 +53,7 @@ export function commandAccountMode(webServer: { readonly host?: string } | undef
  */
 export function createLoopbackRpcGuard(
   webServerHost: string | undefined,
-  delegate: ConnectionRpcHandler,
+  delegate: AccountRpcHandler,
 ): LoopbackRpcGuard {
   if (loopbackMode(webServerHost) === 'blocked') {
     return {

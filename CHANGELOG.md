@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Adapts to DSH `0.1.7-rc.2` (pi-ai stays `0.85.1`). The `@deepseek-ai/dsh-settings` seam was replaced by schema-derived plugin configuration forms: the three Host rows no longer call `installSection`, their entry `Config` schemas are the editable forms, and entry-config writes (fiber reload) replace live settings sections. The browser card reads and writes through `ctx.configForms.get(entryId)` (`llm-codex-auth`, `codex-search`, `codex-image`) instead of the removed `settingsScope` binder. Product icons move to the `*Regular`/`*Medium` naming from `dsh-client-ui-primitives`. Peer and dev graphs, compatibility gates, scripts, and docs are pinned to the verified `0.1.7-rc.2` graph.
+
 ## [0.3.3-rc.1] - 2026-09-10
 
 - Targets the coherent DSH `0.1.5-rc.1` graph with pi-ai `0.85.1`. Supplies the new pi-ai model-error map so ordinary and prepared model requests reach the provider. Compaction and Native replay accept exactly RC.1, reject mixed/unverified graphs, and preserve the durable checkpoint codec and Portable fallback.

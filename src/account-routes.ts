@@ -1,13 +1,24 @@
 /** Plugin-owned account RPC carried by Connection's authenticated /api routes. */
 import { clientRequestSchema } from '@deepseek-ai/dsh-client-connection'
-import type { HostConnectionHandle, ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
+import type { HostConnectionHandle, ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
+
+/**
+ * Account dispatch decoupled from `ConnectionRpcHandler`: the shared `/api`
+ * channel is intercepted by dsh-api-gateway in DSH 0.1.7, so these exact Fetch
+ * routes keep their own decode bridge and call the guarded dispatcher directly.
+ */
+export type AccountRpcHandler = (
+  endpoint: string,
+  payload: unknown,
+  signal: AbortSignal,
+) => Promise<ConnectionRpcResult<unknown>>
 
 /** Register exact routes without creating a separate physical RPC carrier. */
 export function registerAccountRoutes(
   connection: HostConnectionHandle,
   namespace: string,
   endpoints: readonly string[],
-  handler: ConnectionRpcHandler,
+  handler: AccountRpcHandler,
 ): () => Promise<void> {
   const disposers = endpoints.map(endpoint => connection.fetch.register({
     path: `/api/${namespace}/${endpoint}`,

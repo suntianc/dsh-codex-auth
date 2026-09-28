@@ -14,6 +14,7 @@ import type {
   ContentBlock,
   GenerateOptions,
   Message,
+  RequestMessage,
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import {
@@ -126,6 +127,7 @@ export class CodexNativeCheckpointReplay {
     let changed = false
     let runtimeCompatible: boolean | undefined
     const messages = options.messages.map((message) => {
+      if (isRequestUserInput(message)) return message
       if (message.role !== 'user') return message
       const nativeBlocks = message.content.filter(
         block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
@@ -347,6 +349,42 @@ export class CodexNativeCheckpointReplay {
   }
 }
 
+/** One-shot request user inputs carry no durable identity and never hold checkpoints. */
+function isRequestUserInput(message: RequestMessage): message is Extract<RequestMessage, { readonly id?: never }> {
+  return message.id === undefined
+}
+
+/** Whether any message still carries the declaration-merged Native checkpoint block. */
+function messageHasNativeCheckpointBlock(message: RequestMessage): boolean {
+  return message.content.some(block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+}
+
+/**
+ * Foreign routes cannot represent the plugin's declaration-merged Native
+ * checkpoint block: DSH 0.1.7 shipped adapters fail closed with
+ * UNSUPPORTED_CONTENT before any network I/O. Re-dispatch such requests with
+ * request-local shallow copies whose checkpoint messages keep only their
+ * Portable content. Returns the replacement stream, or undefined when the
+ * original request should flow on unchanged; the original options object is
+ * never rewritten.
+ */
+export function dispatchForeignCheckpointStream(
+  routeId: string,
+  options: GenerateOptions,
+  dispatch: (options: GenerateOptions) => AsyncIterable<StreamChunk>,
+): AsyncIterable<StreamChunk> | undefined {
+  if (options.provider === routeId) return undefined
+  if (!options.messages.some(messageHasNativeCheckpointBlock)) return undefined
+  const messages = options.messages.map(message => {
+    if (!messageHasNativeCheckpointBlock(message) || isRequestUserInput(message)) return message
+    return freezeMessage({
+      ...message,
+      content: message.content.filter(block => block.type !== CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE),
+    })
+  })
+  return dispatch({ ...options, messages })
+}
+
 function textOnlyMessage(message: Message): Message & { readonly role: 'user' } {
   const content = message.content.filter(
     (block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text',
@@ -362,8 +400,7 @@ function isCompleteBasicCheckpoint(message: Message): boolean {
   const source = message.source
   const sourceRecord = source as unknown as Record<string, unknown>
   if (message.role !== 'user'
-    || source.kind !== 'plugin'
-    || source.plugin !== 'compact'
+    || source.kind !== 'compact-checkpoint'
     || typeof sourceRecord.compactionId !== 'string') return false
   if (message.content.length < 4
     || message.content.some(block => (

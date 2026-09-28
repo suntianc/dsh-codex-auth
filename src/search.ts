@@ -164,13 +164,7 @@ export const inject = ['web', 'codexAuth']
 export function apply(ctx: Context, config: Config): void {
   const auth = ctx.get('codexAuth') as CodexAuthService | undefined
   if (auth === undefined) throw new Error('codex-search: shared codexAuth service is unavailable')
-  let current = (): CodexSearchSettings => config
-  ctx.inject(['settings'], settingsCtx => {
-    settingsCtx.settings.installSection(ctx, CODEX_SEARCH_SETTINGS_NAMESPACE, Config, config, {
-      setSource: source => { current = source },
-      onChange: () => {},
-    })
-  })
+  const current = (): CodexSearchSettings => config
   ctx.web.registerSearchProvider(new CodexSearchProvider({
     auth,
     settings: () => current(),

@@ -31,9 +31,6 @@ import {
 } from './codex-auth-adapter.ts'
 import type { CodexAuthTransport } from './codex-auth-adapter.ts'
 import { CodexAuthService } from './codex-auth-service.ts'
-import {
-  CODEX_LLM_SETTINGS_NAMESPACE, CodexLlmSettingsConfig,
-} from './codex-context.ts'
 import type { CodexLlmSettings } from './codex-context.ts'
 import { installEnvHttpProxy } from './env-proxy.ts'
 import { createCodexAuthCommand } from './auth-command.ts'
@@ -106,9 +103,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.inject(['commands'], commandCtx => {
     commandCtx.commands.register(createCodexAuthCommand(service, () => accountMode))
   })
-  const settingsEntry: CodexLlmSettings = { longContextEnabled: config.longContextEnabled }
-  let currentSettings = (): CodexLlmSettings => settingsEntry
-  let announceModelPolicyChange = (): void => {}
+  const currentSettings = (): CodexLlmSettings => ({ longContextEnabled: config.longContextEnabled })
   if (config.llmEnabled) {
     if (ctx.llm.listProviders().some(provider => provider.id === CODEX_ROUTE)) {
       throw new Error(
@@ -128,18 +123,8 @@ export function apply(ctx: Context, config: Config): void {
       websocketConnectTimeoutMs: config.websocketConnectTimeoutMs,
       timeoutMs: config.timeoutMs,
     })
-    const registration = ctx.llm.registerAdapter([CODEX_ROUTE], adapter)
-    announceModelPolicyChange = () => {
-      adapter.replaceRouteGeneration()
-      registration.replace([CODEX_ROUTE])
-    }
+    ctx.llm.registerAdapter([CODEX_ROUTE], adapter)
   }
-  ctx.inject(['settings'], settingsCtx => {
-    settingsCtx.settings.installSection(ctx, CODEX_LLM_SETTINGS_NAMESPACE, CodexLlmSettingsConfig, settingsEntry, {
-      setSource: source => { currentSettings = source },
-      onChange: announceModelPolicyChange,
-    })
-  })
   ctx.inject(['connection'], connectionCtx => {
     const webServer = connectionCtx.get('webServer')
     accountMode = commandAccountMode(webServer)
