@@ -14,7 +14,9 @@ import type {
   ContentBlock,
   GenerateOptions,
   Message,
+  RequestMessage,
   StreamChunk,
+  UserMessage,
 } from '@deepseek-ai/dsh-llm'
 import {
   CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
@@ -126,7 +128,7 @@ export class CodexNativeCheckpointReplay {
     let changed = false
     let runtimeCompatible: boolean | undefined
     const messages = options.messages.map((message) => {
-      if (message.role !== 'user') return message
+      if (!isDurableUserMessage(message)) return message
       const nativeBlocks = message.content.filter(
         block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
       )
@@ -347,11 +349,15 @@ export class CodexNativeCheckpointReplay {
   }
 }
 
-function textOnlyMessage(message: Message): Message & { readonly role: 'user' } {
+function isDurableUserMessage(message: RequestMessage): message is UserMessage {
+  return message.role === 'user' && message.id !== undefined && message.source !== undefined
+}
+
+function textOnlyMessage(message: UserMessage): UserMessage {
   const content = message.content.filter(
     (block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text',
   )
-  return freezeMessage({ ...message, content }) as Message & { readonly role: 'user' }
+  return freezeMessage({ ...message, content })
 }
 
 function sha256Text(text: string): string {
@@ -362,8 +368,7 @@ function isCompleteBasicCheckpoint(message: Message): boolean {
   const source = message.source
   const sourceRecord = source as unknown as Record<string, unknown>
   if (message.role !== 'user'
-    || source.kind !== 'plugin'
-    || source.plugin !== 'compact'
+    || source.kind !== 'compact-checkpoint'
     || typeof sourceRecord.compactionId !== 'string') return false
   if (message.content.length < 4
     || message.content.some(block => (

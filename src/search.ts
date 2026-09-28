@@ -8,6 +8,7 @@ import type { WebSearchProvider, WebSearchRequest, WebSearchResult, WebSearchSou
 import type { CodexAuthService } from './codex-auth-service.ts'
 import { CODEX_ROUTE } from './codex-auth-adapter.ts'
 import { readBoundedResponseText } from './bounded-response.ts'
+import { liveValue, type LiveValue } from './volatile-config.ts'
 
 /** Stable provider id selected by DSH's stock `web_search` Capability Tool. */
 export const CODEX_SEARCH_PROVIDER_ID = 'codex'
@@ -33,15 +34,31 @@ export interface CodexSearchSettings {
   maxOutputTokens: number
 }
 
-export interface Config extends CodexSearchSettings {}
+export interface Config {
+  enabled: LiveValue<boolean>
+  mode: LiveValue<CodexSearchMode>
+  contextSize: LiveValue<CodexSearchContextSize>
+  fallbackModel: LiveValue<string>
+  maxOutputTokens: LiveValue<number>
+}
 
 export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(true),
-  mode: z.union([z.const('live'), z.const('cached'), z.const('indexed')]).default('live'),
-  contextSize: z.union([z.const('low'), z.const('medium'), z.const('high')]).default('medium'),
-  fallbackModel: z.string().default(DEFAULT_CODEX_SEARCH_FALLBACK_MODEL),
-  maxOutputTokens: z.number().step(1).min(1).default(2048),
-})
+  enabled: z.boolean().default(true).volatile(),
+  mode: z.union([z.const('live'), z.const('cached'), z.const('indexed')]).default('live').volatile(),
+  contextSize: z.union([z.const('low'), z.const('medium'), z.const('high')]).default('medium').volatile(),
+  fallbackModel: z.string().default(DEFAULT_CODEX_SEARCH_FALLBACK_MODEL).volatile(),
+  maxOutputTokens: z.number().step(1).min(1).default(2048).volatile(),
+}) as unknown as z<Config>
+
+function searchSettings(config: Config): CodexSearchSettings {
+  return {
+    enabled: liveValue(config.enabled),
+    mode: liveValue(config.mode),
+    contextSize: liveValue(config.contextSize),
+    fallbackModel: liveValue(config.fallbackModel),
+    maxOutputTokens: liveValue(config.maxOutputTokens),
+  }
+}
 
 export interface CodexSearchProviderOptions {
   auth: Pick<CodexAuthService, 'credential'>
@@ -164,12 +181,9 @@ export const inject = ['web', 'codexAuth']
 export function apply(ctx: Context, config: Config): void {
   const auth = ctx.get('codexAuth') as CodexAuthService | undefined
   if (auth === undefined) throw new Error('codex-search: shared codexAuth service is unavailable')
-  let current = (): CodexSearchSettings => config
+  const current = (): CodexSearchSettings => searchSettings(config)
   ctx.inject(['settings'], settingsCtx => {
-    settingsCtx.settings.installSection(ctx, CODEX_SEARCH_SETTINGS_NAMESPACE, Config, config, {
-      setSource: source => { current = source },
-      onChange: () => {},
-    })
+    settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
   })
   ctx.web.registerSearchProvider(new CodexSearchProvider({
     auth,

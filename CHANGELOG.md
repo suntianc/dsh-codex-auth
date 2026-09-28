@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.3-rc.2] - 2026-09-28
+
+- Align the plugin and its dependency graph with DSH `0.2.0-rc.1`; migrate Config Forms, volatile settings, Connection RPC, and V4 tool messages.
+- Pin Native Checkpoint compatibility to this DSH release and project Portable checkpoint text for non-Codex providers through the public LLM middleware.
+- Verify with the full package gate and artifacts built from the official DSH source tag; live Codex login and provider replay remain unverified.
+
 ## [0.3.3-rc.1] - 2026-09-10
 
 - Targets the coherent DSH `0.1.5-rc.1` graph with pi-ai `0.85.1`. Supplies the new pi-ai model-error map so ordinary and prepared model requests reach the provider. Compaction and Native replay accept exactly RC.1, reject mixed/unverified graphs, and preserve the durable checkpoint codec and Portable fallback.

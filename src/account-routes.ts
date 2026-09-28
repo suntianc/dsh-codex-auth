@@ -26,7 +26,7 @@ export function registerAccountRoutes(
       let result
       try {
         result = method === `${namespace}/${endpoint}`
-          ? await handler(endpoint, payload, request.signal)
+          ? await handler(endpoint, payload, request.signal, connection.operator)
           : failure('bad-request', 'Account request method does not match its endpoint')
       } catch {
         result = failure('internal', 'Account request failed')

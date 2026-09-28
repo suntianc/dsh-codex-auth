@@ -24,7 +24,7 @@ import LlmRuntime, {
 import type {
   GenerateOptions,
   LlmResolvedModelInfo,
-  Message,
+  RequestMessage,
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId, type SessionEvent, type SessionSeq } from '@deepseek-ai/dsh-session'
@@ -188,7 +188,7 @@ function idleAgent(session: Session): Agent {
 }
 
 /** Concatenate model-visible text without inspecting compaction internals. */
-function messageText(message: Message): string {
+function messageText(message: RequestMessage): string {
   return message.content.map(block => block.type === 'text' ? block.text : '').join('')
 }
 
@@ -518,7 +518,7 @@ describe('Codex Portable Checkpoint Adapter', () => {
     const toolCallIndex = retained.findIndex(message =>
       message.content.some(block => block.type === 'tool-call'))
     expect(toolCallIndex).toBeGreaterThan(-1)
-    expect(retained[toolCallIndex + 1]?.content[0]?.type).toBe('tool-result')
+    expect(retained[toolCallIndex + 1]?.role).toBe('tool')
     expect(JSON.stringify(retained[toolCallIndex + 1]))
       .toContain('[... tool result middle pruned ...]')
   })
@@ -564,7 +564,7 @@ describe('Codex Portable Checkpoint Adapter', () => {
   })
 
   it('loads and exercises the shipped custom preset with one compaction Adapter', async () => {
-    const adapter = new PortableSummaryAdapter('PORTABLE CHECKPOINT', 2_000)
+    const adapter = new PortableSummaryAdapter('PORTABLE CHECKPOINT', 100_000)
     const ctx = trackedCompactionHost()
     ctx.llm.registerAdapter([MODEL], adapter)
     await ctx.plugin(Loader)
@@ -611,7 +611,7 @@ describe('Codex Portable Checkpoint Adapter', () => {
     const automaticSession = openConversation()
     const automatic = await loadedCompaction.compactIfNeeded(
       idleAgent(automaticSession),
-      'pressure',
+      'context-overflow',
       new AbortController().signal,
     )
 
@@ -622,16 +622,16 @@ describe('Codex Portable Checkpoint Adapter', () => {
     expect(adapter.requests.map(request => request.purpose)).toEqual(['compaction', 'compaction'])
   })
 
-  it('accepts the resolved 0.1.5-rc.1 and pi-ai 0.85.1 runtime pair', () => {
+  it('accepts the resolved 0.2.0-rc.1 and pi-ai 0.85.1 runtime pair', () => {
     expect(() => assertCodexCompactionCompatibility({
       dsh: {
-        '@deepseek-ai/dsh-agent': '0.1.5-rc.1',
-        '@deepseek-ai/dsh-compaction': '0.1.5-rc.1',
-        '@deepseek-ai/dsh-compaction-basic': '0.1.5-rc.1',
-        '@deepseek-ai/dsh-llm': '0.1.5-rc.1',
-        '@deepseek-ai/dsh-llm-pi-ai': '0.1.5-rc.1',
-        '@deepseek-ai/dsh-session': '0.1.5-rc.1',
-        '@deepseek-ai/dsh-token-meter': '0.1.5-rc.1',
+        '@deepseek-ai/dsh-agent': '0.2.0-rc.1',
+        '@deepseek-ai/dsh-compaction': '0.2.0-rc.1',
+        '@deepseek-ai/dsh-compaction-basic': '0.2.0-rc.1',
+        '@deepseek-ai/dsh-llm': '0.2.0-rc.1',
+        '@deepseek-ai/dsh-llm-pi-ai': '0.2.0-rc.1',
+        '@deepseek-ai/dsh-session': '0.2.0-rc.1',
+        '@deepseek-ai/dsh-token-meter': '0.2.0-rc.1',
       },
       piAi: '0.85.1',
     })).not.toThrow()
@@ -649,24 +649,24 @@ describe('Codex Portable Checkpoint Adapter', () => {
     }
     expect(() => assertCodexCompactionCompatibility({ dsh, piAi: '0.85.1' })).toThrow()
     expect(() => assertCodexCompactionCompatibility({
-      dsh: { ...dsh, '@deepseek-ai/dsh-session': '0.1.5-rc.1' },
+      dsh: { ...dsh, '@deepseek-ai/dsh-session': '0.2.0-rc.1' },
       piAi: '0.85.1',
     })).toThrow()
   })
 
   it('fails loud when any experimental DSH or pi-ai runtime package leaves the pinned pair', () => {
     expect(CODEX_COMPACTION_COMPATIBILITY).toEqual({
-      dsh: '0.1.5-rc.1',
+      dsh: '0.2.0-rc.1',
       piAi: '0.85.1',
     })
     const pinnedDsh = {
-      '@deepseek-ai/dsh-agent': '0.1.5-rc.1',
-      '@deepseek-ai/dsh-compaction': '0.1.5-rc.1',
-      '@deepseek-ai/dsh-compaction-basic': '0.1.5-rc.1',
-      '@deepseek-ai/dsh-llm': '0.1.5-rc.1',
-      '@deepseek-ai/dsh-llm-pi-ai': '0.1.5-rc.1',
-      '@deepseek-ai/dsh-session': '0.1.5-rc.1',
-      '@deepseek-ai/dsh-token-meter': '0.1.5-rc.1',
+      '@deepseek-ai/dsh-agent': '0.2.0-rc.1',
+      '@deepseek-ai/dsh-compaction': '0.2.0-rc.1',
+      '@deepseek-ai/dsh-compaction-basic': '0.2.0-rc.1',
+      '@deepseek-ai/dsh-llm': '0.2.0-rc.1',
+      '@deepseek-ai/dsh-llm-pi-ai': '0.2.0-rc.1',
+      '@deepseek-ai/dsh-session': '0.2.0-rc.1',
+      '@deepseek-ai/dsh-token-meter': '0.2.0-rc.1',
     }
     for (const version of ['0.1.5-alpha.1', '0.1.5-rc.2']) {
       const unverified = Object.fromEntries(Object.keys(pinnedDsh).map(name => [name, version])) as typeof pinnedDsh
@@ -682,7 +682,7 @@ describe('Codex Portable Checkpoint Adapter', () => {
       dsh: { ...pinnedDsh, '@deepseek-ai/dsh-agent': '0.1.2-alpha.4' },
       piAi: '0.85.1',
     })).toThrow(
-      /requires DSH 0\.1\.5-rc\.1.*received @deepseek-ai\/dsh-agent=0\.1\.2-alpha\.4/,
+      /requires DSH 0\.2\.0-rc\.1.*received @deepseek-ai\/dsh-agent=0\.1\.2-alpha\.4/,
     )
     expect(() => assertCodexCompactionCompatibility({
       dsh: { ...pinnedDsh, '@deepseek-ai/dsh-llm-pi-ai': '0.1.2-alpha.4' },
@@ -691,6 +691,6 @@ describe('Codex Portable Checkpoint Adapter', () => {
     expect(() => assertCodexCompactionCompatibility({
       dsh: pinnedDsh,
       piAi: '0.84.2',
-    })).toThrow(/requires DSH 0\.1\.5-rc\.1.*pi-ai 0\.85\.1.*pi-ai=0\.84\.2/)
+    })).toThrow(/requires DSH 0\.2\.0-rc\.1.*pi-ai 0\.85\.1.*pi-ai=0\.84\.2/)
   })
 })

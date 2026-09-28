@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH 兼容性：** `0.3.3-rc.1` 以 DSH `0.1.5-rc.1` 为开发与最低支持基线，依赖图必须保持一致。旧 DSH 用户请使用兼容的旧插件版本。见[验证说明](docs/dsh-source-verification.md)。
+> **DSH 兼容性：** `0.3.3-rc.2` 以 DSH `0.2.0-rc.1` 为最低且已测试的开发基线；旧版 DSH 请使用兼容的插件版本。见[验证说明](docs/dsh-source-verification.md)。
 
 [![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 [English](README.md) | 中文
 
-发布版本：**v0.3.3-rc.1**（npm 标签：`rc`）。
+发布版本：**v0.3.3-rc.2**（npm 标签：`rc`）。
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -23,6 +23,12 @@
 > **⚠️ 非官方通道——仅限个人开发。** 私有、受账户权限控制的
 > `chatgpt.com/backend-api` 未获官方支持、可随时撤销，也可能在没有通知的情况下被限流
 > 或变更。请勿依赖它承载生产任务。
+
+## 0.3.3-rc.2：适配 DSH 0.2.0-rc.1
+
+此版本更新 DSH 依赖图，使用 Config Forms 与 volatile 配置，向 Connection RPC 传入新版 operator，并接受 V4 `tool` 角色消息。Native Checkpoint 的兼容门槛固定在此 DSH 版本；公开 LLM middleware 会向非 Codex 提供商投影 Portable 文本。完整包检查与固定源码检查已通过；真实 Codex 登录和提供商回放尚未验证。
+
+下文复制自定义 preset 目录的命令属于旧版 DSH。`0.2.0-rc.1` 的 `@deepseek-ai/dsh-web-app/presets/standard.patch.yml` 包含 `preset-standard` 完整 `config.plugins` 列表。适配 0.2 时，应将整个条目克隆为新的 preset ID，并以本包示例中的 `compaction` group 替换原 group；不要使用已退役的 `@deepseek-ai/dsh-agent-presets` 路径。
 
 ## 0.3.3-rc.1：DSH 0.1.5-rc.1 适配
 
@@ -114,7 +120,7 @@ envelope allowance；该值不冒充 DSH 的 provider-neutral pressure price。�
 Codex 配额；其 opaque 状态不含 credential，但仍是敏感会话数据，而且 alpha.5 会在 summary
 event 与 replacement message 中各保存一份。
 
-#### 启用并使用 Dual Checkpoint 压缩
+#### 旧版自定义 preset 配置（DSH 0.1.x）
 
 正常安装 Codex 能力包不会启用这个 Adapter。`cordis.patch.yml` 与 DSH 内置 preset
 仍然使用 stock Basic 压缩。请通过一个完整、由用户维护的自定义 preset 显式启用：
@@ -201,7 +207,7 @@ Portable 文本。组合的 payload callback 可以改变已有建模控制项�
 Request ID、prompt-cache key、临时 header、turn state 与 Long Context Mode 不参与兼容性。
 未知、损坏、超过 2 MiB、含 secret、混合格式或不兼容的状态会退化为 Portable 文本。生成的
 marker 只存在于 Host；marker 缺失、重复、嵌入、泄漏或未消费时会在网络请求之前失败。
-回放 converter 要求 DSH LLM / pi-ai Adapter 同为 `0.1.5-rc.1`，且 pi-ai 为 `0.85.1`；混合或其他
+回放 converter 要求 DSH LLM / pi-ai Adapter 同为 `0.2.0-rc.1`，且 pi-ai 为 `0.85.1`；混合或其他
 runtime 组合只使用 Portable 文本。Adapter generation 替换或 HMR 会使进程内 replay 与
 turn-continuation 状态失效，但不会修改持久化 Dual Checkpoint。
 
@@ -323,7 +329,7 @@ DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 
 
 ## 环境要求
 
-- DeepSeek Harness `0.1.5-rc.1`（统一依赖图）；不要与旧 rc 包族混装。
+- DeepSeek Harness `0.2.0-rc.1`（统一依赖图）；不要与旧 rc 包族混装。
 - Node.js `^22.19.0` 或 `>=24.0.0`。
 - `PATH` 中可用 `pnpm`（本项目测试版本为 `11.7.0`）。
 - `codex` CLI 已加入 `PATH`。
@@ -331,15 +337,15 @@ DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 
 
 ## 安装
 
-先停止 `dsh web`，确认目标 Host 使用统一的 DSH `0.1.5-rc.1` 依赖图，再安装准确的预发布版本到目标 profile：
+先停止 `dsh web`，确认目标 Host 使用统一的 DSH `0.2.0-rc.1` 依赖图，再将此准确预发布版本安装到目标 profile：
 
 ```sh
 dsh --version
-dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.1
+dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.2
 dsh plugin --profile web list
 ```
 
-核对条目后重启 `dsh web` 并刷新浏览器。此版本通过 npm 的 `rc` 标签发布；不指定版本或标签会使用 `latest`，它不包含本次 RC1 适配。旧 DSH Host 应保留兼容的旧插件版本。
+核对条目后重启 `dsh web` 并刷新浏览器。此版本通过 npm 的 `rc` 标签发布；不指定版本或标签会使用 `latest`，它不包含本次 DSH 0.2 适配。旧 DSH Host 应保留兼容的旧插件版本。
 
 ## Host 配置
 
