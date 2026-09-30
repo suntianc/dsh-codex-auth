@@ -72,6 +72,7 @@
     "cordis.patch.yml",
     "examples/agent-presets/codex-portable/*.yml",
     "docs/design.md",
+    "docs/codex-model-policy.md",
     "docs/adr/*.md",
     "CHANGELOG.md",
     "README.md",

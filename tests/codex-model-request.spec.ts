@@ -8,11 +8,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CodexAuthAdapter } from '../src/codex-auth-adapter.ts'
 import {
   CODEX_GPT_6_ASTRA_MODEL_ID,
+  CODEX_GPT_6_1_SOL_MODEL_ID,
   CODEX_GPT_6_LUNA_MODEL_ID,
   CODEX_GPT_6_SOL_MODEL_ID,
 } from '../src/codex-context.ts'
 
-const NEW_MODELS = [CODEX_GPT_6_SOL_MODEL_ID, CODEX_GPT_6_LUNA_MODEL_ID] as const
+const NEW_MODELS = [CODEX_GPT_6_SOL_MODEL_ID, CODEX_GPT_6_LUNA_MODEL_ID, CODEX_GPT_6_1_SOL_MODEL_ID] as const
 
 let context: Context | undefined
 
@@ -39,8 +40,20 @@ function fixture() {
     }
     if (typeof body !== 'string') throw new Error('Expected a serialized request body')
     payloads.push(JSON.parse(body) as Record<string, unknown>)
-    // Capture the final wire body, then stop without contacting the provider.
-    return new Response('model policy fixture stop', { status: 400 })
+    // Exercise successful provider decoding offline; this is not a live backend probe.
+    const events = [
+      { type: 'response.output_item.done', output_index: 0, item: {
+        type: 'message', id: 'msg_model_policy', role: 'assistant',
+        content: [{ type: 'output_text', text: 'Model policy fixture response.' }],
+      } },
+      { type: 'response.completed', response: {
+        id: 'resp_model_policy', status: 'completed',
+        usage: { input_tokens: 12, output_tokens: 8, total_tokens: 20 },
+      } },
+    ]
+    return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('') + 'data: [DONE]\n\n', {
+      status: 200, headers: { 'content-type': 'text/event-stream' },
+    })
   })
   vi.stubGlobal('fetch', fetchMock)
   const adapter = new CodexAuthAdapter(context, {
@@ -106,31 +119,38 @@ describe('Codex model request policy', () => {
       expect(payloads[0]).not.toHaveProperty('temperature')
     })
 
-    it.each(NEW_MODELS)('sends %s through the real provider', async model => {
+    it.each(NEW_MODELS)('decodes a successful offline SSE response for %s', async model => {
       const { adapter, payloads } = fixture()
       const options = request({ model })
       const call = mode === 'prepared'
         ? await adapter.prepareCall(options.provider, options.model)
         : adapter
 
-      await drain(call.stream(options))
+      const chunks = []
+      for await (const chunk of call.stream(options)) chunks.push(chunk)
+      expect(chunks).toContainEqual(expect.objectContaining({ type: 'finish', reason: { kind: 'stop' } }))
+      expect(chunks).toContainEqual(expect.objectContaining({
+        type: 'block-end', block: expect.objectContaining({ type: 'text', text: 'Model policy fixture response.' }),
+      }))
 
       expect(payloads).toHaveLength(1)
       expect(payloads[0]?.model).toBe(model)
       expect(payloads[0]).not.toHaveProperty('temperature')
     })
 
-    it.each(NEW_MODELS)('rejects %s temperature before resolving credentials', async model => {
-      const { adapter, credential, fetchMock } = fixture()
-      const options = request({ model, temperature: 0.7, reasoningEffort: ReasoningEffortId('off') })
-      const call = mode === 'prepared'
-        ? await adapter.prepareCall(options.provider, options.model)
-        : adapter
+    it.each(NEW_MODELS.flatMap(model => [0, 0.7].map(temperature => ({ model, temperature }))))(
+      'rejects $model temperature $temperature before resolving credentials', async ({ model, temperature }) => {
+        const { adapter, credential, fetchMock } = fixture()
+        const options = request({ model, temperature, reasoningEffort: ReasoningEffortId('off') })
+        const call = mode === 'prepared'
+          ? await adapter.prepareCall(options.provider, options.model)
+          : adapter
 
-      await expect(drain(call.stream(options))).rejects.toMatchObject({ code: 'UNSUPPORTED_OPTION' })
-      expect(credential).not.toHaveBeenCalled()
-      expect(fetchMock).not.toHaveBeenCalled()
-    })
+        await expect(drain(call.stream(options))).rejects.toMatchObject({ code: 'UNSUPPORTED_OPTION' })
+        expect(credential).not.toHaveBeenCalled()
+        expect(fetchMock).not.toHaveBeenCalled()
+      },
+    )
   })
 
   it.each(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const)(
@@ -147,11 +167,39 @@ describe('Codex model request policy', () => {
     },
   )
 
-  describe.each(['direct', 'prepared'] as const)('%s GPT-6 Sol/Luna reasoning', mode => {
+  describe.each(['direct', 'prepared'] as const)('%s GPT-6 reasoning', mode => {
+    it.each(NEW_MODELS.flatMap(model => ['off', 'ultra'].map(level => ({ model, level }))))(
+      'rejects unsupported $model $level before credentials or transport', async ({ model, level }) => {
+        const { adapter, credential, fetchMock } = fixture()
+        const options = request({ model, reasoningEffort: ReasoningEffortId(level) })
+        const call = mode === 'prepared' ? await adapter.prepareCall(options.provider, options.model) : adapter
+        await expect(drain(call.stream(options))).rejects.toMatchObject({ code: 'UNSUPPORTED_REASONING_EFFORT' })
+        expect(credential).not.toHaveBeenCalled()
+        expect(fetchMock).not.toHaveBeenCalled()
+      },
+    )
+
+    it.each(NEW_MODELS)('does not advertise Off or Ultra for %s', async model => {
+      const { adapter } = fixture()
+      const info = mode === 'prepared'
+        ? (await adapter.prepareCall('openai-codex', model)).model
+        : await adapter.resolveModel('openai-codex', model)
+      expect(info.reasoning?.efforts.map(effort => effort.id)).toEqual(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+    })
+
+    it('defaults GPT-6.1 Sol to Codex low without mutating caller options', async () => {
+      const { adapter, payloads } = fixture()
+      const options = Object.freeze(request({ model: CODEX_GPT_6_1_SOL_MODEL_ID }))
+      const call = mode === 'prepared' ? await adapter.prepareCall(options.provider, options.model) : adapter
+      await drain(call.stream(options))
+      expect(payloads[0]).toMatchObject({ reasoning: { effort: 'low' } })
+      expect(options).not.toHaveProperty('reasoningEffort')
+    })
+
     it.each(NEW_MODELS.flatMap(model =>
-      (['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const)
+      (['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const)
         .map(level => ({ model, level })),
-    ))('maps $model $level while preserving DSH off behavior', async ({ model, level }) => {
+    ))('maps $model $level to the supported Codex wire effort', async ({ model, level }) => {
       const { adapter, payloads } = fixture()
       const options = request({ model, reasoningEffort: ReasoningEffortId(level) })
       const call = mode === 'prepared'
@@ -161,8 +209,7 @@ describe('Codex model request policy', () => {
       await drain(call.stream(options))
 
       expect(payloads).toHaveLength(1)
-      if (level === 'off') expect(payloads[0]).not.toHaveProperty('reasoning')
-      else expect(payloads[0]).toMatchObject({ reasoning: { effort: level === 'minimal' ? 'low' : level } })
+      expect(payloads[0]).toMatchObject({ reasoning: { effort: level === 'minimal' ? 'low' : level } })
     })
   })
 

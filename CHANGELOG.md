@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add GPT-6.1 Sol with Codex low-effort defaults and supported reasoning levels.
+- Remove misleading Off reasoning for fallback GPT-6 Sol/Luna descriptors; reject unsupported requests before credential resolution.
+- Use the Codex GPT-6/6.1 long-context cap of 872K instead of the generic 1M overlay, preserving provider descriptors and the existing GPT-5.6 policy.
+- Cover direct/prepared requests with offline successful SSE decoding, option validation, and immutable catalog tests. Live account access and backend capacity remain unverified.
+
 ## [0.3.3-rc.2] - 2026-09-28
 
 - Align the plugin and its dependency graph with DSH `0.2.0-rc.1`; migrate Config Forms, volatile settings, Connection RPC, and V4 tool messages.

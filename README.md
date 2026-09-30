@@ -69,26 +69,29 @@ Adds GPT Image 2.5 Sunburst/Flare, advanced quality, and validated custom dimens
   `127.0.0.1` Web bind; every absent, all-interface, or unknown bind receives
   the same value-free `loopback-required` denial.
 
-### GPT-5.6 and GPT-6 long context
+### Codex models and long context
 
-The pi-ai `0.85.1` version pinned for this repository includes GPT-6 Astra
-(`gpt-6-astra`) but not Sol (`gpt-6-sol`) or Luna (`gpt-6-luna`). The plugin adds
-those two models to the `openai-codex` catalog from matching GPT-5.6 descriptors
-when missing and keeps any descriptor supplied by pi-ai. GPT Auth Settings exposes a
-live, default-off **1M context** switch between the Login and capability cards.
-It changes the reported context window for these GPT-6 models and `gpt-5.6-luna`,
-`gpt-5.6-sol`, and `gpt-5.6-terra` from the conservative 272,000-token default
-to 1,000,000 tokens. DSH uses that capacity for token pressure and compaction
-decisions; no request parameter negotiates capacity with the backend. Requests
-beyond 272K may consume account quota faster, backend availability remains
-account-dependent, and enabling the switch does not expand history that DSH
-already compacted.
+The pinned pi-ai `0.85.1` catalog includes GPT-6 Astra. The plugin fills missing
+GPT-6 Sol (`gpt-6-sol`), Luna (`gpt-6-luna`), and GPT-6.1 Sol (`gpt-6.1-sol`)
+entries from matching GPT-5.6 templates and preserves installed descriptors.
+Fallback descriptors use a 272,000-token context window. The default-off
+**Long Context** switch reports a model-specific budget: **872,000 tokens for
+GPT-6/6.1**, and the existing 1,000,000-token policy for supported GPT-5.6 models.
+The GPT-6 budget follows Codex OAuth metadata, not the public API context limit.
+DSH uses this for token pressure and compaction; it does not negotiate backend
+capacity or establish account entitlement. Enabling it cannot restore history
+already compacted, and long requests may consume account quota faster.
 
-GPT-6 Astra does not support `temperature`. Sol and Luna reject it on this route
-because DSH omits `off` reasoning rather than sending an explicit `none` effort;
-the effective effort may remain `medium`. Remove `temperature` from GPT-6 model
-requests; an explicit value (including `0`) returns `UNSUPPORTED_OPTION` before
-resolving credentials or sending a request.
+Fallback GPT-6/6.1 models offer `low`, `medium`, `high`, `xhigh`, and `max`;
+DSH `minimal` maps to `low`. `Off` is unavailable because omitting reasoning
+does not disable it. Unsupported efforts fail before credential resolution.
+GPT-6.1 Sol defaults to Codex's `low` when no effort is selected. `Ultra` is
+Codex orchestration, not a raw reasoning effort exposed by this plugin.
+All GPT-6/6.1 models on this route reject explicit `temperature` (including `0`)
+with `UNSUPPORTED_OPTION` before credentials or transport.
+
+See [model-policy sources and verification limits](docs/codex-model-policy.md)
+for the OAuth/API distinction, pricing estimates, and offline test coverage.
 
 ### Experimental Dual Checkpoint compaction Adapter
 
@@ -445,7 +448,7 @@ Login State coordinator available to Search/Image without owning an LLM route:
 | `refreshLeadMs` | `300000` | Refresh lead time in milliseconds |
 | `codexCommand` | `codex` | CLI command used for login and version probing |
 | `displayName` | `OpenAI Codex (chatgpt)` | Provider label in model selectors |
-| `longContextEnabled` | `false` | Base value for the live GPT-6 / GPT-5.6 1M context policy; GPT Auth Settings may override it in the `codex-llm` namespace |
+| `longContextEnabled` | `false` | Base value for the live model-specific GPT-6/6.1 / GPT-5.6 long-context policy; GPT Auth Settings may override it in the `codex-llm` namespace |
 | `transport` | `sse` | Streaming transport: `sse`, `websocket`, or `auto` (WebSocket first with SSE fallback). SSE is the default: the WebSocket upgrade is unreliable through common HTTP proxies, and every new conversation pays the connect timeout before `auto` falls back |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket connect timeout in milliseconds (used only when `transport` is not `sse`; `0` disables it) |
 | `timeoutMs` | `120000` | Request timeout in milliseconds (SSE response-header phase; also the WebSocket message idle interval; `0` disables it) |
