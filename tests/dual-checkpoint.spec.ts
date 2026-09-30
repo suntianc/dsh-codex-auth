@@ -635,6 +635,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       'model',
       'parallel_tool_calls',
       'prompt_cache_key',
+      'reasoning',
       'store',
       'stream',
       'text',
@@ -2388,7 +2389,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
         accountId: 'acct_model_ineligible_fixture',
         compactionConfig: {
           summarizationProvider: 'openai-codex',
-          summarizationModel: 'gpt-5.4',
+          summarizationModel: 'gpt-5.6-luna',
         },
       } satisfies DualHostOptions,
     },

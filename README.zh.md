@@ -1,6 +1,6 @@
 # dsh-codex-auth
 
-> **DSH 兼容性：** `0.3.3-rc.2` 以 DSH `0.2.0-rc.1` 为最低且已测试的开发基线；旧版 DSH 请使用兼容的插件版本。见[验证说明](docs/dsh-source-verification.md)。
+> **DSH 兼容性：** 当前未发布检出以 DSH `0.2.0-rc.2` 与 pi-ai `0.87.1` 为基线。npm 已发布的 `0.3.3-rc.2` 仍针对 DSH `0.2.0-rc.1`，不要把该已发布包安装到 rc.2；旧版 DSH 请使用兼容的插件版本。见[验证说明](docs/dsh-source-verification.md)。
 
 [![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
@@ -23,6 +23,10 @@
 > **⚠️ 非官方通道——仅限个人开发。** 私有、受账户权限控制的
 > `chatgpt.com/backend-api` 未获官方支持、可随时撤销，也可能在没有通知的情况下被限流
 > 或变更。请勿依赖它承载生产任务。
+
+## 未发布：DSH 0.2.0-rc.2
+
+使用完整一致的 rc.2 依赖图与 pi-ai 0.87.1，保留 V4 会话和 checkpoint codec v1，拒绝旧图或混装。既有 checkpoint 的最终请求控制不一致时，仍通过 Portable 文本继续。GPT-6 Sol/Luna 保留已安装 provider 的 Off 元数据；缺失模型的 fallback 继续使用更严格的策略。见[升级验证](docs/dsh-source-verification.md#upgrade-from-dsh-020-rc1)。
 
 ## 0.3.3-rc.2：适配 DSH 0.2.0-rc.1
 
@@ -63,22 +67,26 @@
   bind 明确为 `127.0.0.1` 时才注册真实 dispatcher；bind 缺失、面向所有接口或未知时都只返回
   相同且不含状态值的 `loopback-required` 拒绝。
 
-### GPT-5.6 与 GPT-6 长上下文
+### Codex 模型与长上下文
 
-本仓库锁定的 pi-ai `0.85.1` 目录包含 GPT-6 Astra（`gpt-6-astra`），但尚未列出
-Sol（`gpt-6-sol`）和 Luna（`gpt-6-luna`）。插件会在缺项时以对应的 GPT-5.6
-描述符为模板，将这两个模型补入 `openai-codex` 目录；若 pi-ai 已提供条目，则保留上游条目。
-GPT Auth 设置在登录卡片与能力卡片之间提供实时生效、默认关闭的 **1M 上下文**开关。
-它会把这些 GPT-6 模型及 `gpt-5.6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`
-向 DSH 报告的上下文窗口从保守的 272,000 Token 提升到 1,000,000 Token。
-DSH 会据此计算 Token 压力和压缩时机；插件不会在请求里发送用于和后端协商容量的参数。
-超过 272K 的请求可能更快消耗账户配额，后端是否支持仍取决于账户，而且启用开关不会展开
-DSH 已经压缩的历史。
+本仓库锁定的 pi-ai `0.87.1` 目录已包含 GPT-6 Astra。插件会在缺项时以对应的
+GPT-5.6 描述符为模板，补入 GPT-6 Sol（`gpt-6-sol`）、Luna（`gpt-6-luna`）和
+GPT-6.1 Sol（`gpt-6.1-sol`）；已由上游提供的描述符保持不变。
+回退描述符默认使用 272,000 Token 上下文。默认关闭的**长上下文**开关按模型设置预算：
+**GPT-6/6.1 为 872,000 Token**，支持的 GPT-5.6 模型保持原有 1,000,000 Token 策略。
+GPT-6 的预算以 Codex OAuth 元数据为依据，不套用公开 API 的上下文上限。
+DSH 据此计算 Token 压力和压缩时机；这不会协商后端容量或赋予账户使用权限，
+也无法恢复已经压缩的历史。长请求可能更快消耗账户配额。
 
-GPT-6 Astra 不支持 `temperature`。Sol 和 Luna 在此路由也会拒绝它，因为 DSH 会省略
-`off` 推理档位，而非显式发送 `none`，最终有效档位可能仍为 `medium`。请从 GPT-6 模型
-请求中移除 `temperature`；显式传入任何值（包括 `0`）都会在解析凭据或发送请求前返回
-`UNSUPPORTED_OPTION`。
+回退的 GPT-6/6.1 描述符提供 `low`、`medium`、`high`、`xhigh` 和 `max`；
+DSH 的 `minimal` 映射到 `low`。不提供 `Off`，因为省略推理参数不代表关闭推理；
+不支持的档位会在解析凭据前被拒绝。GPT-6.1 Sol 未选择档位时使用 Codex 的 `low` 默认值。
+`Ultra` 属于 Codex 的编排模式，不是本插件可以直接发送的推理档位。
+此路由上的 GPT-6/6.1 模型均拒绝显式 `temperature`（包括 `0`），并在解析凭据或发送请求前
+返回 `UNSUPPORTED_OPTION`。
+
+详见[模型策略依据与验证边界](docs/codex-model-policy.md)，其中区分 OAuth 与公开 API，
+说明价格估算来源和离线测试覆盖范围。
 
 ### 实验性 Dual Checkpoint 压缩 Adapter
 
@@ -167,7 +175,7 @@ Codex 请求会增加 Native 同级表示，任何不兼容或 Native 失败都�
 Checkpoint。即使下一次兼容 provider 请求实际回放 Native，stock conversation 视图仍会
 刻意显示 Portable 文本。
 
-该实验性导出支持完整一致的 DSH / Basic compaction `0.1.5-rc.1` 图，均要求 pi-ai `0.85.1`；
+该实验性导出支持完整一致的 DSH / Basic compaction `0.2.0-rc.2` 图，要求 pi-ai `0.87.1`；
 在其他版本组合上挂载会给出可操作的兼容性错误并失败。长上下文模式可以改变 pressure
 压缩的触发时机，但不会改变 Native activation、codec、retention、v2 payload、回放兼容性
 或一次性 turn-continuation 契约。回滚时只需重新选择 DSH 内置 preset；已有会话仍可通过
@@ -204,14 +212,14 @@ Basic 负责。
 只有当 checkpoint 的 schema/codec/retention generation、provider、精确 model、哈希后的
 Codex account identity、instructions、tools、parallel/tool-choice controls、reasoning、text
 配置与 service tier 都匹配**最终生效**的 Responses 请求时，才会执行 Native 回放。Pi-ai
-`0.85.1` 可能把 GPT-5.6 的 deferred tools 编码为 `additional_tools` input item；该语义历史
+`0.87.1` 可能把 GPT-5.6 的 deferred tools 编码为 `additional_tools` input item；该语义历史
 不在当前 codec 的兼容 digest 内，因此这类 payload 在回放和新建 Native 时都会保守改用
 Portable 文本。组合的 payload callback 可以改变已有建模控制项；callback 完成后会重新判定
 并选择 Native 或 Portable。
 Request ID、prompt-cache key、临时 header、turn state 与 Long Context Mode 不参与兼容性。
 未知、损坏、超过 2 MiB、含 secret、混合格式或不兼容的状态会退化为 Portable 文本。生成的
 marker 只存在于 Host；marker 缺失、重复、嵌入、泄漏或未消费时会在网络请求之前失败。
-回放 converter 要求 DSH LLM / pi-ai Adapter 同为 `0.2.0-rc.1`，且 pi-ai 为 `0.85.1`；混合或其他
+回放 converter 要求 DSH LLM / pi-ai Adapter 同为 `0.2.0-rc.2`，且 pi-ai 为 `0.87.1`；混合或其他
 runtime 组合只使用 Portable 文本。Adapter generation 替换或 HMR 会使进程内 replay 与
 turn-continuation 状态失效，但不会修改持久化 Dual Checkpoint。
 
@@ -333,13 +341,17 @@ DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 
 
 ## 环境要求
 
-- DeepSeek Harness `0.2.0-rc.1`（统一依赖图）；不要与旧 rc 包族混装。
+- DeepSeek Harness `0.2.0-rc.2`（统一依赖图）；不要与旧 rc 包族混装。
 - Node.js `^22.19.0` 或 `>=24.0.0`。
 - `PATH` 中可用 `pnpm`（本项目测试版本为 `11.7.0`）。
 - `codex` CLI 已加入 `PATH`。
 - 可提前执行 `codex login`，也可在 GPT Auth 卡片中启动登录。
 
 ## 安装
+
+rc.2 Host 适配尚未发布。先构建并验证本检出，再执行 `pnpm pack --pack-destination /绝对路径/artifacts`，使用产生的准确 tarball 在隔离 profile 中测试。见[升级证据与测试方法](docs/dsh-source-verification.md#upgrade-from-dsh-020-rc1)。本次变更不会更新 npm 标签。
+
+以下 registry 命令仅适用于已发布插件与 DSH rc.1 Host 的组合：
 
 先停止 `dsh web`，确认目标 Host 使用统一的 DSH `0.2.0-rc.1` 依赖图，再将此准确预发布版本安装到目标 profile：
 
@@ -372,7 +384,7 @@ dsh plugin --profile web list
 | `refreshLeadMs` | `300000` | token 到期前的刷新提前量（毫秒） |
 | `codexCommand` | `codex` | 登录和版本探测使用的 CLI 命令 |
 | `displayName` | `OpenAI Codex (chatgpt)` | 模型选择器中的 provider 名称 |
-| `longContextEnabled` | `false` | GPT-6 / GPT-5.6 实时 1M 上下文策略的基础值；GPT Auth 设置可在 `codex-llm` namespace 覆盖它 |
+| `longContextEnabled` | `false` | GPT-6/6.1 / GPT-5.6 按模型设置的实时长上下文策略的基础值；GPT Auth 设置可在 `codex-llm` namespace 覆盖它 |
 | `transport` | `sse` | 流式传输方式：`sse`、`websocket` 或 `auto`（优先 WebSocket、失败回退 SSE）。默认 SSE：WebSocket 升级在常见 HTTP 代理下不稳定，且 `auto` 模式下每个新对话都要先付出连接超时才会回退 |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket 连接超时（毫秒，仅当 `transport` 不是 `sse` 时生效；`0` 表示禁用） |
 | `timeoutMs` | `120000` | 请求超时（毫秒，SSE 响应头阶段；同时作为 WebSocket 消息空闲间隔；`0` 表示禁用） |

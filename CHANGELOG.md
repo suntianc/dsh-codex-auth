@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Move the coherent DSH baseline to `0.2.0-rc.2` and pi-ai to `0.87.1`, including exact Native/compaction gates, lockfile, source-tag checks, and package verification.
+- Verify rc.1 profile admission versus rc.2, stale exact-version exemptions, V4 restore/fork/continuation, and Portable fallback for a changed final-request digest without migrating checkpoint data.
+- Preserve pi-ai 0.87.1 GPT-6 Sol/Luna descriptors, including upstream Off support; missing-model fallbacks still reject Off/Ultra before credentials.
+
+- Add GPT-6.1 Sol with Codex low-effort defaults and supported reasoning levels.
+- Remove misleading Off reasoning for fallback GPT-6 Sol/Luna descriptors; reject unsupported requests before credential resolution.
+- Use the Codex GPT-6/6.1 long-context cap of 872K instead of the generic 1M overlay, preserving provider descriptors and the existing GPT-5.6 policy.
+- Cover direct/prepared requests with offline successful SSE decoding, option validation, and immutable catalog tests. Live account access and backend capacity remain unverified.
+
 ## [0.3.3-rc.2] - 2026-09-28
 
 - Align the plugin and its dependency graph with DSH `0.2.0-rc.1`; migrate Config Forms, volatile settings, Connection RPC, and V4 tool messages.

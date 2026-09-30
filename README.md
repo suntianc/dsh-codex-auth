@@ -1,6 +1,6 @@
 # dsh-codex-auth
 
-> **DSH compatibility:** `0.3.3-rc.2` targets DSH `0.2.0-rc.1` as its minimum and tested development baseline. Use compatible older plugin versions for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
+> **DSH compatibility:** This unreleased checkout targets DSH `0.2.0-rc.2` and pi-ai `0.87.1`. The published `0.3.3-rc.2` package remains on DSH `0.2.0-rc.1`; do not install that published package on rc.2. Use compatible older plugin versions for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
 
 [![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
@@ -25,6 +25,10 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 > account-gated `chatgpt.com/backend-api` surface is unsupported, revocable, and
 > may be rate-limited or changed without notice. Do not rely on it for
 > production workloads.
+
+## Unreleased: DSH 0.2.0-rc.2
+
+Uses the coherent rc.2 graph and pi-ai 0.87.1, preserves V4 sessions and checkpoint codec v1, and rejects stale or mixed graphs. Existing checkpoints continue through Portable text when their final request controls differ. GPT-6 Sol/Luna use the installed provider's Off metadata; missing-model fallbacks retain the stricter policy. See [upgrade verification](docs/dsh-source-verification.md#upgrade-from-dsh-020-rc1).
 
 ## 0.3.3-rc.2: DSH 0.2.0-rc.1 adaptation
 
@@ -69,26 +73,29 @@ Adds GPT Image 2.5 Sunburst/Flare, advanced quality, and validated custom dimens
   `127.0.0.1` Web bind; every absent, all-interface, or unknown bind receives
   the same value-free `loopback-required` denial.
 
-### GPT-5.6 and GPT-6 long context
+### Codex models and long context
 
-The pi-ai `0.85.1` version pinned for this repository includes GPT-6 Astra
-(`gpt-6-astra`) but not Sol (`gpt-6-sol`) or Luna (`gpt-6-luna`). The plugin adds
-those two models to the `openai-codex` catalog from matching GPT-5.6 descriptors
-when missing and keeps any descriptor supplied by pi-ai. GPT Auth Settings exposes a
-live, default-off **1M context** switch between the Login and capability cards.
-It changes the reported context window for these GPT-6 models and `gpt-5.6-luna`,
-`gpt-5.6-sol`, and `gpt-5.6-terra` from the conservative 272,000-token default
-to 1,000,000 tokens. DSH uses that capacity for token pressure and compaction
-decisions; no request parameter negotiates capacity with the backend. Requests
-beyond 272K may consume account quota faster, backend availability remains
-account-dependent, and enabling the switch does not expand history that DSH
-already compacted.
+The pinned pi-ai `0.87.1` catalog includes GPT-6 Astra. The plugin fills missing
+GPT-6 Sol (`gpt-6-sol`), Luna (`gpt-6-luna`), and GPT-6.1 Sol (`gpt-6.1-sol`)
+entries from matching GPT-5.6 templates and preserves installed descriptors.
+Fallback descriptors use a 272,000-token context window. The default-off
+**Long Context** switch reports a model-specific budget: **872,000 tokens for
+GPT-6/6.1**, and the existing 1,000,000-token policy for supported GPT-5.6 models.
+The GPT-6 budget follows Codex OAuth metadata, not the public API context limit.
+DSH uses this for token pressure and compaction; it does not negotiate backend
+capacity or establish account entitlement. Enabling it cannot restore history
+already compacted, and long requests may consume account quota faster.
 
-GPT-6 Astra does not support `temperature`. Sol and Luna reject it on this route
-because DSH omits `off` reasoning rather than sending an explicit `none` effort;
-the effective effort may remain `medium`. Remove `temperature` from GPT-6 model
-requests; an explicit value (including `0`) returns `UNSUPPORTED_OPTION` before
-resolving credentials or sending a request.
+Fallback GPT-6/6.1 models offer `low`, `medium`, `high`, `xhigh`, and `max`;
+DSH `minimal` maps to `low`. `Off` is unavailable because omitting reasoning
+does not disable it. Unsupported efforts fail before credential resolution.
+GPT-6.1 Sol defaults to Codex's `low` when no effort is selected. `Ultra` is
+Codex orchestration, not a raw reasoning effort exposed by this plugin.
+All GPT-6/6.1 models on this route reject explicit `temperature` (including `0`)
+with `UNSUPPORTED_OPTION` before credentials or transport.
+
+See [model-policy sources and verification limits](docs/codex-model-policy.md)
+for the OAuth/API distinction, pricing estimates, and offline test coverage.
 
 ### Experimental Dual Checkpoint compaction Adapter
 
@@ -202,7 +209,7 @@ keeps the valid Portable Checkpoint. Stock conversation views intentionally show
 the Portable text even when the next compatible provider request replays Native.
 
 This experimental export supports homogeneous DSH / Basic compaction graphs at
-`0.1.5-rc.1`, each with pi-ai `0.85.1`; a mixed or unverified pair fails with an
+`0.2.0-rc.2`, with pi-ai `0.87.1`; a mixed or unverified pair fails with an
 actionable compatibility error. Long Context Mode may change when pressure
 compaction runs, but does not change native activation, codec, retention, v2
 payload, replay compatibility, or the one-shot turn-continuation contract.
@@ -248,7 +255,7 @@ failure.
 Native replay requires the checkpoint's schema/codec/retention generations,
 provider, exact model, hashed Codex account identity, instructions, tools,
 parallel/tool-choice controls, reasoning, text configuration, and service tier
-to match the **final effective** Responses request. Pi-ai `0.85.1` may encode
+to match the **final effective** Responses request. Pi-ai `0.87.1` may encode
 deferred GPT-5.6 tools as an `additional_tools` input item; because that semantic
 history is outside this codec's compatibility digest, such a payload
 conservatively uses Portable text for both replay and new Native creation. A
@@ -259,7 +266,7 @@ malformed, oversized (over 2 MiB), secret-bearing, mixed, or incompatible state
 degrades to Portable text. Generated markers are Host-only and any missing,
 duplicate, embedded, leaked, or unconsumed marker fails before network I/O. The
 replay converter accepts matching DSH LLM / pi-ai Adapter versions at
-`0.2.0-rc.1`, with pi-ai `0.85.1`; mixed or unverified runtime pairs use Portable text instead. Adapter generation
+`0.2.0-rc.2`, with pi-ai `0.87.1`; mixed or unverified runtime pairs use Portable text instead. Adapter generation
 replacement or HMR invalidates process-local replay and turn-continuation state,
 while the durable Dual Checkpoint remains unchanged for a later request.
 
@@ -406,13 +413,17 @@ assistant ImageBlock.
 
 ## Requirements
 
-- DeepSeek Harness `0.2.0-rc.1` (tested coherent dependency graph); do not mix it with an older rc package family.
+- DeepSeek Harness `0.2.0-rc.2` (tested coherent dependency graph); do not mix it with an older rc package family.
 - Node.js `^22.19.0` or `>=24.0.0`.
 - `pnpm` available on `PATH` (`11.7.0` is the tested project package manager).
 - The `codex` CLI available on `PATH`.
 - Run `codex login` before use, or start login from the GPT Auth card.
 
 ## Install
+
+The rc.2 Host adaptation is unreleased. Build and validate this checkout, pack it with `pnpm pack --pack-destination /absolute/path/to/artifacts`, and use the resulting exact tarball for an isolated profile. See the [upgrade evidence and test recipe](docs/dsh-source-verification.md#upgrade-from-dsh-020-rc1). No npm tag is updated by this change.
+
+The following registry command applies only to the published plugin on a DSH rc.1 Host:
 
 Stop `dsh web`, ensure the target Host uses a coherent DSH `0.2.0-rc.1` graph, then install this exact prerelease into the intended profile:
 
@@ -445,7 +456,7 @@ Login State coordinator available to Search/Image without owning an LLM route:
 | `refreshLeadMs` | `300000` | Refresh lead time in milliseconds |
 | `codexCommand` | `codex` | CLI command used for login and version probing |
 | `displayName` | `OpenAI Codex (chatgpt)` | Provider label in model selectors |
-| `longContextEnabled` | `false` | Base value for the live GPT-6 / GPT-5.6 1M context policy; GPT Auth Settings may override it in the `codex-llm` namespace |
+| `longContextEnabled` | `false` | Base value for the live model-specific GPT-6/6.1 / GPT-5.6 long-context policy; GPT Auth Settings may override it in the `codex-llm` namespace |
 | `transport` | `sse` | Streaming transport: `sse`, `websocket`, or `auto` (WebSocket first with SSE fallback). SSE is the default: the WebSocket upgrade is unreliable through common HTTP proxies, and every new conversation pays the connect timeout before `auto` falls back |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket connect timeout in milliseconds (used only when `transport` is not `sse`; `0` disables it) |
 | `timeoutMs` | `120000` | Request timeout in milliseconds (SSE response-header phase; also the WebSocket message idle interval; `0` disables it) |

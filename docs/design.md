@@ -70,7 +70,7 @@ Login buttons continue to spawn the official `codex login` browser or device-cod
 
 With its default `llmEnabled: true`, the package owns exactly one `openai-codex` adapter route. An installer can set `llmEnabled: false` while retaining the shared Login State coordinator for Search and Image. `PiAiAdapter` continues to handle ordinary conversation streaming, function tools, reasoning replay, usage, cancellation, Portable summarization, and input attachment conversion; only opt-in manual or automatic Native Checkpoint generation uses the dedicated transport described below. A read-only LLM waterfall records exact Agent-loop request identity before Runtime projection so one automatic Codex Turn Continuation can be applied without replacing ordinary streaming.
 
-The independently live `codex-llm` settings namespace owns one narrow policy: `longContextEnabled`. Its default-off implementation wraps the generated pi-ai catalog without mutating it. When the installed catalog omits GPT-6 Astra, Sol, or Luna, the wrapper prepends a descriptor cloned from the matching GPT-5.6 Sol or Luna model and replaces the model-specific metadata. Enabling the policy then replaces only the `contextWindow` of these GPT-6 models and the known GPT-5.6 Luna, Sol, and Terra descriptors with 1,000,000. The adapter registration republishes its unchanged route after a settings update so model consumers refresh metadata. This changes DSH token-pressure and compaction decisions; it does not add a backend request parameter or assert account entitlement.
+The independently live `codex-llm` settings namespace owns one narrow policy: `longContextEnabled`. Its default-off implementation wraps the generated pi-ai catalog without mutating it. When GPT-6 Astra, Sol, Luna, or GPT-6.1 Sol is absent, the wrapper adds a descriptor from the matching GPT-5.6 template with explicit model metadata. Existing descriptors remain provider-owned. Opt-in capacity is model-specific: 872,000 tokens for GPT-6/6.1 and the existing 1,000,000 policy for GPT-5.6 Luna, Sol, and Terra. Only `contextWindow` changes. Settings updates republish the route so consumers refresh metadata. This affects DSH compaction decisions, not backend entitlement. See [policy sources](codex-model-policy.md).
 
 The route defaults to SSE and exposes `sse`, `websocket`, and `auto` transport selection. `websocketConnectTimeoutMs` bounds the WebSocket handshake, while `timeoutMs` bounds the SSE response-header phase or the WebSocket message-idle interval; neither setting is presented as a whole-stream deadline, and `0` explicitly disables the corresponding timeout.
 
@@ -204,7 +204,7 @@ The image loader reads attachments through the public session-authorized API, cr
 The independently navigable section keeps the name **GPT Auth** and the stock icon fallback. It contains four cards:
 
 1. **Login** — connection state, locally decoded plan, weekly remaining balance/reset time, and browser/device login actions when disconnected;
-2. **LLM Context** — the live, default-off GPT-6 / GPT-5.6 1M context policy;
+2. **LLM Context** — the live, default-off model-specific GPT-6/6.1 / GPT-5.6 long-context policy;
 3. **Web Search** — enabled state, mode, context size, fallback model, and output budget;
 4. **Image Creation** — enabled state, plan eligibility, model-scope note, and default count/size/quality/background.
 

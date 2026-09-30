@@ -147,7 +147,7 @@ describe('Codex Capability Bundle settings', () => {
     expect(screen.queryByText('/Users/alice/.codex/auth.json')).toBeNull()
     expect(screen.getByText(/no token value is ever sent to the Web client/i)).toBeTruthy()
 
-    fireEvent.click(screen.getByLabelText('Enable 1M context'))
+    fireEvent.click(screen.getByLabelText('Enable long context'))
     await waitFor(() => expect(llm.set).toHaveBeenCalledWith('longContextEnabled', true))
 
     const expandSearch = screen.getByRole('button', { name: 'Expand Web Search settings' })

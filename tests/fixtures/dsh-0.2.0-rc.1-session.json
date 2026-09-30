@@ -1,0 +1,71 @@
+{
+  "producer": {
+    "dsh": "0.2.0-rc.1",
+    "sourceCommit": "4878cdabd87d4041bdaff61d04c966883b9fd07a",
+    "plugin": "0.3.3-rc.2",
+    "piAi": "0.85.1",
+    "synthetic": true
+  },
+  "id": "synthetic-rc1-upgrade",
+  "header": {
+    "version": 4,
+    "id": "synthetic-rc1-upgrade",
+    "createdAt": 1700000000000,
+    "isSeeded": false
+  },
+  "inheritedEventCount": 0,
+  "events": [
+    {
+      "type": "turn/start",
+      "seq": 0,
+      "time": 1700000000000,
+      "data": {
+        "turn": 1
+      }
+    },
+    {
+      "type": "user/message",
+      "seq": 1,
+      "time": 1700000000000,
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "This is an automatically generated checkpoint condensing an earlier span of the conversation to free up context. Treat the captured context as established background and build on it without restating it. Continue the task directly from the messages that follow, without acknowledging this checkpoint.\n\n<compacted-summary>"
+          },
+          {
+            "type": "text",
+            "text": "RC.1 PORTABLE CHECKPOINT"
+          },
+          {
+            "type": "codex-native-checkpoint",
+            "text": "",
+            "state": "{\"schemaVersion\":1,\"codec\":{\"kind\":\"openai-responses-v2\",\"generation\":1},\"retention\":{\"policy\":\"codex-v2-retained-message-groups\",\"generation\":1},\"provenance\":{\"provider\":\"openai-codex\",\"model\":\"gpt-5.6-sol\",\"accountHash\":\"sha256:d946e88690451b09a509fb48ac4c8f567feee2d187e326062e366bcd8e78ba54\"},\"compatibilityDigest\":\"sha256:a4c104af1183869da9e71a262b6864bcafc01dcbc9f22657d3ac18451ae3bf4d\",\"replay\":{\"estimator\":\"codex-v2-retained-json-plus-opaque-base64-v1\",\"estimatedTokens\":32},\"replacementItems\":[{\"type\":\"compaction\",\"encrypted_content\":\"synthetic-rc1-native-checkpoint\"}]}"
+          },
+          {
+            "type": "text",
+            "text": "</compacted-summary>"
+          }
+        ],
+        "source": {
+          "kind": "compact-checkpoint",
+          "compactionId": "synthetic-rc1-checkpoint"
+        },
+        "role": "user",
+        "id": "87687225-38ac-41f1-a16a-e7f11875e3fe"
+      },
+      "surfaceOp": "append"
+    },
+    {
+      "type": "turn/end",
+      "seq": 2,
+      "time": 1700000000000,
+      "data": {
+        "turn": 1,
+        "reason": {
+          "kind": "completed"
+        }
+      }
+    }
+  ]
+}

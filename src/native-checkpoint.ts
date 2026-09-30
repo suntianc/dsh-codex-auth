@@ -28,8 +28,8 @@ export const CODEX_NATIVE_CHECKPOINT_ESTIMATOR = 'codex-v2-retained-json-plus-op
 export const MAX_CODEX_NATIVE_CHECKPOINT_BYTES = 2 * 1024 * 1024
 /** Exact runtime pair verified against both npm and the matching source artifacts. */
 export const CODEX_NATIVE_REPLAY_COMPATIBILITY = Object.freeze({
-  dsh: '0.2.0-rc.1',
-  piAi: '0.85.1',
+  dsh: '0.2.0-rc.2',
+  piAi: '0.87.1',
 })
 
 /** Installed package facts that decide whether marker replay is safe. */

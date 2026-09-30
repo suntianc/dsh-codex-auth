@@ -25,6 +25,7 @@ import {
 import { CodexAuthService, type CodexAuthServiceOptions } from '../src/codex-auth-service.ts'
 import {
   CODEX_GPT_6_ASTRA_MODEL_ID,
+  CODEX_GPT_6_LONG_CONTEXT_WINDOW,
   CODEX_LONG_CONTEXT_MODEL_IDS,
   CODEX_LONG_CONTEXT_WINDOW,
   CODEX_STANDARD_CONTEXT_WINDOW,
@@ -385,7 +386,9 @@ describe('CodexAuthAdapter route profile', () => {
     longContextEnabled = true
     const long = getModels()
     for (const id of CODEX_LONG_CONTEXT_MODEL_IDS) {
-      expect(long.find(model => model.id === id)?.contextWindow).toBe(CODEX_LONG_CONTEXT_WINDOW)
+      expect(long.find(model => model.id === id)?.contextWindow).toBe(
+        id.startsWith('gpt-5.6-') ? CODEX_LONG_CONTEXT_WINDOW : CODEX_GPT_6_LONG_CONTEXT_WINDOW,
+      )
     }
     expect(long.find(model => model.id === 'gpt-5.4')).toBe(unchanged)
     expect(standard.find(model => model.id === 'gpt-5.6-sol')?.contextWindow).toBe(CODEX_STANDARD_CONTEXT_WINDOW)

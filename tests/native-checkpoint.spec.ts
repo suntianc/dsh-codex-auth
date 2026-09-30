@@ -160,45 +160,45 @@ describe('Codex Native Checkpoint codec', () => {
 
   it('pins replay to the observed DSH and pi-ai conversion pair', () => {
     expect(CODEX_NATIVE_REPLAY_COMPATIBILITY).toEqual({
-      dsh: '0.2.0-rc.1',
-      piAi: '0.85.1',
+      dsh: '0.2.0-rc.2',
+      piAi: '0.87.1',
     })
     expect(isCodexNativeReplayRuntimeCompatible()).toBe(true)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.2.0-rc.1',
-      dshPiAi: '0.2.0-rc.1',
-      piAi: '0.85.1',
+      dshLlm: '0.2.0-rc.2',
+      dshPiAi: '0.2.0-rc.2',
+      piAi: '0.87.1',
     })).toBe(true)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.2.0-rc.1',
+      dshLlm: '0.2.0-rc.2',
       dshPiAi: '0.1.2-alpha.6',
-      piAi: '0.85.1',
+      piAi: '0.87.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.2.0-rc.1',
-      dshPiAi: '0.2.0-rc.1',
+      dshLlm: '0.2.0-rc.2',
+      dshPiAi: '0.2.0-rc.2',
       piAi: '0.84.2',
     })).toBe(false)
   })
 
-  it.each(['0.1.5-alpha.1', '0.1.5-rc.2'])('rejects the unverified %s converter and mixed RC graph', version => {
+  it.each(['0.1.5-alpha.1', '0.1.5-rc.2', '0.2.0-rc.1', '0.2.0-rc.3'])('rejects the unverified %s converter and mixed RC graph', version => {
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: version, dshPiAi: version, piAi: '0.85.1',
+      dshLlm: version, dshPiAi: version, piAi: '0.87.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: version, dshPiAi: '0.2.0-rc.1', piAi: '0.85.1',
+      dshLlm: version, dshPiAi: '0.2.0-rc.2', piAi: '0.87.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.2.0-rc.1', dshPiAi: version, piAi: '0.85.1',
+      dshLlm: '0.2.0-rc.2', dshPiAi: version, piAi: '0.87.1',
     })).toBe(false)
   })
 
   it('rejects the previous 0.1.3-alpha.1 converter graph', () => {
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '0.85.1',
+      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '0.87.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.2.0-rc.1', piAi: '0.85.1',
+      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.2.0-rc.2', piAi: '0.87.1',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
       dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '0.84.2',
@@ -438,7 +438,8 @@ describe('Codex Native Checkpoint codec', () => {
 const MODEL = 'gpt-5.6-sol'
 const ACCOUNT_ID = 'acct_native_fixture'
 const ACCOUNT_HASH = 'sha256:d946e88690451b09a509fb48ac4c8f567feee2d187e326062e366bcd8e78ba54'
-const COMPATIBILITY_DIGEST = 'sha256:a4c104af1183869da9e71a262b6864bcafc01dcbc9f22657d3ac18451ae3bf4d'
+// pi-ai 0.87.1 explicitly sends reasoning=none for the default Sol request.
+const COMPATIBILITY_DIGEST = 'sha256:858dd706ccc4f489fdffb58154f4ee0a581020763f7cc6770a7cbd02a65496c6'
 const GENERATED_MARKER = '[[dsh-codex-native-checkpoint:00000000-0000-4000-8000-000000000000]]'
 const SYSTEM = 'SYSTEM FIXTURE'
 const BASIC_CHECKPOINT_PREAMBLE = 'This is an automatically generated checkpoint condensing an earlier span of the conversation to free up context. Treat the captured context as established background and build on it without restating it. Continue the task directly from the messages that follow, without acknowledging this checkpoint.'
@@ -655,7 +656,27 @@ async function collect(stream: AsyncIterable<unknown>): Promise<unknown[]> {
 }
 
 describe('Codex Native Checkpoint replay', () => {
-  it('keeps the pi-ai 0.85.1 final payload identical across SSE, WebSocket, and auto fallback', async () => {
+  it('continues an rc.1 checkpoint through Portable when the rc.2 default reasoning changes its digest', async () => {
+    const payloads: unknown[] = []
+    const { ctx } = mountCodexAdapter(payloads)
+    const oldCheckpoint = {
+      ...compatibleCheckpoint(),
+      compatibilityDigest: 'sha256:a4c104af1183869da9e71a262b6864bcafc01dcbc9f22657d3ac18451ae3bf4d',
+    }
+    const options = replayOptions(oldCheckpoint)
+    const before = JSON.stringify(options)
+    await drain(ctx.llm.stream(options))
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0]).toMatchObject({ reasoning: { effort: 'none' } })
+    expect(payloads[0]).toMatchObject({ input: expect.arrayContaining([
+      { role: 'user', content: [{ type: 'input_text', text: PORTABLE_TEXT }] },
+    ]) })
+    expect(JSON.stringify(payloads[0])).not.toContain('opaque-native-state')
+    expect(JSON.stringify(options)).toBe(before)
+    expect(decodeCodexNativeCheckpoint(encodeCodexNativeCheckpoint(oldCheckpoint)).ok).toBe(true)
+  })
+
+  it('keeps the pi-ai 0.87.1 final payload identical across SSE, WebSocket, and auto fallback', async () => {
     type FixtureMode = 'success' | 'fail-before-open'
     class FixtureWebSocket extends EventTarget {
       static mode: FixtureMode = 'success'
@@ -1115,7 +1136,7 @@ describe('Codex Native Checkpoint replay', () => {
         tools: null,
         parallelToolCalls: true,
         toolChoice: 'auto',
-        reasoning: null,
+        reasoning: { effort: 'none' },
         text: { verbosity: 'high' },
         serviceTier: null,
       }),
