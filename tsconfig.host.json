@@ -5,6 +5,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "tests/dsh-upgrade.spec.ts",
     "tests/codex-auth.spec.ts",
     "tests/codex-model-request.spec.ts",
     "tests/rpc.spec.ts",
@@ -19,5 +20,9 @@
     "vitest.config.ts",
     "vitest.live.config.ts"
   ],
-  "exclude": ["src/client", "lib", "node_modules"]
+  "exclude": [
+    "src/client",
+    "lib",
+    "node_modules"
+  ]
 }

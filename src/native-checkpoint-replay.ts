@@ -473,7 +473,7 @@ function compatibilityInput(
   accountHash: string,
   payload: Record<string, unknown>,
 ): CodexNativeCheckpointCompatibilityInput | undefined {
-  // pi-ai 0.84.4 can encode deferred tool availability as semantic input rather
+  // pi-ai 0.87.1 can encode deferred tool availability as semantic input rather
   // than in the top-level tool schema. Until the durable digest models that
   // history, fail back to Portable instead of replaying opaque state against it.
   if (containsPayloadType(payload.input, 'additional_tools')

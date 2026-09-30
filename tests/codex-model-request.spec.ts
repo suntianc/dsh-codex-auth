@@ -5,6 +5,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { builtinProviders } from '@earendil-works/pi-ai/providers/all'
 import { CodexAuthAdapter } from '../src/codex-auth-adapter.ts'
 import {
   CODEX_GPT_6_ASTRA_MODEL_ID,
@@ -15,15 +16,30 @@ import {
 
 const NEW_MODELS = [CODEX_GPT_6_SOL_MODEL_ID, CODEX_GPT_6_LUNA_MODEL_ID, CODEX_GPT_6_1_SOL_MODEL_ID] as const
 
+const fallbackCatalog = vi.hoisted(() => ({ enabled: false }))
+vi.mock('@earendil-works/pi-ai/providers/all', async importOriginal => {
+  const actual = await importOriginal<typeof import('@earendil-works/pi-ai/providers/all')>()
+  return {
+    ...actual,
+    builtinProviders: () => actual.builtinProviders().map(provider =>
+      provider.id !== 'openai-codex' || !fallbackCatalog.enabled ? provider : {
+        ...provider,
+        getModels: () => provider.getModels().filter(model => !NEW_MODELS.some(id => id === model.id)),
+      }),
+  }
+})
+
 let context: Context | undefined
 
 afterEach(async () => {
   await context?.fiber.dispose()
   context = undefined
   vi.unstubAllGlobals()
+  fallbackCatalog.enabled = false
 })
 
-function fixture() {
+function fixture(fallback = false) {
+  fallbackCatalog.enabled = fallback
   context = new Context()
   const accountId = 'synthetic-model-policy-account'
   const token = ['header', Buffer.from(JSON.stringify({
@@ -169,8 +185,8 @@ describe('Codex model request policy', () => {
 
   describe.each(['direct', 'prepared'] as const)('%s GPT-6 reasoning', mode => {
     it.each(NEW_MODELS.flatMap(model => ['off', 'ultra'].map(level => ({ model, level }))))(
-      'rejects unsupported $model $level before credentials or transport', async ({ model, level }) => {
-        const { adapter, credential, fetchMock } = fixture()
+      'rejects fallback $model $level before credentials or transport', async ({ model, level }) => {
+        const { adapter, credential, fetchMock } = fixture(true)
         const options = request({ model, reasoningEffort: ReasoningEffortId(level) })
         const call = mode === 'prepared' ? await adapter.prepareCall(options.provider, options.model) : adapter
         await expect(drain(call.stream(options))).rejects.toMatchObject({ code: 'UNSUPPORTED_REASONING_EFFORT' })
@@ -179,13 +195,29 @@ describe('Codex model request policy', () => {
       },
     )
 
-    it.each(NEW_MODELS)('does not advertise Off or Ultra for %s', async model => {
-      const { adapter } = fixture()
+    it.each(NEW_MODELS)('does not advertise fallback Off or Ultra for %s', async model => {
+      const { adapter } = fixture(true)
       const info = mode === 'prepared'
         ? (await adapter.prepareCall('openai-codex', model)).model
         : await adapter.resolveModel('openai-codex', model)
       expect(info.reasoning?.efforts.map(effort => effort.id)).toEqual(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
     })
+
+    it.each([CODEX_GPT_6_SOL_MODEL_ID, CODEX_GPT_6_LUNA_MODEL_ID])(
+      'preserves upstream %s Off support and rejects Ultra before authentication', async model => {
+        const { adapter, credential, payloads, fetchMock } = fixture()
+        const upstream = builtinProviders().find(provider => provider.id === 'openai-codex')
+          ?.getModels().find(candidate => candidate.id === model)
+        expect(upstream?.thinkingLevelMap?.off).toBe('none')
+        const call = mode === 'prepared' ? await adapter.prepareCall('openai-codex', model) : adapter
+        await expect(drain(call.stream(request({ model, reasoningEffort: ReasoningEffortId('ultra') }))))
+          .rejects.toMatchObject({ code: 'UNSUPPORTED_REASONING_EFFORT' })
+        expect(credential).not.toHaveBeenCalled()
+        expect(fetchMock).not.toHaveBeenCalled()
+        await drain(call.stream(request({ model, reasoningEffort: ReasoningEffortId('off') })))
+        expect(payloads[0]).toMatchObject({ model, reasoning: { effort: 'none' } })
+      },
+    )
 
     it('defaults GPT-6.1 Sol to Codex low without mutating caller options', async () => {
       const { adapter, payloads } = fixture()
