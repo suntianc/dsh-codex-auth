@@ -41,7 +41,12 @@ import {
 } from './codex-auth.ts'
 import type { CodexAuthFile } from './codex-auth.ts'
 import type { CodexAuthService } from './codex-auth-service.ts'
-import { applyCodexContextPolicy, CODEX_GPT_6_ASTRA_MODEL_ID } from './codex-context.ts'
+import {
+  applyCodexContextPolicy,
+  CODEX_GPT_6_ASTRA_MODEL_ID,
+  CODEX_GPT_6_LUNA_MODEL_ID,
+  CODEX_GPT_6_SOL_MODEL_ID,
+} from './codex-context.ts'
 import type { CodexLlmSettings } from './codex-context.ts'
 import { CodexNativeCheckpointReplay } from './native-checkpoint-replay.ts'
 import type { CodexProviderPayloadCallback } from './native-checkpoint-replay.ts'
@@ -380,6 +385,13 @@ async function* validateCodexStream(
   if (options.model === CODEX_GPT_6_ASTRA_MODEL_ID && options.temperature !== undefined) {
     throw new LlmError(
       'GPT-6 Astra does not support temperature; remove temperature from the model request',
+      'UNSUPPORTED_OPTION',
+    )
+  }
+  if ((options.model === CODEX_GPT_6_SOL_MODEL_ID || options.model === CODEX_GPT_6_LUNA_MODEL_ID)
+    && options.temperature !== undefined) {
+    throw new LlmError(
+      'GPT-6 Sol and Luna do not support temperature with the effective reasoning effort; remove temperature from the model request',
       'UNSUPPORTED_OPTION',
     )
   }

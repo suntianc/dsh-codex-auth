@@ -8,10 +8,10 @@ export const CODEX_LLM_SETTINGS_NAMESPACE = 'codex-llm'
 export const CODEX_STANDARD_CONTEXT_WINDOW = 272_000
 /** Explicit opt-in budget matching Codex's documented one-million-token configuration. */
 export const CODEX_LONG_CONTEXT_WINDOW = 1_000_000
-/** Current Codex flagship. Installed pi-ai 0.84.4 omits this descriptor. */
+/** GPT-6 model ids exposed on the Codex route. */
 export const CODEX_GPT_6_ASTRA_MODEL_ID = 'gpt-6-astra'
-/** Template used only when the installed catalog has no GPT-6 Astra row. */
-const CODEX_GPT_6_ASTRA_TEMPLATE_ID = 'gpt-5.6-sol'
+export const CODEX_GPT_6_SOL_MODEL_ID = 'gpt-6-sol'
+export const CODEX_GPT_6_LUNA_MODEL_ID = 'gpt-6-luna'
 
 /** Models that may report the opt-in 1M context budget. */
 export const CODEX_LONG_CONTEXT_MODEL_IDS = [
@@ -19,26 +19,30 @@ export const CODEX_LONG_CONTEXT_MODEL_IDS = [
   'gpt-5.6-sol',
   'gpt-5.6-terra',
   CODEX_GPT_6_ASTRA_MODEL_ID,
+  CODEX_GPT_6_SOL_MODEL_ID,
+  CODEX_GPT_6_LUNA_MODEL_ID,
 ] as const
 
 const LONG_CONTEXT_MODEL_IDS = new Set<string>(CODEX_LONG_CONTEXT_MODEL_IDS)
 
 /**
- * Official Codex GPT-6 Astra pricing and reasoning map from pi-ai 0.85.1.
- * `off` is unsupported; DSH `minimal` maps to `low`.
+ * GPT-6 pricing per million tokens. Above 272K input, input/cache rates
+ * double and output rates increase by 50% for the entire request.
  */
-const GPT_6_ASTRA_COST: Model<Api>['cost'] = {
-  input: 10,
-  output: 50,
-  cacheRead: 1,
-  cacheWrite: 12.5,
-  tiers: [{
-    inputTokensAbove: CODEX_STANDARD_CONTEXT_WINDOW,
-    input: 20,
-    output: 75,
-    cacheRead: 2,
-    cacheWrite: 25,
-  }],
+function gpt6Cost(input: number, output: number, cacheRead: number, cacheWrite: number): Model<Api>['cost'] {
+  return {
+    input,
+    output,
+    cacheRead,
+    cacheWrite,
+    tiers: [{
+      inputTokensAbove: CODEX_STANDARD_CONTEXT_WINDOW,
+      input: input * 2,
+      output: output * 1.5,
+      cacheRead: cacheRead * 2,
+      cacheWrite: cacheWrite * 2,
+    }],
+  }
 }
 
 const GPT_6_ASTRA_THINKING_LEVEL_MAP = {
@@ -51,6 +55,40 @@ const GPT_6_ASTRA_THINKING_LEVEL_MAP = {
   max: 'max',
 } as const satisfies NonNullable<Model<Api>['thinkingLevelMap']>
 
+/** DSH leaves `off` unset on the wire; minimal starts at low. */
+const GPT_6_SOL_LUNA_THINKING_LEVEL_MAP = {
+  minimal: 'low',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+  max: 'max',
+} as const satisfies NonNullable<Model<Api>['thinkingLevelMap']>
+
+const GPT_6_MODELS = [
+  {
+    id: CODEX_GPT_6_ASTRA_MODEL_ID,
+    templateId: 'gpt-5.6-sol',
+    name: 'GPT-6 Astra',
+    cost: gpt6Cost(10, 50, 1, 12.5),
+    thinkingLevelMap: GPT_6_ASTRA_THINKING_LEVEL_MAP,
+  },
+  {
+    id: CODEX_GPT_6_SOL_MODEL_ID,
+    templateId: 'gpt-5.6-sol',
+    name: 'GPT-6 Sol',
+    cost: gpt6Cost(2, 10, 0.2, 2.5),
+    thinkingLevelMap: GPT_6_SOL_LUNA_THINKING_LEVEL_MAP,
+  },
+  {
+    id: CODEX_GPT_6_LUNA_MODEL_ID,
+    templateId: 'gpt-5.6-luna',
+    name: 'GPT-6 Luna',
+    cost: gpt6Cost(0.1, 0.5, 0.01, 0.125),
+    thinkingLevelMap: GPT_6_SOL_LUNA_THINKING_LEVEL_MAP,
+  },
+] as const
+
 /** Independently live settings that affect the openai-codex model catalog. */
 export interface CodexLlmSettings {
   longContextEnabled: boolean
@@ -61,8 +99,8 @@ export const CodexLlmSettingsConfig: z<CodexLlmSettings> = z.object({
 })
 
 /**
- * Keep the generated pi-ai catalog intact and overlay GPT-6 Astra only when
- * that installed catalog omits it. Enabling Long Context Mode then changes
+ * Keep the generated pi-ai catalog intact and overlay GPT-6 models only when
+ * that installed catalog omits them. Enabling Long Context Mode then changes
  * only the known long-context family; every other descriptor and every
  * non-capacity field remains provider-owned.
  */
@@ -78,14 +116,19 @@ export function applyCodexContextPolicy(
 }
 
 function ensureCodexCatalogModels(models: readonly Model<Api>[]): readonly Model<Api>[] {
-  if (models.some(model => model.id === CODEX_GPT_6_ASTRA_MODEL_ID)) return models
-  const template = models.find(model => model.id === CODEX_GPT_6_ASTRA_TEMPLATE_ID)
-  if (template === undefined) return models
-  return [{
-    ...template,
-    id: CODEX_GPT_6_ASTRA_MODEL_ID,
-    name: 'GPT-6 Astra',
-    cost: GPT_6_ASTRA_COST,
-    thinkingLevelMap: { ...GPT_6_ASTRA_THINKING_LEVEL_MAP },
-  }, ...models]
+  const missing = GPT_6_MODELS.flatMap(descriptor => {
+    if (models.some(model => model.id === descriptor.id)) return []
+    const template = models.find(model => model.id === descriptor.templateId)
+    if (template === undefined) return []
+    return [{
+      ...template,
+      id: descriptor.id,
+      name: descriptor.name,
+      contextWindow: CODEX_STANDARD_CONTEXT_WINDOW,
+      maxTokens: 128_000,
+      cost: descriptor.cost,
+      thinkingLevelMap: { ...descriptor.thinkingLevelMap },
+    }]
+  })
+  return missing.length === 0 ? models : [...missing, ...models]
 }
