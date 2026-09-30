@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH compatibility:** This unreleased checkout targets DSH `0.2.0-rc.2` and pi-ai `0.87.1`. The published `0.3.3-rc.2` package remains on DSH `0.2.0-rc.1`; do not install that published package on rc.2. Use compatible older plugin versions for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
+> **DSH compatibility:** Version `0.3.3-rc.3` targets DSH `0.2.0-rc.2` and pi-ai `0.87.1`. Version `0.3.3-rc.2` remains on DSH `0.2.0-rc.1`; upgrade the plugin together with the Host. Use compatible older plugin versions for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
 
-[![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
+[![npm rc version](https://img.shields.io/npm/v/dsh-codex-auth/rc.svg?label=npm%20rc)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 English | [中文](README.zh.md)
 
-Release: **v0.3.3-rc.2** (npm tag: `rc`).
+Release: **v0.3.3-rc.3** (npm tag: `rc`).
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -26,7 +26,7 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 > may be rate-limited or changed without notice. Do not rely on it for
 > production workloads.
 
-## Unreleased: DSH 0.2.0-rc.2
+## 0.3.3-rc.3: DSH 0.2.0-rc.2
 
 Uses the coherent rc.2 graph and pi-ai 0.87.1, preserves V4 sessions and checkpoint codec v1, and rejects stale or mixed graphs. Existing checkpoints continue through Portable text when their final request controls differ. GPT-6 Sol/Luna use the installed provider's Off metadata; missing-model fallbacks retain the stricter policy. See [upgrade verification](docs/dsh-source-verification.md#upgrade-from-dsh-020-rc1).
 
@@ -421,15 +421,11 @@ assistant ImageBlock.
 
 ## Install
 
-The rc.2 Host adaptation is unreleased. Build and validate this checkout, pack it with `pnpm pack --pack-destination /absolute/path/to/artifacts`, and use the resulting exact tarball for an isolated profile. See the [upgrade evidence and test recipe](docs/dsh-source-verification.md#upgrade-from-dsh-020-rc1). No npm tag is updated by this change.
-
-The following registry command applies only to the published plugin on a DSH rc.1 Host:
-
-Stop `dsh web`, ensure the target Host uses a coherent DSH `0.2.0-rc.1` graph, then install this exact prerelease into the intended profile:
+See the [upgrade evidence and test recipe](docs/dsh-source-verification.md#upgrade-from-dsh-020-rc1). Stop `dsh web`, ensure the target Host uses a coherent DSH `0.2.0-rc.2` graph, then install this exact prerelease into the intended profile:
 
 ```sh
 dsh --version
-dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.2
+dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.3
 dsh plugin --profile web list
 ```
 

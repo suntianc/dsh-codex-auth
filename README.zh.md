@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH 兼容性：** 当前未发布检出以 DSH `0.2.0-rc.2` 与 pi-ai `0.87.1` 为基线。npm 已发布的 `0.3.3-rc.2` 仍针对 DSH `0.2.0-rc.1`，不要把该已发布包安装到 rc.2；旧版 DSH 请使用兼容的插件版本。见[验证说明](docs/dsh-source-verification.md)。
+> **DSH 兼容性：** `0.3.3-rc.3` 以 DSH `0.2.0-rc.2` 与 pi-ai `0.87.1` 为基线。`0.3.3-rc.2` 仍针对 DSH `0.2.0-rc.1`，请将插件与 Host 一起升级；旧版 DSH 请使用兼容的插件版本。见[验证说明](docs/dsh-source-verification.md)。
 
-[![npm alpha version](https://img.shields.io/npm/v/dsh-codex-auth/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/dsh-codex-auth)
+[![npm rc version](https://img.shields.io/npm/v/dsh-codex-auth/rc.svg?label=npm%20rc)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 [English](README.md) | 中文
 
-发布版本：**v0.3.3-rc.2**（npm 标签：`rc`）。
+发布版本：**v0.3.3-rc.3**（npm 标签：`rc`）。
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -24,7 +24,7 @@
 > `chatgpt.com/backend-api` 未获官方支持、可随时撤销，也可能在没有通知的情况下被限流
 > 或变更。请勿依赖它承载生产任务。
 
-## 未发布：DSH 0.2.0-rc.2
+## 0.3.3-rc.3：DSH 0.2.0-rc.2
 
 使用完整一致的 rc.2 依赖图与 pi-ai 0.87.1，保留 V4 会话和 checkpoint codec v1，拒绝旧图或混装。既有 checkpoint 的最终请求控制不一致时，仍通过 Portable 文本继续。GPT-6 Sol/Luna 保留已安装 provider 的 Off 元数据；缺失模型的 fallback 继续使用更严格的策略。见[升级验证](docs/dsh-source-verification.md#upgrade-from-dsh-020-rc1)。
 
@@ -349,15 +349,11 @@ DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 
 
 ## 安装
 
-rc.2 Host 适配尚未发布。先构建并验证本检出，再执行 `pnpm pack --pack-destination /绝对路径/artifacts`，使用产生的准确 tarball 在隔离 profile 中测试。见[升级证据与测试方法](docs/dsh-source-verification.md#upgrade-from-dsh-020-rc1)。本次变更不会更新 npm 标签。
-
-以下 registry 命令仅适用于已发布插件与 DSH rc.1 Host 的组合：
-
-先停止 `dsh web`，确认目标 Host 使用统一的 DSH `0.2.0-rc.1` 依赖图，再将此准确预发布版本安装到目标 profile：
+见[升级证据与测试方法](docs/dsh-source-verification.md#upgrade-from-dsh-020-rc1)。先停止 `dsh web`，确认目标 Host 使用统一的 DSH `0.2.0-rc.2` 依赖图，再将此准确预发布版本安装到目标 profile：
 
 ```sh
 dsh --version
-dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.2
+dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.3
 dsh plugin --profile web list
 ```
 
