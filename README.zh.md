@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH 兼容性：** `0.3.3-rc.3` 以 DSH `0.2.0-rc.2` 与 pi-ai `0.87.1` 为基线。`0.3.3-rc.2` 仍针对 DSH `0.2.0-rc.1`，请将插件与 Host 一起升级；旧版 DSH 请使用兼容的插件版本。见[验证说明](docs/dsh-source-verification.md)。
+> **DSH 兼容性：** `0.3.3-rc.4` 以 DSH `0.2.0-rc.2` 与 pi-ai `0.87.1` 为基线。`0.3.3-rc.2` 仍针对 DSH `0.2.0-rc.1`，请将插件与 Host 一起升级；旧版 DSH 请使用兼容的插件版本。见[验证说明](docs/dsh-source-verification.md)。
 
 [![npm rc version](https://img.shields.io/npm/v/dsh-codex-auth/rc.svg?label=npm%20rc)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 [English](README.md) | 中文
 
-发布版本：**v0.3.3-rc.3**（npm 标签：`rc`）。
+发布版本：**v0.3.3-rc.4**（npm 标签：`rc`）。
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -23,6 +23,10 @@
 > **⚠️ 非官方通道——仅限个人开发。** 私有、受账户权限控制的
 > `chatgpt.com/backend-api` 未获官方支持、可随时撤销，也可能在没有通知的情况下被限流
 > 或变更。请勿依赖它承载生产任务。
+
+## 0.3.3-rc.4：每个 profile 的模型排除列表
+
+新增默认空列表的 `excludedModelIds`，可通过 GPT Auth 的 LLM 上下文设置实时编辑并持久化。排除在目录补齐和长上下文策略之后按精确 ID 执行，保留其余模型的描述符、参数与顺序；没有默认屏蔽模型，不改写认证、模型选择或既有会话。
 
 ## 0.3.3-rc.3：DSH 0.2.0-rc.2
 
@@ -87,6 +91,28 @@ DSH 的 `minimal` 映射到 `low`。不提供 `Off`，因为省略推理参数�
 
 详见[模型策略依据与验证边界](docs/codex-model-policy.md)，其中区分 OAuth 与公开 API，
 说明价格估算来源和离线测试覆盖范围。
+
+每个 profile 可通过可选的 `excludedModelIds`（默认 `[]`）隐藏精确模型 ID。
+在 **GPT Auth → LLM 上下文 → 排除的模型 ID** 中以逗号分隔填写；按回车或离开输入框
+时，经现有 `llm-codex-auth` Config Form 保存到当前 profile patch，并实时更新目录。
+编辑器会去除两端空白、空项和重复项；原生 profile 配置使用字符串数组，例如：
+
+```yaml
+- id: llm-codex-auth
+  config:
+    excludedModelIds:
+      - gpt-5.3-codex-spark
+```
+
+默认不排除任何模型。按大小写敏感的精确 ID 匹配，不支持通配符；未知 ID 无影响，
+重复 ID 无副作用。排除在缺失模型补齐和长上下文策略之后执行，保留其余模型的描述符、
+参数及顺序。清空列表即可恢复目录。它仅影响此 profile 的 `openai-codex` LLM 目录，
+不影响搜索或图片设置、认证、账户权益或请求权限。
+
+排除当前模型时，模型选择和既有会话保持不变；之后解析该模型沿用 DSH 的
+`UNKNOWN_MODEL` 错误。请重新选择剩余模型，或取消该 ID 的排除后继续。
+允许排除全部模型，此时 Codex 目录为空。已经准备好的调用在实际发送时仍会解析目录
+可见性；正在执行的请求不会被取消。排除列表不是访问控制机制。
 
 ### 实验性 Dual Checkpoint 压缩 Adapter
 
@@ -353,7 +379,7 @@ DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 
 
 ```sh
 dsh --version
-dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.3
+dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.4
 dsh plugin --profile web list
 ```
 
@@ -380,7 +406,8 @@ dsh plugin --profile web list
 | `refreshLeadMs` | `300000` | token 到期前的刷新提前量（毫秒） |
 | `codexCommand` | `codex` | 登录和版本探测使用的 CLI 命令 |
 | `displayName` | `OpenAI Codex (chatgpt)` | 模型选择器中的 provider 名称 |
-| `longContextEnabled` | `false` | GPT-6/6.1 / GPT-5.6 按模型设置的实时长上下文策略的基础值；GPT Auth 设置可在 `codex-llm` namespace 覆盖它 |
+| `longContextEnabled` | `false` | GPT-6/6.1 / GPT-5.6 按模型设置的实时长上下文策略，通过 `llm-codex-auth` Config Form 编辑 |
+| `excludedModelIds` | `[]` | 每个 profile 在目录补齐及上下文策略之后按精确 ID 隐藏的模型；可通过 GPT Auth 设置编辑 |
 | `transport` | `sse` | 流式传输方式：`sse`、`websocket` 或 `auto`（优先 WebSocket、失败回退 SSE）。默认 SSE：WebSocket 升级在常见 HTTP 代理下不稳定，且 `auto` 模式下每个新对话都要先付出连接超时才会回退 |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket 连接超时（毫秒，仅当 `transport` 不是 `sse` 时生效；`0` 表示禁用） |
 | `timeoutMs` | `120000` | 请求超时（毫秒，SSE 响应头阶段；同时作为 WebSocket 消息空闲间隔；`0` 表示禁用） |

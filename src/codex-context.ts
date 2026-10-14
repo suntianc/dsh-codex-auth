@@ -102,28 +102,34 @@ export function codexLongContextWindow(modelId: string): number | undefined {
 /** Independently live settings that affect the openai-codex model catalog. */
 export interface CodexLlmSettings {
   longContextEnabled: boolean
+  /** Exact model IDs hidden from this profile's catalog; omission preserves the catalog. */
+  excludedModelIds?: string[]
 }
 
 export const CodexLlmSettingsConfig: z<CodexLlmSettings> = z.object({
   longContextEnabled: z.boolean().default(false),
+  excludedModelIds: z.array(z.string()).default([]),
 })
 
 /**
  * Keep the generated pi-ai catalog intact and overlay GPT-6 models only when
  * that installed catalog omits them. Enabling Long Context Mode then changes
  * only the known long-context family; every other descriptor and every
- * non-capacity field remains provider-owned.
+ * non-capacity field remains provider-owned. Exact ID exclusions apply last,
+ * including to descriptors added by the overlay; source objects stay intact.
  */
 export function applyCodexContextPolicy(
   models: readonly Model<Api>[],
   settings: CodexLlmSettings,
 ): readonly Model<Api>[] {
-  const catalog = ensureCodexCatalogModels(models)
-  if (!settings.longContextEnabled) return catalog
-  return catalog.map(model => {
+  const completeCatalog = ensureCodexCatalogModels(models)
+  const catalog = !settings.longContextEnabled ? completeCatalog : completeCatalog.map(model => {
     const contextWindow = codexLongContextWindow(model.id)
     return contextWindow === undefined ? model : { ...model, contextWindow }
   })
+  if (!settings.excludedModelIds?.length) return catalog
+  const excluded = new Set(settings.excludedModelIds)
+  return catalog.filter(model => !excluded.has(model.id))
 }
 
 function ensureCodexCatalogModels(models: readonly Model<Api>[]): readonly Model<Api>[] {

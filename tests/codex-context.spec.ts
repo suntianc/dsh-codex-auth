@@ -32,6 +32,51 @@ function fakeModel(id: string, extra: Partial<Model<Api>> = {}): Model<Api> {
 }
 
 describe('applyCodexContextPolicy', () => {
+  it('keeps empty and omitted exclusions identical and ignores unknown exact IDs', () => {
+    const models = Object.freeze([fakeModel('gpt-5.4'), fakeModel('gpt-5.3-codex-spark')])
+    const settings = { longContextEnabled: false }
+    expect(applyCodexContextPolicy(models, settings)).toBe(models)
+    expect(applyCodexContextPolicy(models, { ...settings, excludedModelIds: [] })).toBe(models)
+    const catalog = applyCodexContextPolicy(models, {
+      ...settings, excludedModelIds: ['unknown', 'GPT-5.4', 'gpt-5.4*', ' gpt-5.4 '],
+    })
+    expect(catalog).toEqual(models)
+    catalog.forEach((model, index) => expect(model).toBe(models[index]))
+  })
+
+  it('excludes duplicate exact IDs while preserving descriptor references, fields and order', () => {
+    const models = Object.freeze([
+      Object.freeze(fakeModel('gpt-5.4', { maxTokens: 456, name: 'Provider name' })),
+      Object.freeze(fakeModel('gpt-5.3-codex-spark')),
+      Object.freeze(fakeModel('gpt-5.3-codex-spark-preview')),
+    ])
+    const before = structuredClone(models)
+    const catalog = applyCodexContextPolicy(models, {
+      longContextEnabled: false, excludedModelIds: ['gpt-5.3-codex-spark', 'gpt-5.3-codex-spark'],
+    })
+    expect(catalog).toEqual([models[0], models[2]])
+    expect(catalog[0]).toBe(models[0])
+    expect(catalog[1]).toBe(models[2])
+    expect(models).toEqual(before)
+  })
+
+  it.each([false, true])('filters after overlay and context policy with long context %s', longContextEnabled => {
+    const models = Object.freeze([Object.freeze(fakeModel('gpt-5.6-sol')), Object.freeze(fakeModel('gpt-5.6-luna'))])
+    const before = structuredClone(models)
+    const settings = { longContextEnabled }
+    const complete = applyCodexContextPolicy(models, settings)
+    const excludedModelIds = ['gpt-5.6-sol', CODEX_GPT_6_1_SOL_MODEL_ID]
+    const catalog = applyCodexContextPolicy(models, { ...settings, excludedModelIds })
+    expect(catalog).toEqual(complete.filter(model => !excludedModelIds.includes(model.id)))
+    expect(catalog.some(model => model.id === CODEX_GPT_6_SOL_MODEL_ID)).toBe(true)
+    expect(catalog.find(model => model.id === CODEX_GPT_6_SOL_MODEL_ID)?.contextWindow).toBe(
+      longContextEnabled ? CODEX_GPT_6_LONG_CONTEXT_WINDOW : CODEX_STANDARD_CONTEXT_WINDOW,
+    )
+    expect(models).toEqual(before)
+    expect(applyCodexContextPolicy(models, { ...settings, excludedModelIds: complete.map(model => model.id) })).toEqual([])
+    expect(applyCodexContextPolicy(models, { ...settings, excludedModelIds: [] })).toEqual(complete)
+  })
+
   it('overlays missing GPT-6 models from matching GPT-5.6 templates', () => {
     const sol = fakeModel('gpt-5.6-sol', { name: 'GPT-5.6 Sol' })
     const luna = fakeModel('gpt-5.6-luna', { name: 'GPT-5.6 Luna' })
@@ -62,7 +107,7 @@ describe('applyCodexContextPolicy', () => {
         cacheWrite: 12.5,
       },
     })
-    expect(astra.thinkingLevelMap).toMatchObject({
+    expect(astra?.thinkingLevelMap).toMatchObject({
       off: null,
       minimal: 'low',
       low: 'low',
