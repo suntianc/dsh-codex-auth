@@ -48,6 +48,7 @@ try {
     throw new Error(`package smoke: CHANGELOG.md lacks release ${String(manifest.version)}`)
   }
   const requiredDocumentation = [
+    'docs/codex-model-policy.md',
     'docs/gpt-image-2.5-compatibility.md',
     'docs/design.md',
     'docs/adr/0003-isolate-experimental-codex-compaction.md',
@@ -208,6 +209,14 @@ try {
     await access(resolve(packageRoot, types))
     const loaded = await import(pathToFileURL(absolute).href)
     if (typeof loaded.apply !== 'function') throw new Error(`package smoke: ${key} has no apply export`)
+    if (key === '.') {
+      const defaults = loaded.Config({})
+      const configured = loaded.Config({ excludedModelIds: ['gpt-5.3-codex-spark'] })
+      if (JSON.stringify(defaults.excludedModelIds.get()) !== '[]'
+        || JSON.stringify(configured.excludedModelIds.get()) !== '["gpt-5.3-codex-spark"]') {
+        throw new Error('package smoke: excludedModelIds must be a live, default-empty string array')
+      }
+    }
   }
   const compactionTarget = manifest.exports?.['./compaction']?.default
   const compaction = await import(pathToFileURL(resolve(packageRoot, compactionTarget)).href)

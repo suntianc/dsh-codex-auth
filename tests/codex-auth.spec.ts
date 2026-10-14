@@ -271,6 +271,7 @@ describe('Auth / LLM row configuration', () => {
     const parse = PluginConfig as unknown as (input: Partial<PluginConfigView>) => PluginConfigView
     expect(parse({}).llmEnabled).toBe(true)
     expect((parse({}).longContextEnabled as { get(): boolean }).get()).toBe(false)
+    expect((parse({}).excludedModelIds as { get(): string[] }).get()).toEqual([])
     const disabled = parse({ llmEnabled: false, longContextEnabled: true })
     expect(disabled.llmEnabled).toBe(false)
     expect((disabled.longContextEnabled as { get(): boolean }).get()).toBe(true)
@@ -278,8 +279,12 @@ describe('Auth / LLM row configuration', () => {
 
   it('keeps the independent live LLM context policy default-off', () => {
     const parse = CodexLlmSettingsConfig as unknown as (input: Record<string, unknown>) => { longContextEnabled: boolean }
-    expect(parse({})).toEqual({ longContextEnabled: false })
-    expect(parse({ longContextEnabled: true })).toEqual({ longContextEnabled: true })
+    expect(parse({})).toEqual({ longContextEnabled: false, excludedModelIds: [] })
+    expect(parse({ longContextEnabled: true })).toEqual({ longContextEnabled: true, excludedModelIds: [] })
+    expect(parse({ excludedModelIds: ['gpt-5.3-codex-spark'] })).toEqual({
+      longContextEnabled: false, excludedModelIds: ['gpt-5.3-codex-spark'],
+    })
+    expect(() => parse({ excludedModelIds: 'gpt-5.4' })).toThrow()
   })
 
   it('defaults the route to SSE transport with bounded transport timeouts', () => {

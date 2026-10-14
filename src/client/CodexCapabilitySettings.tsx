@@ -1,5 +1,5 @@
 /** Unified four-card settings surface for the Codex Capability Bundle. */
-import { useCallback, useEffect, useId, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import type { ChangeEvent, ReactNode } from 'react'
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
@@ -13,6 +13,7 @@ import classes from './CodexCapabilitySettings.module.css'
 
 export interface LlmSettingsView {
   longContextEnabled: boolean
+  excludedModelIds?: string[]
 }
 
 export interface SearchSettingsView {
@@ -194,6 +195,9 @@ export function CodexCapabilitySettings({
               <p>{t('contextBehavior')}</p>
               <p className={classes.contextWarning}>{t('contextWarning')}</p>
             </div>
+            {llm.value === undefined ? null : (
+              <ModelExclusionControl scope={llmScope} snapshot={llm} t={t} onError={setError} />
+            )}
           </SettingsState>
         </article>
 
@@ -529,6 +533,47 @@ function SettingsState<T>({
   return children
 }
 
+function ModelExclusionControl({
+  scope,
+  snapshot,
+  t,
+  onError,
+}: {
+  scope: ConfigForm<LlmSettingsView>
+  snapshot: ConfigFormSnapshot<LlmSettingsView>
+  t: CodexCapabilitySettingsProps['t']
+  onError: (message: string | null) => void
+}): ReactNode {
+  const ids = (snapshot.value?.excludedModelIds ?? []).join(', ')
+  const [draft, setDraft] = useState(ids)
+  const [saving, setSaving] = useState(false)
+  const pending = useRef(false)
+  const hintId = useId()
+  useEffect(() => { setDraft(ids) }, [ids, scope])
+  const save = (): void => {
+    if (pending.current || !snapshot.writable) return
+    const next = [...new Set(draft.split(',').map(id => id.trim()).filter(Boolean))]
+    if (JSON.stringify(next) !== JSON.stringify(snapshot.value?.excludedModelIds ?? [])) {
+      pending.current = true
+      setSaving(true)
+      void writer(scope, onError, t)('excludedModelIds', next).finally(() => {
+        pending.current = false
+        setSaving(false)
+      })
+    }
+  }
+  return (
+    <div className={classes.formRows}>
+      <Control label={t('excludedModelIds')}>
+        <input aria-label={t('excludedModelIds')} aria-describedby={hintId} value={draft} disabled={!snapshot.writable || saving}
+          onChange={event => { if (!pending.current) setDraft(event.target.value) }} onBlur={save}
+          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); save() } }} />
+      </Control>
+      <p className={classes.imageHint} id={hintId}>{t('excludedModelIdsHint')}</p>
+    </div>
+  )
+}
+
 function SearchControls({
   scope,
   snapshot,
@@ -680,7 +725,9 @@ function writer<T>(
 ): (field: string, value: unknown) => Promise<void> {
   return async (field, value) => {
     onError(null)
-    try { await scope.set(field, value) } catch (error) { onError(messageOf(error, t('writeFailed'))) }
+    try {
+      if (await scope.set(field, value) === false) onError(t('writeFailed'))
+    } catch (error) { onError(messageOf(error, t('writeFailed'))) }
   }
 }
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3-rc.4] - 2026-10-14
+
+- Add optional per-profile `excludedModelIds`, defaulting to an empty list, with exact case-sensitive filtering after model completion and long-context policy. Preserve remaining provider descriptors, parameters, order, and source objects; no model is excluded by default.
+- Add a bilingual GPT Auth editor that saves through the existing volatile Config Form and profile patch, updates the live catalog without remounting, and blocks editing while a save is pending to preserve write intent.
+- Keep model selections, existing sessions and authentication untouched. Missing model resolution uses the host's `UNKNOWN_MODEL` behavior, including prepared dispatch; excluding all models leaves an empty catalog. Visibility filtering is not request access control.
+- Cover default/unknown/duplicate IDs, completed descriptors, long-context compatibility, immutability, empty catalogs, delayed UI saves, profile isolation and restart persistence with synthetic profiles and offline transport.
+
 ## [0.3.3-rc.3] - 2026-09-30
 
 - Move the coherent DSH baseline to `0.2.0-rc.2` and pi-ai to `0.87.1`, including exact Native/compaction gates, lockfile, source-tag checks, and package verification.

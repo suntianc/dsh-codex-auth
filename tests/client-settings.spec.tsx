@@ -40,6 +40,7 @@ const IMAGE: CodexImageSettings = {
 function fakeScope<T>(
   initial: T,
   status: SettingsScopeSnapshot<T>['status'] = 'ready',
+  beforeSet?: () => Promise<void>,
 ): { scope: SettingsScope<T>; set: ReturnType<typeof vi.fn> } {
   let snapshot: SettingsScopeSnapshot<T> = {
     status,
@@ -52,8 +53,10 @@ function fakeScope<T>(
   }
   const listeners = new Set<() => void>()
   const set = vi.fn(async (field: string, value: unknown) => {
+    await beforeSet?.()
     snapshot = { ...snapshot, value: { ...snapshot.value, [field]: value } }
     for (const listener of listeners) listener()
+    return true
   })
   const scope = {
     getSnapshot() {
@@ -95,6 +98,62 @@ const subscribe = (): (() => void) => () => {}
 afterEach(() => cleanup())
 
 describe('Codex Capability Bundle settings', () => {
+  it('blocks editing until a pending exclusion save settles, then permits clearing the saved list', async () => {
+    const pending = Promise.withResolvers<void>()
+    const llm = fakeScope({ ...LLM, excludedModelIds: [] as string[] }, 'ready', () => pending.promise)
+    render(<CodexCapabilitySettings rpc={rpc(authStatus({}))} t={t} subscribe={subscribe}
+      llmScope={llm.scope} searchScope={fakeScope(SEARCH).scope} imageScope={fakeScope(IMAGE).scope} />)
+    const input = screen.getByLabelText('Excluded model IDs') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'gpt-5.3-codex-spark' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(input.disabled).toBe(true)
+    fireEvent.blur(input)
+    expect(llm.set).toHaveBeenCalledTimes(1)
+    pending.resolve()
+    await waitFor(() => expect(input.disabled).toBe(false))
+    expect(input.value).toBe('gpt-5.3-codex-spark')
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.blur(input)
+    await waitFor(() => expect(llm.set).toHaveBeenLastCalledWith('excludedModelIds', []))
+    await waitFor(() => expect(input.disabled).toBe(false))
+    expect(input.value).toBe('')
+  })
+
+  it('saves exact model exclusions on blur or Enter, deduplicates input, and clears to an empty list', async () => {
+    const llm = fakeScope({ ...LLM, excludedModelIds: ['gpt-5.4'] })
+    render(<CodexCapabilitySettings rpc={rpc(authStatus({}))} t={t} subscribe={subscribe}
+      llmScope={llm.scope} searchScope={fakeScope(SEARCH).scope} imageScope={fakeScope(IMAGE).scope} />)
+    const input = screen.getByLabelText('Excluded model IDs') as HTMLInputElement
+    expect(input.value).toBe('gpt-5.4')
+    expect(screen.getByText(/catalog visibility, not request permissions/)).toBeTruthy()
+    fireEvent.change(input, { target: { value: ' gpt-5.3-codex-spark, unknown, gpt-5.3-codex-spark, ' } })
+    expect(llm.set).not.toHaveBeenCalled()
+    fireEvent.blur(input)
+    await waitFor(() => expect(llm.set).toHaveBeenCalledWith('excludedModelIds', ['gpt-5.3-codex-spark', 'unknown']))
+    fireEvent.change(input, { target: { value: ' ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(llm.set).toHaveBeenCalledWith('excludedModelIds', []))
+  })
+
+  it('resets exclusion drafts when switching profiles and surfaces save failures', async () => {
+    const first = fakeScope({ ...LLM, excludedModelIds: ['gpt-5.4'] })
+    const second = fakeScope({ ...LLM, excludedModelIds: ['gpt-6-sol'] })
+    const props = { rpc: rpc(authStatus({})), t, subscribe, searchScope: fakeScope(SEARCH).scope, imageScope: fakeScope(IMAGE).scope }
+    const { rerender } = render(<CodexCapabilitySettings {...props} llmScope={first.scope} />)
+    fireEvent.change(screen.getByLabelText('Excluded model IDs'), { target: { value: 'unsaved' } })
+    rerender(<CodexCapabilitySettings {...props} llmScope={second.scope} />)
+    expect((screen.getByLabelText('Excluded model IDs') as HTMLInputElement).value).toBe('gpt-6-sol')
+    second.set.mockRejectedValueOnce(new Error('Storage unavailable'))
+    fireEvent.change(screen.getByLabelText('Excluded model IDs'), { target: { value: 'gpt-5.4' } })
+    fireEvent.blur(screen.getByLabelText('Excluded model IDs'))
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Storage unavailable')
+    second.set.mockResolvedValueOnce(false)
+    fireEvent.change(screen.getByLabelText('Excluded model IDs'), { target: { value: 'unknown' } })
+    fireEvent.blur(screen.getByLabelText('Excluded model IDs'))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveProperty('textContent', en.writeFailed))
+    expect(first.set).not.toHaveBeenCalled()
+  })
+
   it('saves GPT Image 2.5 quality and custom dimensions while rejecting incomplete sizes', async () => {
     const image = fakeScope({ ...IMAGE, model: 'gpt-image-2.5-sunburst' })
     render(<CodexCapabilitySettings rpc={rpc(authStatus({ planType: 'plus' }))} t={t} subscribe={subscribe}

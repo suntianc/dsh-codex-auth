@@ -62,6 +62,8 @@ export interface Config {
   displayName: string
   /** Opt into model-specific long-context budgets for supported GPT-5.6 and GPT-6/6.1 models. */
   longContextEnabled: LiveValue<boolean>
+  /** Exact model IDs hidden from this profile's Codex catalog; empty preserves the catalog. */
+  excludedModelIds?: LiveValue<string[]>
   /** Streaming transport for the route; SSE by default because the WebSocket upgrade is unreliable through common HTTP proxies. */
   transport: CodexAuthTransport
   /** WebSocket connect timeout in milliseconds; only used when `transport` is not `sse`; zero disables it. */
@@ -78,6 +80,7 @@ export const Config: z<Config> = z.object({
   codexCommand: z.string().default('codex'),
   displayName: z.string().default('OpenAI Codex (chatgpt)'),
   longContextEnabled: z.boolean().default(false).volatile(),
+  excludedModelIds: z.array(z.string()).default([]).volatile(),
   transport: z.union([z.const('auto'), z.const('sse'), z.const('websocket')]).default(DEFAULT_TRANSPORT),
   websocketConnectTimeoutMs: z.natural().default(DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS),
   timeoutMs: z.natural().default(DEFAULT_REQUEST_TIMEOUT_MS),
@@ -107,7 +110,10 @@ export function apply(ctx: Context, config: Config): void {
   ctx.inject(['commands'], commandCtx => {
     commandCtx.commands.register(createCodexAuthCommand(service, () => accountMode))
   })
-  const currentSettings = (): CodexLlmSettings => ({ longContextEnabled: liveValue(config.longContextEnabled) })
+  const currentSettings = (): CodexLlmSettings => ({
+    longContextEnabled: liveValue(config.longContextEnabled),
+    excludedModelIds: liveValue(config.excludedModelIds ?? []),
+  })
   let announceModelPolicyChange = (): void => {}
   if (config.llmEnabled) {
     if (ctx.llm.listProviders().some(provider => provider.id === CODEX_ROUTE)) {

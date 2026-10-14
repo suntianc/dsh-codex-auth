@@ -13,6 +13,7 @@ import {
   CODEX_GPT_6_LUNA_MODEL_ID,
   CODEX_GPT_6_SOL_MODEL_ID,
 } from '../src/codex-context.ts'
+import type { CodexLlmSettings } from '../src/codex-context.ts'
 
 const NEW_MODELS = [CODEX_GPT_6_SOL_MODEL_ID, CODEX_GPT_6_LUNA_MODEL_ID, CODEX_GPT_6_1_SOL_MODEL_ID] as const
 
@@ -38,7 +39,7 @@ afterEach(async () => {
   fallbackCatalog.enabled = false
 })
 
-function fixture(fallback = false) {
+function fixture(fallback = false, settings: CodexLlmSettings = { longContextEnabled: false }) {
   fallbackCatalog.enabled = fallback
   context = new Context()
   const accountId = 'synthetic-model-policy-account'
@@ -79,7 +80,7 @@ function fixture(fallback = false) {
     refreshLeadMs: 300_000,
     fetchImpl: fetchMock,
     displayName: 'Codex model policy fixture',
-    settings: () => ({ longContextEnabled: false }),
+    settings: () => settings,
     transport: 'sse',
     websocketConnectTimeoutMs: 1_000,
     timeoutMs: 1_000,
@@ -105,6 +106,42 @@ async function drain(stream: AsyncIterable<unknown>): Promise<void> {
 }
 
 describe('Codex model request policy', () => {
+  it('uses host missing-model handling when a prepared call dispatches after exclusion', async () => {
+    const settings: CodexLlmSettings = { longContextEnabled: false, excludedModelIds: [] }
+    const { adapter, credential, fetchMock } = fixture(false, settings)
+    const selected = request()
+    const prepared = await adapter.prepareCall(selected.provider, selected.model)
+    settings.excludedModelIds = [selected.model]
+    adapter.replaceRouteGeneration()
+    await expect(adapter.prepareCall(selected.provider, selected.model)).rejects.toMatchObject({ code: 'UNKNOWN_MODEL' })
+    await expect(drain(prepared.stream(selected))).rejects.toMatchObject({ code: 'UNKNOWN_MODEL' })
+    expect(credential).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('uses the host missing-model error for excluded selections and empty catalogs before auth or transport', async () => {
+    const settings: CodexLlmSettings = { longContextEnabled: false, excludedModelIds: [] }
+    const { adapter, credential, fetchMock } = fixture(true, settings)
+    const all = await adapter.listModels('openai-codex')
+    const selected = request()
+    settings.excludedModelIds = [selected.model, CODEX_GPT_6_1_SOL_MODEL_ID]
+    adapter.replaceRouteGeneration()
+    expect((await adapter.listModels('openai-codex')).some(model => model.id === selected.model)).toBe(false)
+    await expect(adapter.resolveModel(selected.provider, selected.model)).rejects.toMatchObject({ code: 'UNKNOWN_MODEL' })
+    await expect(adapter.prepareCall(selected.provider, selected.model)).rejects.toMatchObject({ code: 'UNKNOWN_MODEL' })
+    await expect(drain(adapter.stream(selected))).rejects.toMatchObject({ code: 'UNKNOWN_MODEL' })
+    expect(selected.model).toBe(CODEX_GPT_6_ASTRA_MODEL_ID)
+    settings.excludedModelIds = all.map(model => model.id)
+    adapter.replaceRouteGeneration()
+    expect(await adapter.listModels('openai-codex')).toEqual([])
+    await expect(adapter.resolveModel(selected.provider, selected.model)).rejects.toMatchObject({ code: 'UNKNOWN_MODEL' })
+    expect(credential).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+    settings.excludedModelIds = []
+    adapter.replaceRouteGeneration()
+    expect(await adapter.listModels('openai-codex')).toEqual(all)
+  })
+
   describe.each(['direct', 'prepared'] as const)('%s adapter calls', mode => {
     it.each([0, 0.7])('rejects Astra temperature %s before resolving credentials', async temperature => {
       const { adapter, credential, fetchMock } = fixture()

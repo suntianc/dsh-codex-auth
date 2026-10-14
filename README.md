@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH compatibility:** Version `0.3.3-rc.3` targets DSH `0.2.0-rc.2` and pi-ai `0.87.1`. Version `0.3.3-rc.2` remains on DSH `0.2.0-rc.1`; upgrade the plugin together with the Host. Use compatible older plugin versions for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
+> **DSH compatibility:** Version `0.3.3-rc.4` targets DSH `0.2.0-rc.2` and pi-ai `0.87.1`. Version `0.3.3-rc.2` remains on DSH `0.2.0-rc.1`; upgrade the plugin together with the Host. Use compatible older plugin versions for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
 
 [![npm rc version](https://img.shields.io/npm/v/dsh-codex-auth/rc.svg?label=npm%20rc)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 English | [中文](README.zh.md)
 
-Release: **v0.3.3-rc.3** (npm tag: `rc`).
+Release: **v0.3.3-rc.4** (npm tag: `rc`).
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -25,6 +25,10 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 > account-gated `chatgpt.com/backend-api` surface is unsupported, revocable, and
 > may be rate-limited or changed without notice. Do not rely on it for
 > production workloads.
+
+## 0.3.3-rc.4: Per-profile model exclusions
+
+Adds optional `excludedModelIds`, defaulting to an empty list, with live editing and persistence through GPT Auth LLM Context settings. Exact ID filtering runs after catalog completion and long-context policy, preserving remaining descriptors, parameters and order. No model is hidden by default, and authentication, selections and existing sessions are preserved.
 
 ## 0.3.3-rc.3: DSH 0.2.0-rc.2
 
@@ -96,6 +100,34 @@ with `UNSUPPORTED_OPTION` before credentials or transport.
 
 See [model-policy sources and verification limits](docs/codex-model-policy.md)
 for the OAuth/API distinction, pricing estimates, and offline test coverage.
+
+Each profile can optionally hide exact model IDs with `excludedModelIds`
+(default `[]`). In **GPT Auth → LLM Context → Excluded model IDs**, enter IDs
+separated by commas; Enter or leaving the field saves through the existing
+`llm-codex-auth` Config Form to the active profile patch and updates the catalog
+live. The editor trims surrounding whitespace and removes empty/duplicate
+entries. Native profile configuration uses a string array, for example:
+
+```yaml
+- id: llm-codex-auth
+  config:
+    excludedModelIds:
+      - gpt-5.3-codex-spark
+```
+
+No model is excluded by default. Matching is case-sensitive and exact, with no
+wildcards; unknown IDs have no effect and duplicates are harmless. Filtering
+runs after missing-model completion and long-context policy, preserving the
+remaining descriptors, parameters and order. Clearing the list restores the
+catalog. This only affects this profile's `openai-codex` LLM catalog, not Search
+or Image settings, authentication, account entitlement, or request permissions.
+
+Excluding the selected model keeps the selection and existing sessions intact;
+subsequent model resolution uses DSH's normal `UNKNOWN_MODEL` error. Select a
+remaining model or clear its exclusion to continue. Excluding every model is
+allowed and leaves an empty Codex catalog. Prepared calls still resolve catalog
+visibility when they dispatch; requests already running are not cancelled.
+Exclusions are not an access-control mechanism.
 
 ### Experimental Dual Checkpoint compaction Adapter
 
@@ -425,7 +457,7 @@ See the [upgrade evidence and test recipe](docs/dsh-source-verification.md#upgra
 
 ```sh
 dsh --version
-dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.3
+dsh plugin --profile web add dsh-codex-auth@0.3.3-rc.4
 dsh plugin --profile web list
 ```
 
@@ -452,7 +484,8 @@ Login State coordinator available to Search/Image without owning an LLM route:
 | `refreshLeadMs` | `300000` | Refresh lead time in milliseconds |
 | `codexCommand` | `codex` | CLI command used for login and version probing |
 | `displayName` | `OpenAI Codex (chatgpt)` | Provider label in model selectors |
-| `longContextEnabled` | `false` | Base value for the live model-specific GPT-6/6.1 / GPT-5.6 long-context policy; GPT Auth Settings may override it in the `codex-llm` namespace |
+| `longContextEnabled` | `false` | Live model-specific GPT-6/6.1 / GPT-5.6 long-context policy, editable through the `llm-codex-auth` Config Form |
+| `excludedModelIds` | `[]` | Per-profile exact model IDs hidden after catalog completion and context policy; editable through GPT Auth Settings |
 | `transport` | `sse` | Streaming transport: `sse`, `websocket`, or `auto` (WebSocket first with SSE fallback). SSE is the default: the WebSocket upgrade is unreliable through common HTTP proxies, and every new conversation pays the connect timeout before `auto` falls back |
 | `websocketConnectTimeoutMs` | `5000` | WebSocket connect timeout in milliseconds (used only when `transport` is not `sse`; `0` disables it) |
 | `timeoutMs` | `120000` | Request timeout in milliseconds (SSE response-header phase; also the WebSocket message idle interval; `0` disables it) |
