@@ -1,7 +1,6 @@
 # DSH source compatibility verification
 
-This checkout targets the published DSH `0.2.1-rc.1` graph and its matching
-source tag at `1600d8a1e140dcde43a1a0941940a0480712c011`. Development dependencies,
+Version `0.3.4-rc.2` verifies the coherent DSH `0.2.1-rc.1` and `0.2.1-rc.2` graphs. The registry development baseline remains rc.1; the default official-source target is rc.2 at `687f282e8625c6b8d11ff58211a90524be2e4317`. Development dependencies,
 the lockfile, peer ranges, and package smoke checks use this baseline. Codex's
 experimental compaction and Native replay additionally require pi-ai `1.1.0`
 and the exact DSH graph. Older plugin releases retain the earlier DSH support;
@@ -12,10 +11,10 @@ the current checkout does not test or advertise that older graph.
 Use a separate scratch directory, outside any plugin or live DSH installation:
 
 ```sh
-git clone --depth 1 --branch dsh-v0.2.1-rc.1 https://github.com/deepseek-ai/deepseek-harness.git harness
+git clone --depth 1 --branch dsh-v0.2.1-rc.2 https://github.com/deepseek-ai/deepseek-harness.git harness
 cd harness
 git rev-parse HEAD
-# Must be 1600d8a1e140dcde43a1a0941940a0480712c011.
+# Must be 687f282e8625c6b8d11ff58211a90524be2e4317.
 PNPM_CONFIG_MINIMUM_RELEASE_AGE=0 pnpm install --frozen-lockfile --ignore-scripts
 pnpm run build:lib
 pnpm --filter './packages/**' --filter './vendor/*' -r pack --pack-destination ../dsh-packages
@@ -123,3 +122,21 @@ Desktop rc.2 还新增自带的 CLI 管理入口，并读取 macOS login-shell �
 - Final account-route coverage checks unauthenticated and untrusted-origin denial, non-owner Peer denial before the delegate, owner `browserPeer` forwarding, malformed requests, route disposal, and the retained loopback guard.
 - Image row lifecycle regressions use real Cordis plugin fibers and deferred Login State completion: active refreshes continue, while late initial-status and watcher callbacks no longer touch disposed services. Both new cases failed before the lifecycle guard and pass with it.
 - These results do not establish installed Electron/Desktop behavior, live OAuth, or live model, search and image backend availability.
+
+
+## 0.3.4-rc.2: rc.1 / rc.2 compatibility matrix
+
+The installed Desktop may auto-update independently of a plugin release. The published 0.3.4-rc.1 package correctly remains the immutable rc.1-only artifact; its three exact optional peers are checked before installation and deny rc.2. Changing only peer metadata would still leave the Native replay and compaction gates refusing rc.2.
+
+This checkout declares the finite semver union `0.2.1-rc.1 || 0.2.1-rc.2` for those three peers and the same supported runtime set internally. The Host uses `semver.satisfies` with `includePrerelease: true`; explicit alternatives avoid accidentally admitting rc.1.1, rc.2.1, rc.3, stable 0.2.1, or another minor release. Every experimental runtime package must still belong to one identical supported graph, and pi-ai must still be exactly 1.1.0. No `engines.dsh` override or compatibility exemption bypasses peer checks.
+
+Official tags: rc.1 = `1600d8a1e140dcde43a1a0941940a0480712c011`; rc.2 = `687f282e8625c6b8d11ff58211a90524be2e4317`. Comparing the 72 referenced Host/client/development packages finds source changes only in dsh-web: search/fetch configuration becomes volatile and is read for each request. Session, Basic compaction, token meter, LLM/pi-ai conversion, account RPC, plugin admission, Cordis and the exact pi-ai patch are unchanged. rc.2 also adds official DeepSeek search/fetch providers and display/settings plugins. Codex continues using the stock Web registration interface and the bundle's explicit provider selection; tests construct WebRuntime through its own Config schema so both contracts are exercised correctly.
+
+The complete package gate must pass separately on rc.1 and rc.2. For a packed official-source graph, set `DSH_VERIFY_VERSION=0.2.1-rc.1` to select the old pinned source identity, or omit it for the rc.2 source target. Do not mix source artifacts. Registry baseline scripts default to rc.1; alternate graph checks set `DSH_VERIFY_VERSION=0.2.1-rc.2` and install the complete rc.2 development closure in an isolated checkout.
+
+Version `0.3.4-rc.2` carries this compatibility update on the npm `rc` channel and GitHub prerelease channel. Installation and offline Host checks do not establish rendered Desktop UI, live OAuth, model, search backend or image-generation behavior.
+
+
+Real profile loading also exposes a pre-existing metadata lookup defect: Node's `findPackageJSON` on a bare specifier uses the built-in resolver, rather than the DSH installation/profile interception. The reader now resolves the ESM entry first and then locates its package metadata; a custom-resolver, import-only package fixture and both actual Host loaders cover this distinction. The strict coherent-graph and exact pi-ai guard remain intact. See [Node's resolver caveat](https://nodejs.org/api/module.html#modulefindpackagejsonspecifier-base).
+
+The local installation matrix uses the official `initProfile` output, including `nodeLinker: hoisted` and `autoInstallPeers: false`, then the real `dsh plugin add` command. Omitting that generated configuration creates an invalid test environment with pnpm-injected duplicate Host dependencies; successful admission in such a directory alone is not runtime compatibility evidence. The valid matrix checks the imported pi-ai and Basic engine against the actual Host modules, normal teardown, and immediate unload. rc.2 uses the installed Desktop carrier; rc.1 uses the official isolated CLI graph with the exact Desktop pi-ai 1.1.0 patch. No live credentials, provider requests, or user profile changes are involved.

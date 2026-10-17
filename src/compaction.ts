@@ -24,7 +24,7 @@ import { CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE } from './native-checkpoint.ts'
 import { codexNativeCompactionCoordinator } from './native-compaction.ts'
 import type { CodexNativeCompactionDiagnostic } from './native-compaction.ts'
 import { installedPackageVersion } from './package-version.ts'
-import { isSupportedDshGraph, SUPPORTED_DSH_RUNTIMES } from './runtime-compatibility.ts'
+import { isSupportedDshGraph, SUPPORTED_DSH_RUNTIMES, SUPPORTED_DSH_PEER_RANGE } from './runtime-compatibility.ts'
 
 /** The replayed prefix accepted by Basic's protected summarization Seam. */
 interface PortableSummarizationInput {
@@ -66,9 +66,9 @@ type DshRuntimePackage = typeof DSH_RUNTIME_PACKAGES[number]
 /** Conservative allowance for Basic's private framing around returned summary blocks. */
 const BASIC_FRAME_TOKEN_RESERVE = 256
 
-/** Exact runtime pair verified against both npm and the matching source artifacts. */
+/** Verified coherent DSH graphs sharing the observed pi-ai conversion contract. */
 export const CODEX_COMPACTION_COMPATIBILITY = Object.freeze({
-  dsh: '0.2.1-rc.1',
+  dsh: SUPPORTED_DSH_PEER_RANGE,
   piAi: '1.1.0',
 })
 
@@ -82,11 +82,11 @@ export interface CodexCompactionRuntimeVersions {
 function installedRuntimeVersions(): CodexCompactionRuntimeVersions {
   const dsh = Object.fromEntries(DSH_RUNTIME_PACKAGES.map(specifier => [
     specifier,
-    installedPackageVersion(specifier, import.meta.url),
+    installedPackageVersion(specifier),
   ])) as Record<DshRuntimePackage, string>
   return {
     dsh,
-    piAi: installedPackageVersion('@earendil-works/pi-ai', import.meta.url),
+    piAi: installedPackageVersion('@earendil-works/pi-ai'),
   }
 }
 

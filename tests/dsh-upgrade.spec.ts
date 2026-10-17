@@ -1,4 +1,4 @@
-/** Offline profile admission and durable V4 continuation into DSH 0.2.1-rc.1. */
+/** Offline profile admission and durable V4 continuation across the verified DSH 0.2.1 RC graphs. */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,8 +23,12 @@ const previousRelease = JSON.parse(readFileSync(
 )) as {
   producer: { sourceCommit: string; sourcePath: string }; manifest: typeof manifest
 }
-const targetRuntime = '0.2.1-rc.1'
+const targetRuntime = getDshRuntimeVersion()
 const exactPeers = ['@deepseek-ai/dsh-compaction', '@deepseek-ai/dsh-compaction-basic', '@deepseek-ai/dsh-token-meter']
+
+const singleRcRelease = JSON.parse(readFileSync(
+  new URL('./fixtures/dsh-codex-auth-0.3.4-rc.1-manifest.json', import.meta.url), 'utf8',
+)) as { manifest: typeof manifest }
 
 function profileFixture() {
   const dir = mkdtempSync(join(tmpdir(), 'codex-021rc1-profile-'))
@@ -51,7 +55,7 @@ function profileFixture() {
   return { dir, ctx, rows, packageDir, diagnostics, base: pathToFileURL(profile.installAnchor).href }
 }
 
-it('disables released 0.3.3-rc.4 on 0.2.1-rc.1 despite an old exact-version exemption', () => {
+it('disables released 0.3.3-rc.4 on the verified runtime despite an old exact-version exemption', () => {
   const fixture = profileFixture()
   const previous = previousRelease.manifest
   expect(previousRelease.producer).toEqual({
@@ -80,7 +84,7 @@ it('disables released 0.3.3-rc.4 on 0.2.1-rc.1 despite an old exact-version exem
 
 it('admits all adapted bundle rows without a grant or rewriting synthetic settings and login state', async () => {
   const fixture = profileFixture()
-  expect(getDshRuntimeVersion()).toBe(targetRuntime)
+  expect(['0.2.1-rc.1', '0.2.1-rc.2']).toContain(targetRuntime)
   writeFileSync(join(fixture.packageDir, 'package.json'), JSON.stringify(manifest))
   const files = {
     'settings.yaml': 'codex-llm:\n  longContextEnabled: true\n',
@@ -160,4 +164,21 @@ it.each([
   expect(restored.snapshotEvents()).toEqual(restoredEvents)
   expect(JSON.stringify(fixture.events)).toBe(originalEvents)
   expect(readFileSync(fixtureUrl, 'utf8')).toBe(durable)
+})
+
+
+it('reproduces the published single-RC installation rejection and accepts both verified RCs', () => {
+  expect(evaluatePluginCompatibility(singleRcRelease.manifest, {}, '0.2.1-rc.1')).toBeUndefined()
+  const rejected = evaluatePluginCompatibility(singleRcRelease.manifest, {}, '0.2.1-rc.2')
+  expect(Object.keys(rejected?.requirements ?? {}).sort()).toEqual([...exactPeers].sort())
+  expect(rejected?.exempted).toBe(false)
+  for (const runtime of ['0.2.1-rc.1', '0.2.1-rc.2']) {
+    expect(evaluatePluginCompatibility(manifest, {}, runtime)).toBeUndefined()
+  }
+})
+
+it.each(['0.2.1-rc.0', '0.2.1-rc.1.1', '0.2.1-rc.2.1', '0.2.1-rc.3', '0.2.1', '0.2.2-rc.1', '0.3.0'])('does not admit unverified %s through prerelease range semantics', runtime => {
+  const rejected = evaluatePluginCompatibility(manifest, {}, runtime)
+  expect(rejected).toBeDefined()
+  expect(rejected?.exempted).toBe(false)
 })

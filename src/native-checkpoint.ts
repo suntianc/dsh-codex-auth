@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto'
 import { isPlainJsonTree, serializedJsonBytes } from './json-tree.ts'
 import { installedPackageVersion } from './package-version.ts'
-import { isSupportedDshGraph } from './runtime-compatibility.ts'
+import { isSupportedDshGraph, SUPPORTED_DSH_PEER_RANGE } from './runtime-compatibility.ts'
 
 /** Stable declaration-merged content tag owned by this package. */
 export const CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE = 'codex-native-checkpoint' as const
@@ -26,9 +26,9 @@ export const CODEX_NATIVE_CHECKPOINT_RETENTION_GENERATION = 1 as const
 export const CODEX_NATIVE_CHECKPOINT_ESTIMATOR = 'codex-v2-retained-json-plus-opaque-base64-v1' as const
 /** Serialized custom-block ceiling, including its JSON carrier. */
 export const MAX_CODEX_NATIVE_CHECKPOINT_BYTES = 2 * 1024 * 1024
-/** Exact runtime pair verified against both npm and the matching source artifacts. */
+/** Verified coherent DSH graphs sharing the observed pi-ai conversion contract. */
 export const CODEX_NATIVE_REPLAY_COMPATIBILITY = Object.freeze({
-  dsh: '0.2.1-rc.1',
+  dsh: SUPPORTED_DSH_PEER_RANGE,
   piAi: '1.1.0',
 })
 
@@ -469,9 +469,9 @@ function containsForbiddenMaterial(value: unknown): boolean {
 
 function installedNativeReplayVersions(): CodexNativeReplayRuntimeVersions {
   return {
-    dshLlm: installedPackageVersion('@deepseek-ai/dsh-llm', import.meta.url),
-    dshPiAi: installedPackageVersion('@deepseek-ai/dsh-llm-pi-ai', import.meta.url),
-    piAi: installedPackageVersion('@earendil-works/pi-ai', import.meta.url),
+    dshLlm: installedPackageVersion('@deepseek-ai/dsh-llm'),
+    dshPiAi: installedPackageVersion('@deepseek-ai/dsh-llm-pi-ai'),
+    piAi: installedPackageVersion('@earendil-works/pi-ai'),
   }
 }
 

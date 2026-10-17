@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.3.4-rc.2] - 2026-10-17
+
+- Admit the two verified DSH 0.2.1 prereleases with `0.2.1-rc.1 || 0.2.1-rc.2` for the three experimental peers and matching Native/compaction runtime guards; retain coherent-graph and exact pi-ai checks.
+- Read runtime package identities through the Host resolver before inspecting package metadata; avoid false Native/compaction refusal after a real pnpm profile installation.
+- Cover real installation admission, unknown prerelease/stable refusal, mixed supported graphs, and the Web Config contract used by rc.2.
+
 ## [0.3.4-rc.1] - 2026-10-17
 
 - Target the coherent DSH `0.2.1-rc.1` graph with Cordis `4.0.5`, Schemastery `3.18.5`, and pi-ai `1.1.0`; keep exact experimental Native/compaction gates and the npm `rc` channel.
@@ -180,7 +188,8 @@
 
 - DSH `0.1.0-rc.6` does not expose a policy-aware binary workspace-write API, so generated images remain durable conversation attachments and workspace export is not offered.
 
-[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.3-alpha.5...HEAD
+[Unreleased]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.4-rc.2...HEAD
+[0.3.4-rc.2]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.4-rc.1...v0.3.4-rc.2
 [0.3.3-alpha.5]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.2...v0.3.3-alpha.5
 [0.3.2]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/suntianc/dsh-codex-auth/compare/v0.3.0...v0.3.1

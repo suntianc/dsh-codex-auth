@@ -5,9 +5,10 @@ import { createHash } from 'node:crypto'
 import { cp, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import { DSH_SOURCE_VERSION } from './dsh-compatibility.mjs'
+import { DSH_SOURCE_VERSION, DSH_SOURCE_COMMITS } from './dsh-compatibility.mjs'
 
 const sourceRoot = resolve(import.meta.dirname, '..')
+const sourceVersion = process.env.DSH_VERIFY_VERSION ?? DSH_SOURCE_VERSION
 const args = process.argv.slice(2).filter(value => value !== '--')
 if (args.length !== 2) {
   throw new Error('Usage: pnpm run check:dsh-source -- /path/to/packed-dsh-packages /path/to/@earendil-works__pi-ai@1.1.0.patch (see docs/dsh-source-verification.md)')
@@ -23,7 +24,7 @@ for (const filename of (await readdir(packageDirectory)).filter(name => name.end
   const path = join(packageDirectory, filename)
   const manifest = JSON.parse(execFileSync('tar', ['-xOf', path, 'package/package.json'], { encoding: 'utf8' }))
   if (!manifest.name.startsWith('@deepseek-ai/')) continue
-  if (manifest.name.startsWith('@deepseek-ai/dsh-') && manifest.version !== DSH_SOURCE_VERSION) {
+  if (manifest.name.startsWith('@deepseek-ai/dsh-') && manifest.version !== sourceVersion) {
     throw new Error('Mixed source package version: ' + manifest.name + '@' + manifest.version)
   }
   if (packages.has(manifest.name)) throw new Error('Duplicate source package: ' + manifest.name)
@@ -81,13 +82,13 @@ await writeFile(join(patchDirectory, 'pi-ai.patch'), piAiPatch)
 await writeFile(workspacePath, workspace + '\nautoInstallPeers: true\noverrides:\n'
   + Object.entries(overrides).map(([name, value]) => '  ' + JSON.stringify(name) + ': ' + JSON.stringify(value)).join('\n') + '\npatchedDependencies:\n  "@earendil-works/pi-ai@1.1.0": patches/pi-ai.patch\n')
 await writeFile(join(stage, 'artifacts.json'), JSON.stringify({
-  target: DSH_SOURCE_VERSION,
-  expectedSourceCommit: '1600d8a1e140dcde43a1a0941940a0480712c011',
+  target: sourceVersion,
+  expectedSourceCommit: DSH_SOURCE_COMMITS[sourceVersion],
   // The build recipe establishes provenance. These checksums identify the supplied bytes.
   packages: receipt,
   piAiPatch: { version: '1.1.0', sha256: piAiPatchSha256 },
 }, null, 2) + '\n')
-const env = { ...process.env, DSH_VERIFY_VERSION: DSH_SOURCE_VERSION }
+const env = { ...process.env, DSH_VERIFY_VERSION: sourceVersion }
 function run(args) {
   const result = spawnSync('pnpm', args, { cwd: checkout, env, stdio: 'inherit' })
   if (result.error) throw result.error
