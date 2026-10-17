@@ -5,6 +5,7 @@
 - Target the coherent DSH `0.2.1-rc.1` graph with Cordis `4.0.5`, Schemastery `3.18.5`, and pi-ai `1.1.0`; keep exact experimental Native/compaction gates and the npm `rc` channel.
 - Remove the retired `dsh-invariants` dependency and `./invariant` companion export. Adapt account routes to the owner-authenticated browser Peer, and update Settings/stock tool-view contracts.
 - Preserve the static Codex catalog without credential reads or refreshes, including live per-profile exclusions; actual model requests still require Login State.
+- Stop Image eligibility refreshes after row disposal, including an initial Login State read that settles after unload; cover the real plugin-fiber lifecycle without swallowing errors.
 - Use Portable checkpoints for tool-search/deferred-tool history and in-history system/developer updates whose semantics are not represented in the existing Native digest. Keep V4 sessions and codec v1 unchanged.
 - Add frozen rc.4 admission evidence, genuine synthetic rc.2 session restore/fork/replay coverage, and source checks carrying the exact Desktop pi-ai runtime patch. Live OAuth, private backend requests and an installed Desktop are separate verification steps.
 

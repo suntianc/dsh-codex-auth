@@ -118,7 +118,8 @@ Desktop rc.2 还新增自带的 CLI 管理入口，并读取 macOS login-shell �
 ## 2026-10-17 verification record
 
 - Plugin candidate: `0.3.4-rc.1`; Node `24.19.0`, project pnpm `11.7.0`.
-- Frozen registry install and complete `pnpm run check`: 24 test files, 439 tests; peer checks, lint, Host/client type checks, build, packaged-artifact smoke and publint passed.
-- Official source at `1600d8a1e140dcde43a1a0941940a0480712c011`: Host/client library build and package packing passed. The isolated plugin check selected 97 source closure artifacts, recorded their SHA-512 hashes, and applied the verified pi-ai patch above. The same complete gate and 439 tests passed there.
+- Frozen registry install and complete `pnpm run check`: 24 test files, 441 tests; peer checks, lint, Host/client type checks, build, packaged-artifact smoke and publint passed.
+- Official source at `1600d8a1e140dcde43a1a0941940a0480712c011`: Host/client library build and package packing passed. The isolated plugin check selected 97 source closure artifacts, recorded their SHA-512 hashes, and applied the verified pi-ai patch above. The same complete gate and 441 tests passed there.
 - Final account-route coverage checks unauthenticated and untrusted-origin denial, non-owner Peer denial before the delegate, owner `browserPeer` forwarding, malformed requests, route disposal, and the retained loopback guard.
+- Image row lifecycle regressions use real Cordis plugin fibers and deferred Login State completion: active refreshes continue, while late initial-status and watcher callbacks no longer touch disposed services. Both new cases failed before the lifecycle guard and pass with it.
 - These results do not establish installed Electron/Desktop behavior, live OAuth, or live model, search and image backend availability.

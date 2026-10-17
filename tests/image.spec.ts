@@ -8,8 +8,10 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mountCustomCompaction } from './support/compaction-fixture.ts'
+import * as ImagePlugin from '../src/image.ts'
+import type { CodexAuthService } from '../src/codex-auth-service.ts'
 import {
   CODEX_IMAGE_EDIT_ENDPOINT, CODEX_IMAGE_GENERATION_ENDPOINT, Config, createCodexImageTools,
   type CodexImageSettings, type CodexImageToolOptions,
@@ -26,6 +28,62 @@ const SETTINGS: CodexImageSettings = {
   quality: 'auto',
   background: 'auto',
 }
+
+describe('Image row lifecycle', () => {
+  function fixture() {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    const status = Promise.withResolvers<Awaited<ReturnType<CodexAuthService['status']>>>()
+    const statusView = { available: false, configured: false, credentialRef: 'synthetic', authFileExists: false }
+    const statusFinally = vi.spyOn(status.promise, 'finally')
+    const unwatch = vi.fn()
+    let statusChanged = () => {}
+    const auth = {
+      status: vi.fn(() => status.promise),
+      watchStatus: vi.fn((listener: () => void) => { statusChanged = listener; return unwatch }),
+    }
+    const agents = { list: vi.fn((): Agent[] => []) }
+    ctx.provide('codexAuth', auth as unknown as CodexAuthService)
+    ctx.provide('agents', agents as unknown as Context['agents'])
+    ctx.provide('tools', {} as Context['tools'])
+    ctx.provide('llm', {} as Context['llm'])
+    ctx.provide('attachments', {} as Context['attachments'])
+    ctx.provide('fs', {} as Context['fs'])
+    const fiber = ctx.plugin(ImagePlugin)
+    return { fiber, status, statusView, statusFinally, agents, unwatch, notify: () => statusChanged() }
+  }
+
+  it('does not access injected services when initial status settles after row disposal', async () => {
+    const b = fixture()
+    await b.fiber
+    expect(b.agents.list).toHaveBeenCalledTimes(1)
+    expect(b.statusFinally).toHaveBeenCalledTimes(1)
+    const completed = expect(b.statusFinally.mock.results[0]?.value).resolves.toEqual(b.statusView)
+    await b.fiber.dispose()
+    expect(b.unwatch).toHaveBeenCalledTimes(1)
+    // The real plugin fiber has lost its injected service store, not just a fake flag.
+    expect(() => b.fiber.ctx.agents).toThrow('inactive context')
+    b.status.resolve(b.statusView)
+    await completed
+    expect(() => b.notify()).not.toThrow()
+    expect(b.agents.list).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes active rows on initial status and watcher notifications, then stops on disposal', async () => {
+    const b = fixture()
+    await b.fiber
+    const completed = expect(b.statusFinally.mock.results[0]?.value).resolves.toEqual(b.statusView)
+    b.status.resolve(b.statusView)
+    await completed
+    expect(b.agents.list).toHaveBeenCalledTimes(2)
+    b.notify()
+    expect(b.agents.list).toHaveBeenCalledTimes(3)
+    await b.fiber.dispose()
+    b.notify()
+    expect(b.unwatch).toHaveBeenCalledTimes(1)
+    expect(b.agents.list).toHaveBeenCalledTimes(3)
+  })
+})
 
 function attachmentRef(id: string, name = `${id}.png`): ImageAttachmentRef {
   return {
