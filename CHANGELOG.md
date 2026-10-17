@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.4-rc.1] - 2026-10-17
+
+- Target the coherent DSH `0.2.1-rc.1` graph with Cordis `4.0.5`, Schemastery `3.18.5`, and pi-ai `1.1.0`; keep exact experimental Native/compaction gates and the npm `rc` channel.
+- Remove the retired `dsh-invariants` dependency and `./invariant` companion export. Adapt account routes to the owner-authenticated browser Peer, and update Settings/stock tool-view contracts.
+- Preserve the static Codex catalog without credential reads or refreshes, including live per-profile exclusions; actual model requests still require Login State.
+- Use Portable checkpoints for tool-search/deferred-tool history and in-history system/developer updates whose semantics are not represented in the existing Native digest. Keep V4 sessions and codec v1 unchanged.
+- Add frozen rc.4 admission evidence, genuine synthetic rc.2 session restore/fork/replay coverage, and source checks carrying the exact Desktop pi-ai runtime patch. Live OAuth, private backend requests and an installed Desktop are separate verification steps.
+
 ## [0.3.3-rc.4] - 2026-10-14
 
 - Add optional per-profile `excludedModelIds`, defaulting to an empty list, with exact case-sensitive filtering after model completion and long-context policy. Preserve remaining provider descriptors, parameters, order, and source objects; no model is excluded by default.

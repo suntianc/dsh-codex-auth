@@ -130,6 +130,7 @@ async function loadStockClients(): Promise<{
     '@deepseek-ai/cordis': await import('@deepseek-ai/cordis'),
     'react/jsx-runtime': await import('react/jsx-runtime'),
     'react': await import('react'),
+    '@tanstack/react-virtual': await import('@tanstack/react-virtual'),
     'react-dom': await import('react-dom'),
     '@deepseek-ai/dsh-client-ui-primitives': primitivesModule(),
   }
@@ -140,13 +141,13 @@ async function loadStockClients(): Promise<{
         {
           id: CONVERSATION_ID,
           url: CONVERSATION_URL,
-          rev: '0.1.2-alpha.5',
+          rev: '0.2.1-rc.1',
           external: Object.keys(staticModules),
         },
         {
           id: TRAJECTORY_ID,
           url: TRAJECTORY_URL,
-          rev: '0.1.2-alpha.5',
+          rev: '0.2.1-rc.1',
           external: Object.keys(staticModules),
         },
       ],
@@ -154,13 +155,13 @@ async function loadStockClients(): Promise<{
         {
           phase: 'application',
           url: CONVERSATION_URL,
-          rev: '0.1.2-alpha.5',
+          rev: '0.2.1-rc.1',
           entries: [CONVERSATION_ID],
         },
         {
           phase: 'application',
           url: TRAJECTORY_URL,
-          rev: '0.1.2-alpha.5',
+          rev: '0.2.1-rc.1',
           entries: [TRAJECTORY_ID],
         },
       ],
@@ -232,6 +233,7 @@ function renderTrajectoryCheckpoint(trajectoryClient: StockClientExports) {
       }),
     },
     slots: {
+      registerFactory: () => () => {},
       inject(_name: string, register: () => () => void) { return register() },
       register(options: Record<string, unknown>, component: unknown) {
         if (options.id === 'trajectory') trajectoryView = component
@@ -312,6 +314,7 @@ function renderConversationCheckpoint(conversationClient: StockClientExports) {
     inject: () => {},
     locale: { register: () => () => {}, bind: () => (key: string) => key },
     slots: {
+      registerFactory: () => () => {},
       inject(name: string, register: () => () => void) {
         if (name === 'settings.general.item') throw registrationComplete
         return register()

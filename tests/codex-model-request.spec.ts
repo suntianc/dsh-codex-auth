@@ -106,6 +106,15 @@ async function drain(stream: AsyncIterable<unknown>): Promise<void> {
 }
 
 describe('Codex model request policy', () => {
+  it('keeps the static catalog visible without resolving or refreshing Login State', async () => {
+    const { adapter, credential, fetchMock } = fixture()
+    credential.mockRejectedValue(new Error('Catalog access must not touch Login State'))
+    expect((await adapter.listModels('openai-codex')).some(model => model.id === CODEX_GPT_6_SOL_MODEL_ID)).toBe(true)
+    await expect(adapter.listModels('another-provider')).rejects.toMatchObject({ code: 'NO_ADAPTER' })
+    expect(credential).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('uses host missing-model handling when a prepared call dispatches after exclusion', async () => {
     const settings: CodexLlmSettings = { longContextEnabled: false, excludedModelIds: [] }
     const { adapter, credential, fetchMock } = fixture(false, settings)

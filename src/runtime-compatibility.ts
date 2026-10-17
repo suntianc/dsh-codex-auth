@@ -1,6 +1,6 @@
 /** Each supported DSH graph is verified independently; mixed graphs are never accepted. */
 export const SUPPORTED_DSH_RUNTIMES: readonly string[] = Object.freeze([
-  '0.2.0-rc.2',
+  '0.2.1-rc.1',
 ])
 
 export function isSupportedDshGraph(versions: readonly string[]): boolean {

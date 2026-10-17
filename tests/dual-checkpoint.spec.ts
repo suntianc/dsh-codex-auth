@@ -14,6 +14,7 @@ import LlmRuntime, {
   ToolCallId,
   ReasoningEffortId,
   createAssistantMessage,
+  createDeveloperMessage,
   createSystemMessage,
   CONTEXT_WINDOW_EXCEEDED_CODE,
   createToolResultMessage,
@@ -2443,6 +2444,64 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(checkpoint?.content.some(
       block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
     )).toBe(false)
+  })
+
+  it.each([
+    { model: MODEL, wireTypes: ['additional_tools'] },
+    { model: 'gpt-5.5', wireTypes: ['tool_search_call', 'tool_search_output'] },
+  ])('keeps actual $model developer tool-addition history Portable during compaction', async ({ model, wireTypes }) => {
+    const { ctx, requests } = mountDualCheckpointHost({ accountId: `acct_projected_${model}_fixture` })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const session = closedConversation(`dual-projected-tools-${model}`)
+    const tool = { name: 'deferred_fixture', description: 'Deferred test tool', parameters: { type: 'object', properties: {} } }
+    session.append('turn/start', { turn: 3 })
+    session.append('step/start', { turn: 3, step: 1 })
+    const header = session.append('request/header', {
+      header: { config: { provider: 'openai-codex', model }, tools: [tool] }, reason: 'change',
+    })
+    const message = createDeveloperMessage({
+      source: { kind: 'user' }, content: [{ type: 'tool-addition', toolName: tool.name }],
+    })
+    session.append('developer/message', { turn: 3, step: 1, headerSeq: header.seq, message }, { surfaceOp: 'append' })
+    session.append('assistant/message', {
+      turn: 3, step: 1,
+      ...assistantSettlement(createAssistantMessage({
+        content: [{ type: 'text', text: HISTORY }], source: { provider: 'openai-codex', model },
+      })),
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 3, step: 1 })
+    session.append('turn/end', { turn: 3, reason: { kind: 'completed' } })
+    const result = await ctx.compaction.compactNow(idleAgent(session), new AbortController().signal)
+    expect(result).not.toBeNull()
+    expect(requests.map(request => request.kind)).toEqual(['portable'])
+    for (const type of wireTypes) expect(JSON.stringify(requests[0]!.body.input)).toContain(`"type":"${type}"`)
+    const checkpoint = session.deriveMessages().find(current => isCompactCheckpointSource(current.source))
+    expect(messageText(checkpoint!)).toContain(PORTABLE_SUMMARY)
+    expect(checkpoint?.content.some(block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)).toBe(false)
+  })
+
+  it.each([
+    { type: 'tool_search_call', call_id: 'deferred_fixture', execution: 'client', status: 'completed' },
+    { type: 'tool_search_output', call_id: 'deferred_fixture', execution: 'client', status: 'completed' },
+    { role: 'system', content: 'Updated system directive' },
+    { role: 'developer', content: 'Updated developer directive' },
+  ])('keeps unmodeled callback-injected history %j Portable during compaction', async item => {
+    const { ctx, requests } = mountDualCheckpointHost({
+      accountId: `acct_unmodeled_history_${'type' in item ? item.type : item.role}_fixture`,
+      onPayload: payload => {
+        const body = structuredClone(payload) as Record<string, unknown> & { input: unknown[] }
+        body.input.splice(-1, 0, item)
+        return body
+      },
+    })
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const session = closedConversation('dual-unmodeled-history')
+    expect(await ctx.compaction.compactNow(idleAgent(session), new AbortController().signal)).not.toBeNull()
+    expect(requests.map(request => request.kind)).toEqual(['portable'])
+    expect(requests[0]!.body.input).toContainEqual(item)
+    expect(session.deriveMessages().some(message => message.content.some(
+      block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
+    ))).toBe(false)
   })
 
   it('derives v2 only from allowlisted final callback controls', async () => {

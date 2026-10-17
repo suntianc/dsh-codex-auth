@@ -6,9 +6,15 @@ import { expect, it, vi } from 'vitest'
 import { registerAccountRoutes } from '../src/account-routes.ts'
 import { createLoopbackRpcGuard } from '../src/loopback-rpc.ts'
 
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface PrincipalMap {
+    'codex-test-guest': { readonly kind: 'codex-test-guest' }
+  }
+}
+
 it('serves authenticated account RPC on the real Connection Host and disposes its routes', async () => {
   const ctx = new Context()
-  const delegate = vi.fn(async () => ({ ok: true as const, value: { configured: false } }))
+  const delegate = vi.fn<Connection.ConnectionRpcHandler>(async () => ({ ok: true as const, value: { configured: false } }))
   try {
     ctx.provide('credentials', {
       modifyRecord: async (_key: unknown, update: (current: undefined) => Promise<CredentialRecord>) => update(undefined),
@@ -36,10 +42,20 @@ it('serves authenticated account RPC on the real Connection Host and disposes it
     expect((await send(envelope, false)).status).toBe(401)
     expect((await send(envelope, true, 'application/json', 'https://untrusted.example')).status).toBe(403)
     expect(delegate).not.toHaveBeenCalled()
+    const connection = ctx.connection
+    if (!(connection instanceof Connection.HostConnectionService)) throw new Error('Expected real Host Connection')
+    const guest = connection.createPeer({ principal: { kind: 'codex-test-guest' } })
+    const deniedGuest = await connection.createSharedFetchHandler('/api').fetch(new Request(baseUrl + channel + '/status', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(envelope),
+    }), guest)
+    expect(deniedGuest.status).toBe(403)
+    expect(delegate).not.toHaveBeenCalled()
     const response = await send(envelope)
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: { configured: false } } })
     expect(delegate).toHaveBeenCalledTimes(1)
+    expect(delegate.mock.calls[0]?.[3]).toBe(ctx.connection.browserPeer)
+    expect(ctx.connection.browserPeer.principal).toEqual({ kind: 'owner' })
     expect((await send('{')).status).toBe(400)
     expect((await send(envelope, true, 'text/plain')).status).toBe(415)
     const mismatch = await send({ ...envelope, method: 'login' })

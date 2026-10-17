@@ -6,6 +6,7 @@
   "include": [
     "src/**/*.ts",
     "tests/dsh-upgrade.spec.ts",
+    "tests/account-routes.spec.ts",
     "tests/codex-auth.spec.ts",
     "tests/codex-model-request.spec.ts",
     "tests/codex-context.spec.ts",
