@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url'
 import semver from 'semver'
 import { DSH_BASELINE, DSH_SOURCE_VERSION, DSH_VERIFY_VERSION, DSH_EXPERIMENTAL_PEER_RANGE, resolvedDshPackages } from './dsh-compatibility.mjs'
 
-const CODEX_COMPACTION_DSH_VERSION = '0.2.1-rc.1'
+const CODEX_COMPACTION_DSH_RANGE = DSH_EXPERIMENTAL_PEER_RANGE
 const EXPERIMENTAL_DSH_PEERS = [
   '@deepseek-ai/dsh-compaction',
   '@deepseek-ai/dsh-compaction-basic',
@@ -116,7 +116,7 @@ try {
     for (const section of ['peerDependencies', 'devDependencies']) {
       if (manifest[section]?.[name] !== (section === 'peerDependencies' ? DSH_EXPERIMENTAL_PEER_RANGE : DSH_VERIFY_VERSION)) {
         throw new Error(
-          `package smoke: ${section}.${name} must pin ${CODEX_COMPACTION_DSH_VERSION}`,
+          `package smoke: ${section}.${name} must declare the verified ${CODEX_COMPACTION_DSH_RANGE} graph`,
         )
       }
     }
@@ -195,7 +195,7 @@ try {
       || highestDeclaredDshVersions.get(name) !== DSH_VERIFY_VERSION)
   if (stale.length > 0) {
     throw new Error(
-      `package smoke: pnpm-lock.yaml resolves declared DSH below ${CODEX_COMPACTION_DSH_VERSION}: ${stale.join(', ')}`,
+      `package smoke: pnpm-lock.yaml resolves declared DSH below ${CODEX_COMPACTION_DSH_RANGE}: ${stale.join(', ')}`,
     )
   }
   const hostExports = ['.', './search', './image', './compaction']
@@ -224,9 +224,9 @@ try {
   if (typeof compaction.CodexCompactionEngine !== 'function') {
     throw new Error('package smoke: compaction export has no CodexCompactionEngine')
   }
-  if (compaction.CODEX_COMPACTION_COMPATIBILITY?.dsh !== CODEX_COMPACTION_DSH_VERSION
+  if (compaction.CODEX_COMPACTION_COMPATIBILITY?.dsh !== CODEX_COMPACTION_DSH_RANGE
     || compaction.CODEX_COMPACTION_COMPATIBILITY?.piAi !== PI_AI_VERSION) {
-    throw new Error('package smoke: compaction export does not advertise the pinned runtime pair')
+    throw new Error('package smoke: compaction export does not advertise the verified runtime graphs')
   }
   compaction.assertCodexCompactionCompatibility()
 
@@ -239,12 +239,12 @@ try {
   await access(checkpointTarget)
   await access(resolve(packageRoot, checkpointExport.types))
   const checkpoint = await import(pathToFileURL(checkpointTarget).href)
-  if (checkpoint.CODEX_NATIVE_REPLAY_COMPATIBILITY?.dsh !== CODEX_COMPACTION_DSH_VERSION
+  if (checkpoint.CODEX_NATIVE_REPLAY_COMPATIBILITY?.dsh !== CODEX_COMPACTION_DSH_RANGE
     || checkpoint.CODEX_NATIVE_REPLAY_COMPATIBILITY?.piAi !== PI_AI_VERSION
     || typeof checkpoint.encodeCodexNativeCheckpoint !== 'function'
     || typeof checkpoint.decodeCodexNativeCheckpoint !== 'function'
     || checkpoint.isCodexNativeReplayRuntimeCompatible() !== true) {
-    throw new Error('package smoke: native-checkpoint export lacks its pinned codec/replay contract')
+    throw new Error('package smoke: native-checkpoint export lacks its verified codec/replay contract')
   }
 
   const presetRoot = resolve(packageRoot, 'examples/agent-presets/codex-portable')

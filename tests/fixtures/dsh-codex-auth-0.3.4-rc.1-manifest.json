@@ -1,0 +1,58 @@
+{
+  "producer": {
+    "sourceCommit": "1975fc46e66f78058d8479b24c707bdd06d1eeb6",
+    "sourcePath": "package.json",
+    "description": "Unmodified admission fields from published 0.3.4-rc.1; still valid on rc.1 and rejected on rc.2."
+  },
+  "manifest": {
+    "name": "dsh-codex-auth",
+    "version": "0.3.4-rc.1",
+    "engines": {
+      "node": "^22.19.0 || >=24.0.0"
+    },
+    "peerDependencies": {
+      "@deepseek-ai/cordis": "^4.0.5",
+      "@deepseek-ai/dsh-agent": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-api-remotes": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-api-session-controller": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-atomic-write": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-attachment": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-client-connection": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-client-locale": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-client-ui-chat": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-client-ui-primitives": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-client-ui-renderer": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-client-ui-session": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-client-ui-settings": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-client-ui-slots": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-client-ui-tool": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-commands": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-compaction": "0.2.1-rc.1",
+      "@deepseek-ai/dsh-compaction-basic": "0.2.1-rc.1",
+      "@deepseek-ai/dsh-credentials": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-fs": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-host-webserver": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-llm": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-llm-pi-ai": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-session": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-settings": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-token-meter": "0.2.1-rc.1",
+      "@deepseek-ai/dsh-tools": "^0.2.1-rc.1",
+      "@deepseek-ai/dsh-web": "^0.2.1-rc.1",
+      "@deepseek-ai/schemastery": "^3.18.5",
+      "@earendil-works/pi-ai": "^1.1.0",
+      "react": "^18.2.0"
+    },
+    "peerDependenciesMeta": {
+      "@deepseek-ai/dsh-compaction": {
+        "optional": true
+      },
+      "@deepseek-ai/dsh-compaction-basic": {
+        "optional": true
+      },
+      "@deepseek-ai/dsh-token-meter": {
+        "optional": true
+      }
+    }
+  }
+}

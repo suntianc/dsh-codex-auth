@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH compatibility:** Version `0.3.4-rc.1` targets DSH `0.2.1-rc.1` and pi-ai `1.1.0`. Version `0.3.3-rc.4` remains on DSH `0.2.0-rc.2`; upgrade the plugin together with the Host. Use compatible older plugin versions for older DSH Hosts. See [verification](docs/dsh-source-verification.md).
+> **DSH compatibility:** Version `0.3.4-rc.2` supports the verified coherent DSH `0.2.1-rc.1` and `0.2.1-rc.2` graphs with pi-ai `1.1.0`. Its finite experimental peer range `0.2.1-rc.1 || 0.2.1-rc.2` excludes future RCs and stable releases; mixed graphs remain refused. Version `0.3.4-rc.1` remains rc.1-only, and `0.3.3-rc.4` targets DSH `0.2.0-rc.2`. See [verification](docs/dsh-source-verification.md).
 
 [![npm rc version](https://img.shields.io/npm/v/dsh-codex-auth/rc.svg?label=npm%20rc)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 English | [中文](README.zh.md)
 
-Release: **v0.3.4-rc.1** (npm tag: `rc`).
+Release: **v0.3.4-rc.2** (npm tag: `rc`).
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -25,6 +25,10 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 > account-gated `chatgpt.com/backend-api` surface is unsupported, revocable, and
 > may be rate-limited or changed without notice. Do not rely on it for
 > production workloads.
+
+## 0.3.4-rc.2: DSH 0.2.1-rc.1 / rc.2
+
+Supports both verified RC graphs without a version exemption and fixes runtime package version lookup through the Host resolver. Each graph passes 456 offline tests; isolated official profile installation, Host loading and teardown are verified. Live OAuth, model, search and image services are separate checks.
 
 ## 0.3.4-rc.1: DSH 0.2.1-rc.1
 
@@ -460,7 +464,7 @@ See the [upgrade evidence and test recipe](docs/dsh-source-verification.md#upgra
 
 ```sh
 dsh --version
-dsh plugin --profile web add dsh-codex-auth@0.3.4-rc.1
+dsh plugin --profile web add dsh-codex-auth@0.3.4-rc.2
 dsh plugin --profile web list
 ```
 

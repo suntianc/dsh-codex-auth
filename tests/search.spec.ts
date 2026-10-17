@@ -88,7 +88,7 @@ describe('Global Codex Search Provider', () => {
     if (compactionActive) {
       mountCustomCompaction(ctx)
     }
-    const web = new WebRuntime(ctx)
+    const web = new WebRuntime(ctx, WebRuntime.Config({}))
     web.registerSearchProvider(provider(fetchMock))
 
     const result = await web.search({ query: 'DeepSeek Harness plugins', maxResults: 1 })
@@ -103,10 +103,23 @@ describe('Global Codex Search Provider', () => {
     await ctx.fiber.dispose()
   })
 
+  it('keeps the bundle-selected Codex route when other search providers are available', async () => {
+    const ctx = new Context()
+    const web = new WebRuntime(ctx, WebRuntime.Config({ searchProvider: 'codex' }))
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ output: 'Codex route', results: [] })))
+    const otherSearch = vi.fn(async () => ({ content: 'another provider', sources: [], truncated: false }))
+    web.registerSearchProvider(provider(fetchMock))
+    web.registerSearchProvider({ id: 'another-search-api', available: () => true, search: otherSearch })
+    await expect(web.search({ query: 'explicit provider' })).resolves.toMatchObject({ content: 'Codex route' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(otherSearch).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
   it('applies enabled state live without a registration gap', async () => {
     let current = SETTINGS
     const ctx = new Context()
-    const web = new WebRuntime(ctx)
+    const web = new WebRuntime(ctx, WebRuntime.Config({}))
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ output: 'ok', results: [] })))
     web.registerSearchProvider(provider(fetchMock, () => current))
 

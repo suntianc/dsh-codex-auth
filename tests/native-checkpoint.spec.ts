@@ -163,7 +163,7 @@ describe('Codex Native Checkpoint codec', () => {
 
   it('pins replay to the observed DSH and pi-ai conversion pair', () => {
     expect(CODEX_NATIVE_REPLAY_COMPATIBILITY).toEqual({
-      dsh: '0.2.1-rc.1',
+      dsh: '0.2.1-rc.1 || 0.2.1-rc.2',
       piAi: '1.1.0',
     })
     expect(isCodexNativeReplayRuntimeCompatible()).toBe(true)
@@ -184,7 +184,7 @@ describe('Codex Native Checkpoint codec', () => {
     }
   })
 
-  it.each(['0.1.5-alpha.1', '0.1.5-rc.2', '0.2.0-rc.1', '0.2.0-rc.2', '0.2.0-rc.3', '0.2.1-rc.2'])('rejects the unverified %s converter and mixed RC graph', version => {
+  it.each(['0.1.5-alpha.1', '0.1.5-rc.2', '0.2.0-rc.1', '0.2.0-rc.2', '0.2.0-rc.3', '0.2.1-rc.3', '0.2.1'])('rejects the unverified %s converter and mixed RC graph', version => {
     expect(isCodexNativeReplayRuntimeCompatible({
       dshLlm: version, dshPiAi: version, piAi: '1.1.0',
     })).toBe(false)
@@ -1685,4 +1685,13 @@ describe('Codex Native Checkpoint replay', () => {
       reason: expect.objectContaining({ kind: 'error' }),
     }))
   })
+})
+
+
+it.each(['0.2.1-rc.1', '0.2.1-rc.2'])('keeps Native replay available on coherent %s and falls back on mixed RCs', version => {
+  const other = version === '0.2.1-rc.1' ? '0.2.1-rc.2' : '0.2.1-rc.1'
+  expect(isCodexNativeReplayRuntimeCompatible({ dshLlm: version, dshPiAi: version, piAi: '1.1.0' })).toBe(true)
+  expect(isCodexNativeReplayRuntimeCompatible({ dshLlm: version, dshPiAi: other, piAi: '1.1.0' })).toBe(false)
+  expect(isCodexNativeReplayRuntimeCompatible({ dshLlm: other, dshPiAi: version, piAi: '1.1.0' })).toBe(false)
+  expect(isCodexNativeReplayRuntimeCompatible({ dshLlm: version, dshPiAi: version, piAi: '1.1.1' })).toBe(false)
 })

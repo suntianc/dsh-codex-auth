@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH 兼容性：** `0.3.4-rc.1` 以 DSH `0.2.1-rc.1` 与 pi-ai `1.1.0` 为基线。`0.3.3-rc.4` 仍针对 DSH `0.2.0-rc.2`，请将插件与 Host 一起升级；旧版 DSH 请使用兼容的插件版本。见[验证说明](docs/dsh-source-verification.md)。
+> **DSH 兼容性：** `0.3.4-rc.2` 支持已验证的 DSH `0.2.1-rc.1` / `0.2.1-rc.2` 完整依赖图及 pi-ai `1.1.0`。实验性 peer 的有限范围 `0.2.1-rc.1 || 0.2.1-rc.2` 不接受未来 rc 或稳定版，仍拒绝混合依赖图，不添加版本豁免。`0.3.4-rc.1` 仅适配 rc.1，`0.3.3-rc.4` 针对 DSH `0.2.0-rc.2`。见[验证说明](docs/dsh-source-verification.md)。
 
 [![npm rc version](https://img.shields.io/npm/v/dsh-codex-auth/rc.svg?label=npm%20rc)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 [English](README.md) | 中文
 
-发布版本：**v0.3.4-rc.1**（npm 标签：`rc`）。
+发布版本：**v0.3.4-rc.2**（npm 标签：`rc`）。
 
 这是一个自包含的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex 能力包**。它复用官方 **Codex CLI** 维护的 ChatGPT 登录态
@@ -23,6 +23,10 @@
 > **⚠️ 非官方通道——仅限个人开发。** 私有、受账户权限控制的
 > `chatgpt.com/backend-api` 未获官方支持、可随时撤销，也可能在没有通知的情况下被限流
 > 或变更。请勿依赖它承载生产任务。
+
+## 0.3.4-rc.2：DSH 0.2.1-rc.1 / rc.2
+
+无需版本豁免即可支持两个已验证的 rc 依赖图，并修正通过 Host 解析器读取运行时包版本的方式。两个依赖图各通过 456 项离线测试，隔离 profile 的官方安装、Host 加载及卸载已验证；真实 OAuth、模型、搜索和生图服务属于独立验证范围。
 
 ## 0.3.4-rc.1：DSH 0.2.1-rc.1
 
@@ -383,7 +387,7 @@ DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 
 
 ```sh
 dsh --version
-dsh plugin --profile web add dsh-codex-auth@0.3.4-rc.1
+dsh plugin --profile web add dsh-codex-auth@0.3.4-rc.2
 dsh plugin --profile web list
 ```
 
