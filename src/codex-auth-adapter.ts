@@ -32,7 +32,7 @@ import type {
 import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { LlmError, ReasoningEffortId, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmModelInfo, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import {
@@ -268,10 +268,22 @@ function composePayloadCallbacks(
  */
 export class CodexAuthAdapter extends PiAiAdapter {
   private readonly nativeReplay: CodexNativeCheckpointReplay
+  private readonly catalogProvider: Provider
   private adapterGeneration: CodexAdapterGeneration
 
   constructor(ctx: Context, options: CodexAuthAdapterOptions) {
     const nativeReplay = new CodexNativeCheckpointReplay()
+    const catalogProvider = codexProvider(
+      options.displayName,
+      options.settings,
+      nativeReplay,
+      {
+        fetchImpl: options.fetchImpl,
+        timeoutMs: options.timeoutMs,
+        streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+      },
+      options.onPayload,
+    )
     const profile: ResolvedPiAiProviderProfile = {
       modelErrors: new Map(),
       provider: CODEX_ROUTE,
@@ -281,17 +293,7 @@ export class CodexAuthAdapter extends PiAiAdapter {
       requestImagePixelBudget: REQUEST_IMAGE_PIXEL_BUDGET,
       requestImageMaxBytes: REQUEST_IMAGE_MAX_BYTES,
       retryPolicy: resolveRetryPolicy(undefined, `llm-codex-auth: provider "${CODEX_ROUTE}" retryPolicy`),
-      piProvider: codexProvider(
-        options.displayName,
-        options.settings,
-        nativeReplay,
-        {
-          fetchImpl: options.fetchImpl,
-          timeoutMs: options.timeoutMs,
-          streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
-        },
-        options.onPayload,
-      ),
+      piProvider: catalogProvider,
       configuredMaxTokens: new Map(),
       transport: options.transport,
       websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
@@ -328,6 +330,7 @@ export class CodexAuthAdapter extends PiAiAdapter {
       resolveAttachments: () => ctx.get('attachments'),
     })
     this.nativeReplay = nativeReplay
+    this.catalogProvider = catalogProvider
     this.adapterGeneration = codexTurnStateContinuity.createGeneration()
     ctx.on('llm/stream', (request, next) =>
       codexTurnStateContinuity.observeLlmStream(request, next))
@@ -347,6 +350,18 @@ export class CodexAuthAdapter extends PiAiAdapter {
     const previous = this.adapterGeneration
     this.adapterGeneration = codexTurnStateContinuity.createGeneration()
     this.retireProcessLocalState(previous)
+  }
+
+  /** Keep the static Codex catalog visible without reading or refreshing Login State. */
+  override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+    return Promise.resolve().then(() => {
+      if (provider !== CODEX_ROUTE) {
+        throw new LlmError(`pi-ai adapter does not own provider "${provider}"`, 'NO_ADAPTER')
+      }
+      return this.catalogProvider.getModels().map(model => ({
+        provider, id: model.id, name: model.name, inputModalities: [...model.input],
+      }))
+    })
   }
 
   override async prepareCall(

@@ -8,20 +8,21 @@ import { pathToFileURL } from 'node:url'
 import semver from 'semver'
 import { DSH_BASELINE, DSH_SOURCE_VERSION, DSH_VERIFY_VERSION, DSH_EXPERIMENTAL_PEER_RANGE, resolvedDshPackages } from './dsh-compatibility.mjs'
 
-const CODEX_COMPACTION_DSH_VERSION = '0.2.0-rc.2'
+const CODEX_COMPACTION_DSH_VERSION = '0.2.1-rc.1'
 const EXPERIMENTAL_DSH_PEERS = [
   '@deepseek-ai/dsh-compaction',
   '@deepseek-ai/dsh-compaction-basic',
   '@deepseek-ai/dsh-token-meter',
 ]
-const PI_AI_VERSION = '0.87.1'
+const PI_AI_VERSION = '1.1.0'
 const EXACT_SUPPORT_PACKAGES = {
-  '@deepseek-ai/cordis': '4.0.4',
-  '@deepseek-ai/schemastery': '3.18.4',
+  '@deepseek-ai/cordis': '4.0.5',
+  '@deepseek-ai/schemastery': '3.18.5',
 }
 const RETIRED_DSH_PACKAGES = [
   '@deepseek-ai/dsh-client-runtime',
   '@deepseek-ai/dsh-host-apiproxy',
+  '@deepseek-ai/dsh-invariants',
 ]
 const SEMVER_OPTIONS = { includePrerelease: true }
 const sourceRoot = resolve(import.meta.dirname, '..')
@@ -197,7 +198,7 @@ try {
       `package smoke: pnpm-lock.yaml resolves declared DSH below ${CODEX_COMPACTION_DSH_VERSION}: ${stale.join(', ')}`,
     )
   }
-  const hostExports = ['.', './search', './image', './invariant', './compaction']
+  const hostExports = ['.', './search', './image', './compaction']
   for (const key of hostExports) {
     const target = manifest.exports?.[key]?.default
     const types = manifest.exports?.[key]?.types

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { zstdDecompressSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -9,9 +10,10 @@ import { builtinProviders } from '@earendil-works/pi-ai/providers/all'
 
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { compactCheckpointSource, CompactionId } from '@deepseek-ai/dsh-compaction'
-import LlmRuntime, { createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createDeveloperMessage, createSystemMessage, createUserMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
+import { Session, SessionId, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
@@ -28,6 +30,7 @@ import {
   decodeCodexNativeCheckpoint,
   encodeCodexNativeCheckpoint,
   type CodexNativeCheckpointV1,
+  type JsonValue,
 } from '../src/native-checkpoint.ts'
 
 vi.mock('node:crypto', async (importOriginal) => {
@@ -160,45 +163,45 @@ describe('Codex Native Checkpoint codec', () => {
 
   it('pins replay to the observed DSH and pi-ai conversion pair', () => {
     expect(CODEX_NATIVE_REPLAY_COMPATIBILITY).toEqual({
-      dsh: '0.2.0-rc.2',
-      piAi: '0.87.1',
+      dsh: '0.2.1-rc.1',
+      piAi: '1.1.0',
     })
     expect(isCodexNativeReplayRuntimeCompatible()).toBe(true)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.2.0-rc.2',
-      dshPiAi: '0.2.0-rc.2',
-      piAi: '0.87.1',
+      dshLlm: '0.2.1-rc.1',
+      dshPiAi: '0.2.1-rc.1',
+      piAi: '1.1.0',
     })).toBe(true)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.2.0-rc.2',
+      dshLlm: '0.2.1-rc.1',
       dshPiAi: '0.1.2-alpha.6',
-      piAi: '0.87.1',
+      piAi: '1.1.0',
     })).toBe(false)
-    expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.2.0-rc.2',
-      dshPiAi: '0.2.0-rc.2',
-      piAi: '0.84.2',
-    })).toBe(false)
+    for (const piAi of ['0.84.2', '0.87.1', '1.1.1']) {
+      expect(isCodexNativeReplayRuntimeCompatible({
+        dshLlm: '0.2.1-rc.1', dshPiAi: '0.2.1-rc.1', piAi,
+      })).toBe(false)
+    }
   })
 
-  it.each(['0.1.5-alpha.1', '0.1.5-rc.2', '0.2.0-rc.1', '0.2.0-rc.3'])('rejects the unverified %s converter and mixed RC graph', version => {
+  it.each(['0.1.5-alpha.1', '0.1.5-rc.2', '0.2.0-rc.1', '0.2.0-rc.2', '0.2.0-rc.3', '0.2.1-rc.2'])('rejects the unverified %s converter and mixed RC graph', version => {
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: version, dshPiAi: version, piAi: '0.87.1',
+      dshLlm: version, dshPiAi: version, piAi: '1.1.0',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: version, dshPiAi: '0.2.0-rc.2', piAi: '0.87.1',
+      dshLlm: version, dshPiAi: '0.2.1-rc.1', piAi: '1.1.0',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.2.0-rc.2', dshPiAi: version, piAi: '0.87.1',
+      dshLlm: '0.2.1-rc.1', dshPiAi: version, piAi: '1.1.0',
     })).toBe(false)
   })
 
   it('rejects the previous 0.1.3-alpha.1 converter graph', () => {
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '0.87.1',
+      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '1.1.0',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
-      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.2.0-rc.2', piAi: '0.87.1',
+      dshLlm: '0.1.3-alpha.1', dshPiAi: '0.2.1-rc.1', piAi: '1.1.0',
     })).toBe(false)
     expect(isCodexNativeReplayRuntimeCompatible({
       dshLlm: '0.1.3-alpha.1', dshPiAi: '0.1.3-alpha.1', piAi: '0.84.2',
@@ -656,6 +659,104 @@ async function collect(stream: AsyncIterable<unknown>): Promise<unknown[]> {
 }
 
 describe('Codex Native Checkpoint replay', () => {
+  it('replays the genuine rc.2 fixture on 0.2.1-rc.1 without rewriting its durable state', async () => {
+    const durable = readFileSync(new URL('./fixtures/dsh-0.2.0-rc.2-session.json', import.meta.url), 'utf8')
+    const fixture = JSON.parse(durable) as {
+      producer: { dsh: string; plugin: string; piAi: string }; id: string;
+      events: SessionEvent[]; header: Parameters<typeof Session.fromRestore>[2]; inheritedEventCount: number
+    }
+    expect(fixture.producer).toMatchObject({ dsh: '0.2.0-rc.2', plugin: '0.3.3-rc.4', piAi: '0.87.1' })
+    const restored = Session.fromRestore(SessionId(fixture.id), fixture.events, fixture.header,
+      SessionLogOffset(fixture.inheritedEventCount), 'detached')
+    const before = JSON.stringify(restored.snapshotEvents())
+    const native = restored.deriveMessages().flatMap(message => message.content)
+      .find(block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+    if (native?.type !== CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE) throw new Error('Fixture has no native checkpoint')
+    const state = native.state
+    const payloads: unknown[] = []
+    const { ctx } = mountCodexAdapter(payloads)
+    await drain(ctx.llm.stream({
+      provider: 'openai-codex', model: MODEL, system: SYSTEM,
+      messages: [...restored.deriveMessages(), createUserMessage({
+        content: [{ type: 'text', text: 'Continue after upgrading DSH' }], source: { kind: 'user' },
+      })],
+    }))
+    expect(payloads).toHaveLength(1)
+    expect(JSON.stringify(payloads[0])).toContain('synthetic-rc2-native-checkpoint')
+    expect(JSON.stringify(payloads[0])).toContain('rc2 retained user history')
+    expect(JSON.stringify(payloads[0])).toContain('future_provider_field')
+    expect(JSON.stringify(payloads[0])).not.toContain('RC.2 PORTABLE CHECKPOINT')
+    expect(JSON.stringify(payloads[0])).not.toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+    expect(native.state).toBe(state)
+    expect(JSON.stringify(restored.snapshotEvents())).toBe(before)
+    expect(JSON.stringify(fixture)).toBe(JSON.stringify(JSON.parse(durable)))
+  })
+
+  it.each([
+    { model: MODEL, wireTypes: ['additional_tools'] },
+    { model: 'gpt-5.5', wireTypes: ['tool_search_call', 'tool_search_output'] },
+  ])('keeps real $model deferred tool-history projection Portable even when its v1 digest matches', async ({ model, wireTypes }) => {
+    const payloads: unknown[] = []
+    const { ctx } = mountCodexAdapter(payloads)
+    const tool = { name: 'deferred_fixture', description: 'Deferred test tool', parameters: { type: 'object', properties: {} } }
+    const added = createDeveloperMessage({
+      source: { kind: 'user' }, content: [{ type: 'tool-addition', toolName: tool.name }],
+    })
+    const baseline = replayOptions()
+    const history = { tools: [], updates: [{ messageId: added.id, additions: [tool] }] }
+    await drain(ctx.llm.stream({
+      ...baseline, model, messages: [baseline.messages[0]!, added, baseline.messages[2]!],
+      tools: [tool], toolHistory: history,
+    }))
+    const captured = payloads[0] as Record<string, JsonValue>
+    expect(captured).toBeDefined()
+    for (const type of wireTypes) expect(JSON.stringify(captured.input)).toContain(`"type":"${type}"`)
+    const checkpoint = {
+      ...compatibleCheckpoint(),
+      provenance: { ...compatibleCheckpoint().provenance, model },
+      compatibilityDigest: codexNativeCheckpointCompatibilityDigest({
+        provider: 'openai-codex', model, accountHash: ACCOUNT_HASH,
+        instructions: String(captured.instructions), tools: captured.tools ?? null,
+        parallelToolCalls: captured.parallel_tool_calls === true, toolChoice: captured.tool_choice ?? null,
+        reasoning: captured.reasoning ?? null, text: captured.text ?? null, serviceTier: captured.service_tier ?? null,
+      }),
+    }
+    const options = deepFreeze({
+      ...replayOptions(checkpoint), model, tools: [tool], toolHistory: history,
+      messages: [baseline.messages[0]!, checkpointMessage(checkpoint), added, baseline.messages[2]!],
+    })
+    const before = JSON.stringify(options)
+    await drain(ctx.llm.stream(options))
+    expect(payloads).toHaveLength(2)
+    const sent = payloads[1] as Record<string, JsonValue>
+    for (const type of wireTypes) expect(JSON.stringify(sent.input)).toContain(`"type":"${type}"`)
+    for (const key of ['model', 'instructions', 'tools', 'parallel_tool_calls', 'tool_choice', 'reasoning', 'text', 'service_tier']) {
+      expect(sent[key]).toEqual(captured[key])
+    }
+    expect(JSON.stringify(sent)).toContain(JSON.stringify(PORTABLE_TEXT))
+    expect(JSON.stringify(sent)).not.toContain('opaque-native-state')
+    expect(JSON.stringify(sent)).not.toContain(CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE)
+    expect(JSON.stringify(options)).toBe(before)
+  })
+
+  it('keeps an actual mid-conversation system update Portable without changing the top-level digest', async () => {
+    const payloads: unknown[] = []
+    const { ctx } = mountCodexAdapter(payloads)
+    const baseline = replayOptions()
+    const options = deepFreeze({
+      ...baseline, messages: [...baseline.messages, createSystemMessage('UPDATED IN-HISTORY DIRECTIVE')],
+    })
+    const before = JSON.stringify(options)
+    await drain(ctx.llm.stream(options))
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0]).toMatchObject({ instructions: SYSTEM, input: expect.arrayContaining([
+      { role: 'developer', content: 'UPDATED IN-HISTORY DIRECTIVE' },
+    ]) })
+    expect(JSON.stringify(payloads[0])).toContain(JSON.stringify(PORTABLE_TEXT))
+    expect(JSON.stringify(payloads[0])).not.toContain('opaque-native-state')
+    expect(JSON.stringify(options)).toBe(before)
+  })
+
   it('continues an rc.1 checkpoint through Portable when the rc.2 default reasoning changes its digest', async () => {
     const payloads: unknown[] = []
     const { ctx } = mountCodexAdapter(payloads)
@@ -676,7 +777,7 @@ describe('Codex Native Checkpoint replay', () => {
     expect(decodeCodexNativeCheckpoint(encodeCodexNativeCheckpoint(oldCheckpoint)).ok).toBe(true)
   })
 
-  it('keeps the pi-ai 0.87.1 final payload identical across SSE, WebSocket, and auto fallback', async () => {
+  it('keeps the pi-ai 1.1.0 final payload identical across SSE, WebSocket, and auto fallback', async () => {
     type FixtureMode = 'success' | 'fail-before-open'
     class FixtureWebSocket extends EventTarget {
       static mode: FixtureMode = 'success'
@@ -1201,11 +1302,19 @@ describe('Codex Native Checkpoint replay', () => {
     ['reasoning', (body: Record<string, unknown>) => { body.reasoning = { effort: 'high' } }],
     ['text configuration', (body: Record<string, unknown>) => { body.text = { verbosity: 'high' } }],
     ['service tier', (body: Record<string, unknown>) => { body.service_tier = 'flex' }],
-    ['pi 0.84 additional tools history', (body: Record<string, unknown>) => {
+    ['additional tools history', (body: Record<string, unknown>) => {
       const input = body.input as unknown[]
       input.push({ type: 'additional_tools', role: 'developer', tools: [{ name: 'deferred_fixture' }] })
     }],
-  ])('substitutes Portable before fetch when the final callback changes %s', async (_field, change) => {
+    ...['tool_search_call', 'tool_search_output'].map(type => [type, (body: Record<string, unknown>) => {
+      const input = body.input as unknown[]
+      input.push({ type, call_id: 'deferred_fixture', execution: 'client', status: 'completed' })
+    }] as const),
+    ...['system', 'developer'].map(role => [`in-history ${role} instructions`, (body: Record<string, unknown>) => {
+      const input = body.input as unknown[]
+      input.push({ role, content: 'Updated instructions outside the top-level digest' })
+    }] as const),
+  ] as const)('substitutes Portable before fetch when the final callback changes %s', async (_field, change) => {
     const payloads: unknown[] = []
     const callback = (payload: unknown) => {
       change(payload as Record<string, unknown>)

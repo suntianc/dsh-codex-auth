@@ -48,7 +48,7 @@ is a compatibility alias for low. Omitting an effort is not equivalent to none;
 the adapter explicitly supplies low for an unspecified GPT-6.1 Sol request.
 Explicit efforts remain unchanged. Ultra is a Codex orchestration mode and is
 not sent as a raw wire effort. Installed provider descriptors retain their own
-reasoning metadata. The pinned pi-ai 0.87.1 catalog supplies GPT-6 Sol/Luna
+reasoning metadata. The pinned pi-ai 1.1.0 catalog supplies GPT-6 Sol/Luna
 with `off: "none"`; those installed descriptors therefore advertise Off and
 send explicit none. Only missing-model fallback descriptors reject Off. Temperature is rejected for the known GPT-6/6.1 models
 before authentication, regardless of direct or prepared call entry point.

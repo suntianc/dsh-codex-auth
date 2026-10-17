@@ -1,0 +1,73 @@
+{
+  "producer": {
+    "dsh": "0.2.0-rc.2",
+    "sourceCommit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+    "plugin": "0.3.3-rc.4",
+    "pluginSourceCommit": "8756d4dd04ddb18b492cc0c0d12453a35095b018",
+    "piAi": "0.87.1",
+    "synthetic": true,
+    "generation": "Created offline with the installed 0.2.0-rc.2 public Session/createUserMessage APIs and the released plugin checkpoint codec; no provider request or real account data."
+  },
+  "id": "synthetic-rc2-upgrade",
+  "header": {
+    "version": 4,
+    "id": "synthetic-rc2-upgrade",
+    "createdAt": 1792226419070,
+    "isSeeded": false
+  },
+  "inheritedEventCount": 0,
+  "events": [
+    {
+      "type": "turn/start",
+      "seq": 0,
+      "time": 1792226419071,
+      "data": {
+        "turn": 1
+      }
+    },
+    {
+      "type": "user/message",
+      "seq": 1,
+      "time": 1792226419073,
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "This is an automatically generated checkpoint condensing an earlier span of the conversation to free up context. Treat the captured context as established background and build on it without restating it. Continue the task directly from the messages that follow, without acknowledging this checkpoint.\n\n<compacted-summary>"
+          },
+          {
+            "type": "text",
+            "text": "RC.2 PORTABLE CHECKPOINT"
+          },
+          {
+            "type": "codex-native-checkpoint",
+            "text": "",
+            "state": "{\"schemaVersion\":1,\"codec\":{\"kind\":\"openai-responses-v2\",\"generation\":1},\"retention\":{\"policy\":\"codex-v2-retained-message-groups\",\"generation\":1},\"provenance\":{\"provider\":\"openai-codex\",\"model\":\"gpt-5.6-sol\",\"accountHash\":\"sha256:d946e88690451b09a509fb48ac4c8f567feee2d187e326062e366bcd8e78ba54\"},\"compatibilityDigest\":\"sha256:858dd706ccc4f489fdffb58154f4ee0a581020763f7cc6770a7cbd02a65496c6\",\"replay\":{\"estimator\":\"codex-v2-retained-json-plus-opaque-base64-v1\",\"estimatedTokens\":32},\"replacementItems\":[{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"rc2 retained user history\"}],\"future_provider_field\":{\"kept\":[\"rc2\",7,true,null]}},{\"type\":\"compaction\",\"encrypted_content\":\"synthetic-rc2-native-checkpoint\"}]}"
+          },
+          {
+            "type": "text",
+            "text": "</compacted-summary>"
+          }
+        ],
+        "source": {
+          "kind": "compact-checkpoint",
+          "compactionId": "synthetic-rc2-checkpoint"
+        },
+        "role": "user",
+        "id": "2103fa71-c747-4728-8500-df5a2e51ec72"
+      },
+      "surfaceOp": "append"
+    },
+    {
+      "type": "turn/end",
+      "seq": 2,
+      "time": 1792226419074,
+      "data": {
+        "turn": 1,
+        "reason": {
+          "kind": "completed"
+        }
+      }
+    }
+  ]
+}

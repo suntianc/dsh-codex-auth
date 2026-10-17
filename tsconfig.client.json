@@ -8,7 +8,12 @@
     "src/rpc-contract.ts",
     "tests/*.client.spec.ts",
     "tests/*.client.spec.tsx",
-    "tests/setup.client.ts"
+    "tests/setup.client.ts",
+    "tests/client-settings.spec.tsx",
+    "tests/model-exclusion-page.integration.spec.tsx"
   ],
-  "exclude": ["lib", "node_modules"]
+  "exclude": [
+    "lib",
+    "node_modules"
+  ]
 }

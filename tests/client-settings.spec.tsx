@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ComponentType } from 'react'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { CodexImageSettings } from '../src/image.ts'
 import type { CodexSearchSettings } from '../src/search.ts'
@@ -39,38 +40,38 @@ const IMAGE: CodexImageSettings = {
 
 function fakeScope<T>(
   initial: T,
-  status: SettingsScopeSnapshot<T>['status'] = 'ready',
+  status: ConfigFormSnapshot<T>['status'] = 'ready',
   beforeSet?: () => Promise<void>,
-): { scope: SettingsScope<T>; set: ReturnType<typeof vi.fn> } {
-  let snapshot: SettingsScopeSnapshot<T> = {
+): { scope: ConfigForm<T>; set: ReturnType<typeof vi.fn> } {
+  let snapshot: ConfigFormSnapshot<T> = {
     status,
     value: initial,
     base: initial,
     user: {},
     revision: 1,
     writable: true,
-    mode: 'host',
   }
   const listeners = new Set<() => void>()
   const set = vi.fn(async (field: string, value: unknown) => {
     await beforeSet?.()
-    snapshot = { ...snapshot, value: { ...snapshot.value, [field]: value } }
+    snapshot = { ...snapshot, value: { ...(snapshot.value ?? initial), [field]: value } }
     for (const listener of listeners) listener()
     return true
   })
   const scope = {
     getSnapshot() {
-      if (this !== scope) throw new Error('getSnapshot lost its SettingsScope receiver')
+      if (this !== scope) throw new Error('getSnapshot lost its ConfigForm receiver')
       return snapshot
     },
     subscribe(listener: () => void) {
-      if (this !== scope) throw new Error('subscribe lost its SettingsScope receiver')
+      if (this !== scope) throw new Error('subscribe lost its ConfigForm receiver')
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
     set,
-    unset: vi.fn(async () => {}),
-  } satisfies SettingsScope<T>
+    unset: vi.fn(async () => true),
+    mutate: vi.fn(async () => true),
+  } satisfies ConfigForm<T>
   return { set, scope }
 }
 
@@ -297,6 +298,8 @@ describe('Codex Image Creation tool view', () => {
       seq: 3,
       time: 30,
       callId: 'call-1',
+      name: 'generate_image',
+      args: PartialArguments.fromObject({ prompt: 'fox' }),
       call: { name: 'generate_image', argsRaw: '{"prompt":"fox"}' },
       callTime: 10,
       content: [{ type: 'image', attachment }],
@@ -323,6 +326,8 @@ describe('Codex Image Creation tool view', () => {
     const block: ToolCallBlock = {
       callId: 'call-1',
       name: 'generate_image',
+      phase: 'start',
+      args: PartialArguments.fromObject({ prompt: 'fox' }),
       argsRaw: '{"prompt":"fox"}',
       turn: 1,
       step: 1,
@@ -339,7 +344,7 @@ describe('Codex Image Creation tool view', () => {
 describe('client plugin registration', () => {
   it('registers one settings row and keyed views for both image tools', () => {
     const registered: Array<Record<string, unknown>> = []
-    const scopes = new Map([
+    const scopes = new Map<string, ConfigForm<unknown>>([
       ['llm-codex-auth', fakeScope(LLM).scope],
       ['codex-search', fakeScope(SEARCH).scope],
       ['codex-image', fakeScope(IMAGE).scope],
@@ -381,6 +386,8 @@ describe('client plugin registration', () => {
       seq: 4,
       time: 40,
       callId: 'call-list',
+      name: 'list_images',
+      args: PartialArguments.EMPTY,
       call: { name: 'list_images', argsRaw: '{}' },
       callTime: 30,
       content: [],

@@ -31,7 +31,7 @@ export function modelExclusionProfileFixture(name: string) {
     { id: 'llm', name: 'cordis:llm' },
     { id: 'config-editor', name: 'cordis:editor' },
     { id: 'settings', name: 'cordis:settings' },
-    { id: 'default-model', name: 'cordis:model', config: { provider: 'openai-codex', model: 'gpt-5.4' } },
+    { id: 'default-model', name: 'cordis:model', config: { provider: 'openai-codex', model: 'gpt-6-sol' } },
     { id: 'llm-codex-auth', name: 'cordis:codex', config: {
       authJsonPath: join(dir, 'never-created-auth.json'), codexCommand: 'definitely-not-codex',
     } },

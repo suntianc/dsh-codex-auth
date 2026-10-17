@@ -3,7 +3,7 @@ import { clientBundle } from './build/client-bundle.ts'
 
 const packageName = 'dsh-codex-auth'
 
-/** Build the Host, invariant, and browser faces directly from source. */
+/** Build the Host and browser faces directly from source. */
 export default defineConfig([
   {
     name: packageName,
@@ -13,7 +13,6 @@ export default defineConfig([
       'src/image.ts',
       'src/compaction.ts',
       'src/native-checkpoint.ts',
-      'src/invariant.ts',
     ],
     outDir: 'lib',
     format: ['esm'],

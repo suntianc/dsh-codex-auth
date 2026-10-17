@@ -10,6 +10,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { StreamOptions } from '@earendil-works/pi-ai'
 import { freezeMessage } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-compaction'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -473,10 +474,10 @@ function compatibilityInput(
   accountHash: string,
   payload: Record<string, unknown>,
 ): CodexNativeCheckpointCompatibilityInput | undefined {
-  // pi-ai 0.87.1 can encode deferred tool availability as semantic input rather
-  // than in the top-level tool schema. Until the durable digest models that
-  // history, fail back to Portable instead of replaying opaque state against it.
-  if (containsPayloadType(payload.input, 'additional_tools')
+  // pi-ai 1.1.0 can encode deferred tools and mid-conversation instructions in
+  // input history, outside the v1 digest's top-level tools/instructions. Keep
+  // these requests Portable until a future codec models the ordered changes.
+  if (containsUnmodeledHistory(payload.input)
     || typeof payload.model !== 'string'
     || payload.model.length === 0
     || typeof payload.instructions !== 'string'
@@ -499,10 +500,15 @@ function compatibilityInput(
   }
 }
 
-function containsPayloadType(value: unknown, type: string): boolean {
-  if (Array.isArray(value)) return value.some(item => containsPayloadType(item, type))
+function containsUnmodeledHistory(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsUnmodeledHistory)
   if (!isRecord(value)) return false
-  return value.type === type || Object.values(value).some(item => containsPayloadType(item, type))
+  return value.type === 'additional_tools'
+    || value.type === 'tool_search_call'
+    || value.type === 'tool_search_output'
+    || value.role === 'system'
+    || value.role === 'developer'
+    || Object.values(value).some(containsUnmodeledHistory)
 }
 
 function jsonOrNull(value: unknown): JsonValue {

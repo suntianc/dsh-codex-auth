@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** Captured ImageBlock rendering regression for the generate_image tool view. */
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -22,6 +23,8 @@ const block: ToolResultNode = {
   seq: 119,
   time: 1786724195670,
   callId: 'call-generate-image',
+  name: 'generate_image',
+  args: PartialArguments.fromObject({ prompt: 'blue background with white circle', n: 1 }),
   call: { name: 'generate_image', argsRaw: '{"prompt":"blue background with white circle","n":1}' },
   callTime: 1786724169821,
   content: [

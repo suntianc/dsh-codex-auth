@@ -660,7 +660,7 @@ function deriveNativeRequest(
   if (!isCapturedCompactionInstruction(finalItem, instructionText)
     || input.length === 0
     || wireInputHasImage(input)
-    || input.some(item => containsType(item, 'additional_tools'))) {
+    || input.some(containsUnmodeledHistory)) {
     return undefined
   }
   const tools = captured.tools === undefined ? null : cloneJson(captured.tools)
@@ -719,6 +719,19 @@ function messagesHaveImages(messages: readonly Message[]): boolean {
 
 function wireInputHasImage(input: readonly JsonValue[]): boolean {
   return input.some(item => containsType(item, 'input_image'))
+}
+
+/** Ordered tool/instruction changes are not represented by the v1 compatibility digest. */
+function containsUnmodeledHistory(value: JsonValue): boolean {
+  if (Array.isArray(value)) return value.some(containsUnmodeledHistory)
+  if (!isPlainRecord(value)) return false
+  const record = value as Record<string, JsonValue>
+  return record.type === 'additional_tools'
+    || record.type === 'tool_search_call'
+    || record.type === 'tool_search_output'
+    || record.role === 'system'
+    || record.role === 'developer'
+    || Object.values(record).some(containsUnmodeledHistory)
 }
 
 function containsType(value: JsonValue, type: string): boolean {

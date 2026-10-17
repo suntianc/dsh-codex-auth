@@ -890,6 +890,7 @@ export function apply(ctx: Context, config: Config): void {
     registrations.set(agent, () => { for (const dispose of disposers.reverse()) dispose() })
   }
   const refreshAll = (): void => {
+    if (disposed) return
     for (const agent of ctx.agents.list()) void refreshAgent(agent)
   }
 
