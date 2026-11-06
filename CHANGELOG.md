@@ -8,6 +8,7 @@
 - Supply the new pi-ai image-count/offload limits and update tool-batch, pre-step model-selection, client asset-loader, and response replay fixtures to the new public contracts.
 - Exclude the retained system head from Native summary shrink accounting, so an oversized Native result falls back to the valid Portable summary instead of failing Basic's transaction.
 - Cover released-plugin admission rejection, adapted admission, old V4 restore/fork/replay, model catalog preservation, and retained-system shrink fallback. Document removal of an obsolete duplicate `llm-pi-ai.providers.openai-codex` registration.
+- Record live image generation/edit/catalog persistence, search and Native compaction checks; document migration of retired saved-preset rows and model-selection flags, and account-specific model exclusions.
 
 ## [0.3.4-rc.2] - 2026-10-17
 

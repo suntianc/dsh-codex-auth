@@ -70,6 +70,29 @@ Restart the Host, confirm that the plugin has no admission/component error,
 check GPT Auth, and send a small request with the intended Codex model.
 Keep authentication on the existing subscription route.
 
+### Saved custom presets
+
+A preset copied from an older Standard definition can fail with
+`agent-preset/invalid` because
+`@deepseek-ai/dsh-tool-subagent-control/list-agents` no longer starts on the new
+runtime. Remove that retired `tool-subagent-list-agents` row when migrating the
+copy; the current Standard uses `@deepseek-ai/dsh-tool-subagent-control`.
+
+Also migrate `modelSelectionSettings` to the current `modelSelection` and
+`modelDiscovery` flags. Preserve the intended policy: enable both for a generic
+model-selectable role, and leave both false for a fixed-model role. Keep the
+existing preset ID so saved conversations can still resolve it. Review custom
+preset differences against DSH's shipped Standard rather than replacing user
+settings wholesale.
+
+This migration was verified with the actual Desktop modules: the previously
+rejected saved preset admitted successfully, selected NativeToolExecutor,
+completed a shell-marker turn, and an existing saved conversation opened in
+Desktop. A fresh Standard session also completed a shell-marker turn. HTTP
+fetch was tested with an explicit `fetchProvider: http`, as configured in the
+live profile; an isolated default composition with multiple usable providers
+requires a selection. The account-usage probe returned a valid weekly window.
+
 ## Validation and limits
 
 The package gate covers peer consistency, lint, Host/client type checks,
@@ -78,12 +101,40 @@ reproduce the released manifest's failure and admit the adapted bundle without
 rewriting synthetic settings or credentials. The retained-system shrink case
 fails with `ManualCompactionError` before the fix and passes with Portable fallback.
 
-An equivalent local build was also installed through the shipped CLI in an
-isolated profile and loaded against the installed Desktop's actual modules:
-the auth coordinator, model catalog, strict compaction gate, and teardown worked.
-One ordinary subscription-backed text turn completed in the Desktop UI.
-These observations do not establish live OAuth re-login, Native compaction,
-Search, Image Creation, or every saved custom preset's compatibility.
+### Live verification (2026-11-06)
+
+An equivalent local build with identical runtime sources was installed through
+the shipped CLI in an isolated profile and loaded against Desktop's actual
+bundled modules. Real service calls confirmed:
+
+- Text inference, scoped `generate_image` / `list_images` registration, and Codex Search.
+- Image generation with the configured default Sunburst model, followed by a
+  session-handle edit. Both images decoded as 1536×1024, had no tool warnings,
+  and matched the requested red-circle / blue-square content on visual inspection.
+- Session persistence and a separate Host-process restart: both attachments
+  retained identical hashes and the restored image catalog returned both handles.
+- The image tool rejected a reference not present in the invoking session with
+  `IMAGE_REFERENCE_NOT_AUTHORIZED`, before dispatching an image request.
+- The explicitly authorized Native live harness, separately using the pinned
+  registry dependency graph, passed with `gpt-6-astra`:
+  Native creation, one-shot turn continuation, JSON restore in a fresh Host,
+  repeated compaction, and redacted diagnostics.
+
+All seven tested GPT-5.6 / GPT-6 / GPT-6.1 entries answered. The same subscription
+rejected `gpt-5.3-codex-spark` and `gpt-5.5` as unsupported for a ChatGPT account.
+This is account/backend evidence, not a global retirement claim. A profile may
+hide those exact entries without altering saved sessions or the default catalog:
+
+```yaml
+- id: llm-codex-auth
+  config:
+    excludedModelIds:
+      - gpt-5.3-codex-spark
+      - gpt-5.5
+```
+
+These checks do not establish fresh browser OAuth login, every image model or
+quality/size combination, or every user-authored saved preset's compatibility.
 
 The complete tagged-source artifact gate has a separate reproducible recipe in
 [source verification](dsh-source-verification.md). Registry tests and the
