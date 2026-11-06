@@ -22,7 +22,8 @@
     "build/**/*.ts",
     "tsdown.config.ts",
     "vitest.config.ts",
-    "vitest.live.config.ts"
+    "vitest.live.config.ts",
+    "tests/dsh-022.spec.ts"
   ],
   "exclude": [
     "src/client",

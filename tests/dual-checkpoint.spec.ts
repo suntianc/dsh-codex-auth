@@ -864,7 +864,26 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
             arguments: '{"value":1}',
           },
         ],
-        source: { provider: 'openai-codex', model: MODEL },
+        source: {
+          provider: 'openai-codex', model: MODEL,
+          replayState: {
+            response: {
+              kind: 'pi-ai', version: 2, api: 'openai-codex-responses',
+              provider: 'openai-codex', model: MODEL, stopReason: 'toolUse',
+            },
+            blocks: [
+              {
+                type: 'reasoning',
+                thinkingSignature: JSON.stringify({
+                  type: 'reasoning', id: 'rs_fixture',
+                  summary: [{ type: 'summary_text', text: 'retained reasoning fixture' }],
+                  encrypted_content: 'synthetic-encrypted-reasoning',
+                }),
+              },
+              { type: 'tool-call' },
+            ],
+          },
+        },
       }),
       createToolResultMessage({
         callId,
@@ -1383,6 +1402,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const agent = idleAgent(session)
 
     await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -1407,7 +1427,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
       model: MODEL,
       messages: session.deriveMessages(),
       sessionId: session.id,
-      purpose: 'session-title',
+      purpose: 'compaction',
     }))
     expect(requests.at(-1)?.headers.has('x-codex-turn-state')).toBe(false)
 
@@ -1535,6 +1555,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const standardSession = openConversation('dual-standard-context')
     const standardAgent = idleAgent(standardSession)
     await agentEvents(standard.ctx, standardAgent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -1557,6 +1578,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const longSession = openConversation('dual-long-context')
     const longAgent = idleAgent(longSession)
     await agentEvents(long.ctx, longAgent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -1661,6 +1683,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const session = openConversation('dual-cloned-request')
     const agent = idleAgent(session)
     await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -1727,6 +1750,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const runPressure = (session: Session) => {
       const agent = idleAgent(session)
       return agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
         messages: [],
         turn: 3,
         step: 1,
@@ -1778,6 +1802,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const session = openConversation('dual-concurrent-request')
     const agent = idleAgent(session)
     await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -1825,6 +1850,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const agent = idleAgent(session)
     const controller = new AbortController()
     const dispatched = agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -1866,6 +1892,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const session = openConversation('dual-stalled-teardown')
     const agent = idleAgent(session)
     await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -1941,6 +1968,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const session = openConversation('dual-aborted-request')
     const agent = idleAgent(session)
     await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -1993,6 +2021,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const session = openConversation('dual-request-error')
     const agent = idleAgent(session)
     await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -2041,6 +2070,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const session = openConversation('dual-pressure-error')
     const agent = idleAgent(session)
     await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -2080,6 +2110,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const session = openConversation('dual-model-mismatch')
     const agent = idleAgent(session)
     await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -2129,6 +2160,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const session = openConversation('dual-account-mismatch')
     const agent = idleAgent(session)
     await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -2176,6 +2208,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const session = openConversation('dual-expiry')
     const agent = idleAgent(session)
     await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -2215,6 +2248,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const session = openConversation('dual-generation')
     const agent = idleAgent(session)
     await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -2255,6 +2289,7 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     const session = openConversation('dual-hmr-disposal')
     const agent = idleAgent(session)
     await agentEvents(first.ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,
@@ -2973,14 +3008,15 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
   })
 
-  it('reports strict-shrink fallback for a nonshrinking artifact', async () => {
+  it.each([false, true])('reports strict-shrink fallback with a retained system head: %s', async systemHead => {
     const { ctx, requests } = mountDualCheckpointHost({
       accountId: 'acct_nonshrinking_fixture',
       nativeReply: () => compactionResponse('x'.repeat(200_000)),
     })
     const debug = vi.spyOn(ctx.logger, 'debug').mockImplementation(() => undefined)
     vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
-    const session = closedConversation('dual-nonshrinking')
+    const session = closedConversation('dual-nonshrinking', undefined,
+      systemHead ? 'preserved system instruction '.repeat(30_000) : undefined)
 
     const result = await ctx.compaction.compactNow(
       idleAgent(session),

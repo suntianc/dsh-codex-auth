@@ -336,6 +336,8 @@ describe('CodexAuthAdapter route profile', () => {
       websocketConnectTimeoutMs: 3_000,
       timeoutMs: 60_000,
       maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES,
+      maxRequestImages: 50,
+      imageOffloadCountQuantum: 10,
       requestImagePixelBudget: REQUEST_IMAGE_PIXEL_BUDGET,
       requestImageMaxBytes: REQUEST_IMAGE_MAX_BYTES,
     })
@@ -384,7 +386,9 @@ describe('CodexAuthAdapter route profile', () => {
     const standard = getModels()
     expect(standard.some(model => model.id === CODEX_GPT_6_ASTRA_MODEL_ID)).toBe(true)
     for (const id of CODEX_LONG_CONTEXT_MODEL_IDS) {
-      expect(standard.find(model => model.id === id)?.contextWindow).toBe(CODEX_STANDARD_CONTEXT_WINDOW)
+      expect(standard.find(model => model.id === id)?.contextWindow).toBe(
+        id === 'gpt-6.1-sol' ? 500_000 : CODEX_STANDARD_CONTEXT_WINDOW,
+      )
     }
     const unchanged = standard.find(model => model.id === 'gpt-5.4')
 

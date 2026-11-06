@@ -491,6 +491,7 @@ describe('Codex Portable Checkpoint Adapter', () => {
     const agent = idleAgent(session)
 
     await expect(agentEvents(ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: MODEL, model: MODEL },
       messages: [],
       turn: 3,
       step: 2,
@@ -622,18 +623,18 @@ describe('Codex Portable Checkpoint Adapter', () => {
     expect(adapter.requests.map(request => request.purpose)).toEqual(['compaction', 'compaction'])
   })
 
-  it('accepts the resolved 0.2.1-rc.1 and pi-ai 1.1.0 runtime pair', () => {
+  it('accepts the resolved 0.2.2-rc.1 and pi-ai 1.3.0 runtime pair', () => {
     expect(() => assertCodexCompactionCompatibility({
       dsh: {
-        '@deepseek-ai/dsh-agent': '0.2.1-rc.1',
-        '@deepseek-ai/dsh-compaction': '0.2.1-rc.1',
-        '@deepseek-ai/dsh-compaction-basic': '0.2.1-rc.1',
-        '@deepseek-ai/dsh-llm': '0.2.1-rc.1',
-        '@deepseek-ai/dsh-llm-pi-ai': '0.2.1-rc.1',
-        '@deepseek-ai/dsh-session': '0.2.1-rc.1',
-        '@deepseek-ai/dsh-token-meter': '0.2.1-rc.1',
+        '@deepseek-ai/dsh-agent': '0.2.2-rc.1',
+        '@deepseek-ai/dsh-compaction': '0.2.2-rc.1',
+        '@deepseek-ai/dsh-compaction-basic': '0.2.2-rc.1',
+        '@deepseek-ai/dsh-llm': '0.2.2-rc.1',
+        '@deepseek-ai/dsh-llm-pi-ai': '0.2.2-rc.1',
+        '@deepseek-ai/dsh-session': '0.2.2-rc.1',
+        '@deepseek-ai/dsh-token-meter': '0.2.2-rc.1',
       },
-      piAi: '1.1.0',
+      piAi: '1.3.0',
     })).not.toThrow()
   })
 
@@ -647,57 +648,57 @@ describe('Codex Portable Checkpoint Adapter', () => {
       '@deepseek-ai/dsh-session': '0.1.3-alpha.1',
       '@deepseek-ai/dsh-token-meter': '0.1.3-alpha.1',
     }
-    expect(() => assertCodexCompactionCompatibility({ dsh, piAi: '1.1.0' })).toThrow()
+    expect(() => assertCodexCompactionCompatibility({ dsh, piAi: '1.3.0' })).toThrow()
     expect(() => assertCodexCompactionCompatibility({
-      dsh: { ...dsh, '@deepseek-ai/dsh-session': '0.2.1-rc.1' },
-      piAi: '1.1.0',
+      dsh: { ...dsh, '@deepseek-ai/dsh-session': '0.2.2-rc.1' },
+      piAi: '1.3.0',
     })).toThrow()
   })
 
   it('fails loud when any experimental DSH or pi-ai runtime package leaves the pinned pair', () => {
     expect(CODEX_COMPACTION_COMPATIBILITY).toEqual({
-      dsh: '0.2.1-rc.1 || 0.2.1-rc.2',
-      piAi: '1.1.0',
+      dsh: '0.2.2-rc.1',
+      piAi: '1.3.0',
     })
     const pinnedDsh = {
-      '@deepseek-ai/dsh-agent': '0.2.1-rc.1',
-      '@deepseek-ai/dsh-compaction': '0.2.1-rc.1',
-      '@deepseek-ai/dsh-compaction-basic': '0.2.1-rc.1',
-      '@deepseek-ai/dsh-llm': '0.2.1-rc.1',
-      '@deepseek-ai/dsh-llm-pi-ai': '0.2.1-rc.1',
-      '@deepseek-ai/dsh-session': '0.2.1-rc.1',
-      '@deepseek-ai/dsh-token-meter': '0.2.1-rc.1',
+      '@deepseek-ai/dsh-agent': '0.2.2-rc.1',
+      '@deepseek-ai/dsh-compaction': '0.2.2-rc.1',
+      '@deepseek-ai/dsh-compaction-basic': '0.2.2-rc.1',
+      '@deepseek-ai/dsh-llm': '0.2.2-rc.1',
+      '@deepseek-ai/dsh-llm-pi-ai': '0.2.2-rc.1',
+      '@deepseek-ai/dsh-session': '0.2.2-rc.1',
+      '@deepseek-ai/dsh-token-meter': '0.2.2-rc.1',
     }
     for (const version of ['0.1.5-alpha.1', '0.1.5-rc.2', '0.2.0-rc.1', '0.2.0-rc.2', '0.2.0-rc.3', '0.2.1-rc.3', '0.2.1']) {
       const unverified = Object.fromEntries(Object.keys(pinnedDsh).map(name => [name, version])) as typeof pinnedDsh
-      expect(() => assertCodexCompactionCompatibility({ dsh: unverified, piAi: '1.1.0' })).toThrow()
+      expect(() => assertCodexCompactionCompatibility({ dsh: unverified, piAi: '1.3.0' })).toThrow()
       for (const name of Object.keys(pinnedDsh)) {
         expect(() => assertCodexCompactionCompatibility({
           dsh: { ...pinnedDsh, [name]: version },
-          piAi: '1.1.0',
+          piAi: '1.3.0',
         })).toThrow()
       }
     }
     expect(() => assertCodexCompactionCompatibility({
       dsh: { ...pinnedDsh, '@deepseek-ai/dsh-agent': '0.1.2-alpha.4' },
-      piAi: '1.1.0',
+      piAi: '1.3.0',
     })).toThrow(
-      /requires DSH 0\.2\.1-rc\.1.*received @deepseek-ai\/dsh-agent=0\.1\.2-alpha\.4/,
+      /requires DSH 0\.2\.2-rc\.1.*received @deepseek-ai\/dsh-agent=0\.1\.2-alpha\.4/,
     )
     expect(() => assertCodexCompactionCompatibility({
       dsh: { ...pinnedDsh, '@deepseek-ai/dsh-llm-pi-ai': '0.1.2-alpha.4' },
-      piAi: '1.1.0',
+      piAi: '1.3.0',
     })).toThrow(/@deepseek-ai\/dsh-llm-pi-ai=0\.1\.2-alpha\.4/)
     for (const piAi of ['0.84.2', '0.87.1', '1.1.1']) {
       expect(() => assertCodexCompactionCompatibility({ dsh: pinnedDsh, piAi }))
-        .toThrow(/requires DSH 0\.2\.1-rc\.1.*pi-ai 1\.1\.0/)
+        .toThrow(/requires DSH 0\.2\.2-rc\.1.*pi-ai 1\.3\.0/)
     }
   })
 })
 
 
-it.each(['0.2.1-rc.1', '0.2.1-rc.2'])('accepts coherent %s compaction and rejects mixing the supported RCs', version => {
-  const other = version === '0.2.1-rc.1' ? '0.2.1-rc.2' : '0.2.1-rc.1'
+it.each(['0.2.2-rc.1'])('accepts coherent %s compaction and rejects mixing the supported RCs', version => {
+  const other = '0.2.1-rc.2'
   const dsh = {
     '@deepseek-ai/dsh-agent': version,
     '@deepseek-ai/dsh-compaction': version,
@@ -707,8 +708,8 @@ it.each(['0.2.1-rc.1', '0.2.1-rc.2'])('accepts coherent %s compaction and reject
     '@deepseek-ai/dsh-session': version,
     '@deepseek-ai/dsh-token-meter': version,
   }
-  expect(() => assertCodexCompactionCompatibility({ dsh, piAi: '1.1.0' })).not.toThrow()
+  expect(() => assertCodexCompactionCompatibility({ dsh, piAi: '1.3.0' })).not.toThrow()
   for (const name of Object.keys(dsh)) {
-    expect(() => assertCodexCompactionCompatibility({ dsh: { ...dsh, [name]: other }, piAi: '1.1.0' })).toThrow()
+    expect(() => assertCodexCompactionCompatibility({ dsh: { ...dsh, [name]: other }, piAi: '1.3.0' })).toThrow()
   }
 })

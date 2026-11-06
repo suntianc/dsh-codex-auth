@@ -1,4 +1,4 @@
-/** Offline profile admission and durable V4 continuation across the verified DSH 0.2.1 RC graphs. */
+/** Offline profile admission and durable V4 continuation on the verified DSH 0.2.2-rc.1 graph. */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -84,7 +84,7 @@ it('disables released 0.3.3-rc.4 on the verified runtime despite an old exact-ve
 
 it('admits all adapted bundle rows without a grant or rewriting synthetic settings and login state', async () => {
   const fixture = profileFixture()
-  expect(['0.2.1-rc.1', '0.2.1-rc.2']).toContain(targetRuntime)
+  expect(targetRuntime).toBe('0.2.2-rc.1')
   writeFileSync(join(fixture.packageDir, 'package.json'), JSON.stringify(manifest))
   const files = {
     'settings.yaml': 'codex-llm:\n  longContextEnabled: true\n',
@@ -167,17 +167,17 @@ it.each([
 })
 
 
-it('reproduces the published single-RC installation rejection and accepts both verified RCs', () => {
+it('reproduces the published single-RC installation rejection and accepts the adapted runtime', () => {
   expect(evaluatePluginCompatibility(singleRcRelease.manifest, {}, '0.2.1-rc.1')).toBeUndefined()
   const rejected = evaluatePluginCompatibility(singleRcRelease.manifest, {}, '0.2.1-rc.2')
   expect(Object.keys(rejected?.requirements ?? {}).sort()).toEqual([...exactPeers].sort())
   expect(rejected?.exempted).toBe(false)
-  for (const runtime of ['0.2.1-rc.1', '0.2.1-rc.2']) {
+  for (const runtime of ['0.2.2-rc.1']) {
     expect(evaluatePluginCompatibility(manifest, {}, runtime)).toBeUndefined()
   }
 })
 
-it.each(['0.2.1-rc.0', '0.2.1-rc.1.1', '0.2.1-rc.2.1', '0.2.1-rc.3', '0.2.1', '0.2.2-rc.1', '0.3.0'])('does not admit unverified %s through prerelease range semantics', runtime => {
+it.each(['0.2.1-rc.0', '0.2.1-rc.1.1', '0.2.1-rc.2.1', '0.2.1-rc.3', '0.2.1', '0.2.2-rc.2', '0.2.2', '0.3.0'])('does not admit unverified %s through prerelease range semantics', runtime => {
   const rejected = evaluatePluginCompatibility(manifest, {}, runtime)
   expect(rejected).toBeDefined()
   expect(rejected?.exempted).toBe(false)

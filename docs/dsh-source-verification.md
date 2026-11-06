@@ -1,73 +1,58 @@
 # DSH source compatibility verification
 
-Version `0.3.4-rc.2` verifies the coherent DSH `0.2.1-rc.1` and `0.2.1-rc.2` graphs. The registry development baseline remains rc.1; the default official-source target is rc.2 at `687f282e8625c6b8d11ff58211a90524be2e4317`. Development dependencies,
-the lockfile, peer ranges, and package smoke checks use this baseline. Codex's
-experimental compaction and Native replay additionally require pi-ai `1.1.0`
-and the exact DSH graph. Older plugin releases retain the earlier DSH support;
-the current checkout does not test or advertise that older graph.
+The current candidate targets DSH `0.2.2-rc.1` and pi-ai `1.3.0`. Both the registry
+baseline and the source verification target use this exact coherent graph.
+Cordis is pinned to `4.1.0` and Schemastery to `3.19.0`.
+See [the upgrade guide](dsh-0.2.2-upgrade.md) for runtime changes and verification limits.
+The records below describe previous releases, not the current compatibility range.
 
 ## Build the official artifacts once
 
-Use a separate scratch directory, outside any plugin or live DSH installation:
+Use a scratch directory outside the plugin checkout and any live DSH installation:
 
 ```sh
-git clone --depth 1 --branch dsh-v0.2.1-rc.2 https://github.com/deepseek-ai/deepseek-harness.git harness
+git clone --depth 1 --branch dsh-v0.2.2-rc.1 https://github.com/deepseek-ai/deepseek-harness.git harness
 cd harness
 git rev-parse HEAD
-# Must be 687f282e8625c6b8d11ff58211a90524be2e4317.
+# Must be 66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db.
 PNPM_CONFIG_MINIMUM_RELEASE_AGE=0 pnpm install --frozen-lockfile --ignore-scripts
 pnpm run build:lib
 pnpm --filter './packages/**' --filter './vendor/*' -r pack --pack-destination ../dsh-packages
 ```
 
 The Host and Client library build is required. Packing does not publish anything.
-The resulting directory can be reused to check each of the four plugins.
 
 ## Check this plugin
 
-From this plugin's own repository:
+From the plugin checkout:
 
 ```sh
-PNPM_CONFIG_MINIMUM_RELEASE_AGE=0 pnpm install --frozen-lockfile
-PNPM_CONFIG_MINIMUM_RELEASE_AGE=0 pnpm run check
-PNPM_CONFIG_MINIMUM_RELEASE_AGE=0 pnpm run check:dsh-source -- /absolute/path/to/dsh-packages /absolute/path/to/harness/patches/@earendil-works__pi-ai@1.1.0.patch
+pnpm install --frozen-lockfile
+pnpm run check
+pnpm run check:dsh-source -- /absolute/path/to/dsh-packages /absolute/path/to/harness/patches/@earendil-works__pi-ai@1.3.0.patch
 ```
 
-The temporary `PNPM_CONFIG_MINIMUM_RELEASE_AGE=0` override permits verifying
-the newly published release before the configured registry age window expires;
-it does not change the workspace policy.
+The source runner copies the plugin to a temporary directory, reads supplied
+package manifests, rejects mixed DSH versions, and supplies the complete
+DSH dependency/peer closure. It verifies the official pi-ai patch SHA-256
+`4e1c90fd00aea42989664504668633033c1962e53c07860901edb4f72d843765`,
+applies that patch in the isolated graph, and records artifact checksums.
+It then runs the complete package gate. Local overrides and temporary paths
+never enter a published package or user profile. Checksums identify the supplied
+bytes; the fixed-tag build recipe establishes their provenance.
 
-The source check copies the current plugin into a new temporary directory,
-reads the supplied tarball manifests, rejects mixed DSH versions, explicitly
-supplies the complete DSH dependency/peer closure, and pins pi-ai to the plugin's
-development version. The second argument supplies the official Desktop runtime
-patch. The runner verifies its SHA-256 (`66eaf960054f10441b93ac3857114e96c1901f6d183713e2f21437b007111644`), copies it into the isolated graph, and records its identity beside the tarballs. This patch removes repeated parsing of partial tool arguments; final arguments are retained. It installs that isolated graph and runs
-`pnpm peers check` followed by the unmodified `pnpm run check` command.
-
-The runner leaves the verification directory and `artifacts.json` with SHA-512
-checksums for review. The fixed-tag build recipe establishes provenance; the
-runner identifies the supplied bytes and checks their versions, and does not
-claim to authenticate arbitrary user-supplied tarballs. Its local file overrides
-and generated lockfile stay in the temporary directory. They never enter this
-repository, an installed package, or a user profile.
-
-Package smoke checks accept both registry and source-artifact lock identities
-while continuing to verify the selected version. Both registry and source
-checks target `0.2.1-rc.1`; source checks use `DSH_VERIFY_VERSION` explicitly.
+The optional source-artifact gate requires a complete tagged-source build;
+registry tests and a packaged Desktop Host smoke are separate evidence and
+must not be represented as a completed source-artifact gate.
 
 ## 中文说明
 
-当前检出版本以已发布的 DSH `0.2.1-rc.1` 为开发与最低支持基线，
-锁文件、peer 与打包检查使用同一套依赖图。Codex 实验性压缩与 Native 回放
-还要求 pi-ai `1.1.0` 及准确的 DSH 版本；旧 DSH 请保留旧插件版本。
+当前候选版本以 DSH `0.2.2-rc.1`、pi-ai `1.3.0`、Cordis `4.1.0` 和
+Schemastery `3.19.0` 的一致依赖图为基线。源码验证脚本要求上面固定 tag 的
+完整构建制品及准确的 Desktop pi-ai 补丁，并在临时目录内运行全部检查。
+旧版验证记录不代表当前候选版本支持旧运行时。离线检查不证明真实 OAuth、搜索或图片后端可用。
 
-按上面的固定 tag 构建、打包一次，然后在本插件目录运行
-`pnpm run check:dsh-source -- /绝对路径/dsh-packages /绝对路径/harness/patches/@earendil-works__pi-ai@1.1.0.patch`。脚本在临时目录内安装
-完整源码包图并运行全部检查，输出位置和制品哈希供复核。正式 package.json
-和锁文件不会写入本机临时路径，也不会安装到现用 profile。
-
-升级验证覆盖离线类型检查、测试、构建、打包 smoke 和 publint；
-真实 OAuth、私有服务请求和用户现用 profile 不属于这些离线检查的证明范围。
+## Historical release verification
 
 ## Upgrade from DSH 0.2.0-rc.2
 

@@ -14,10 +14,10 @@ const EXPERIMENTAL_DSH_PEERS = [
   '@deepseek-ai/dsh-compaction-basic',
   '@deepseek-ai/dsh-token-meter',
 ]
-const PI_AI_VERSION = '1.1.0'
+const PI_AI_VERSION = '1.3.0'
 const EXACT_SUPPORT_PACKAGES = {
-  '@deepseek-ai/cordis': '4.0.5',
-  '@deepseek-ai/schemastery': '3.18.5',
+  '@deepseek-ai/cordis': '4.1.0',
+  '@deepseek-ai/schemastery': '3.19.0',
 }
 const RETIRED_DSH_PACKAGES = [
   '@deepseek-ai/dsh-client-runtime',

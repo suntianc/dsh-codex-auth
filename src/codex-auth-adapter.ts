@@ -290,6 +290,8 @@ export class CodexAuthAdapter extends PiAiAdapter {
       displayName: options.displayName,
       streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
       maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES,
+      maxRequestImages: 50,
+      imageOffloadCountQuantum: 10,
       requestImagePixelBudget: REQUEST_IMAGE_PIXEL_BUDGET,
       requestImageMaxBytes: REQUEST_IMAGE_MAX_BYTES,
       retryPolicy: resolveRetryPolicy(undefined, `llm-codex-auth: provider "${CODEX_ROUTE}" retryPolicy`),

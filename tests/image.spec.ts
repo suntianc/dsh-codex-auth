@@ -6,6 +6,7 @@ import type { ImageAttachmentRef, SaveImageAttachment } from '@deepseek-ai/dsh-a
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { NativeToolExecutor } from '@deepseek-ai/dsh-tool-executor-native'
 import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -164,6 +165,7 @@ function bench(
     mountCustomCompaction(ctx)
   }
   const tools = new ToolRuntime(ctx)
+  tools.setExecutor(new NativeToolExecutor(ctx))
   for (const tool of createCodexImageTools(options)) tools.register(tool)
   return { attachments, ctx, fetchImpl, fs, options, refs, saved, tools }
 }
@@ -175,13 +177,13 @@ async function execute(
   agent = fakeAgent(),
   signal = new AbortController().signal,
 ) {
-  return tools.execute({
-    callId: ToolCallId(`call-${name}`),
-    name,
-    arguments: arguments_,
+  const batch = await tools.execute({
+    calls: [{ type: 'tool-call', id: ToolCallId(`call-${name}`), name, arguments: JSON.stringify(arguments_) }],
     agent,
     signal,
   })
+  expect(batch.results).toHaveLength(1)
+  return batch.results[0]!.result
 }
 
 describe('generate_image', () => {

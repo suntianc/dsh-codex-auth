@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.3.4-rc.3]
+
+- Target the coherent DSH `0.2.2-rc.1` graph with Cordis `4.1.0`, Schemastery `3.19.0`, and pi-ai `1.3.0`; retain exact experimental runtime guards and reject mixed or future graphs.
+- Supply the new pi-ai image-count/offload limits and update tool-batch, pre-step model-selection, client asset-loader, and response replay fixtures to the new public contracts.
+- Exclude the retained system head from Native summary shrink accounting, so an oversized Native result falls back to the valid Portable summary instead of failing Basic's transaction.
+- Cover released-plugin admission rejection, adapted admission, old V4 restore/fork/replay, model catalog preservation, and retained-system shrink fallback. Document removal of an obsolete duplicate `llm-pi-ai.providers.openai-codex` registration.
+
 ## [0.3.4-rc.2] - 2026-10-17
 
 - Admit the two verified DSH 0.2.1 prereleases with `0.2.1-rc.1 || 0.2.1-rc.2` for the three experimental peers and matching Native/compaction runtime guards; retain coherent-graph and exact pi-ai checks.
