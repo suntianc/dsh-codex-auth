@@ -135,9 +135,12 @@ experimental plugin state, in which case the profile default applies.
 The bottom statistics dock shows **Codex · 5h …% · Week …%** as remaining
 subscription allowance. Only windows reported by the account are displayed;
 plans without a five-hour window do not show one. Hover or focus for reset times,
-and click to refresh. It refreshes every minute while the page is visible.
-Unavailable data is labeled explicitly rather than displayed as zero or retained
-as a current balance after a failed probe. This account allowance is independent
+and click to open a subscription details dialog with the plan, remaining allowance,
+reset times and last-check timestamp. A separate Refresh limits button updates the
+data without clearing the current snapshot. It also refreshes every minute while
+the page is visible. A failed refresh keeps the last-known values with an explicit
+stale marker; a reconnect clears them to avoid mixing accounts. Unreported windows
+and unavailable data are labeled rather than displayed as zero. This account allowance is independent
 of the existing context occupancy percentage.
 
 The footer uses the existing loopback-only account RPC and value-free usage

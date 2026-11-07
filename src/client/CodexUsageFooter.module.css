@@ -21,3 +21,37 @@
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
+
+.quotaFacts {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 20px;
+}
+
+.quotaFacts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.quotaFacts dt, .quotaWindow p, .quotaWindow strong span {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: normal;
+}
+
+.quotaFacts dd { margin: 0; text-align: right; }
+
+.quotaWindows { display: grid; gap: 12px; }
+
+.quotaWindow {
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.quotaWindow h3 { margin: 0 0 12px; font-size: 14px; }
+.quotaWindow strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+.quotaWindow progress { display: block; width: 100%; height: 8px; margin: 12px 0; accent-color: var(--dsw-alias-label-primary); }
+.quotaWindow p { margin: 8px 0 0; line-height: 1.5; }
+.quotaNotice { margin: 0 0 16px; font-size: 13px; line-height: 1.5; color: var(--dsw-alias-label-secondary); }
