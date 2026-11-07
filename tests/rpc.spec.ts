@@ -17,12 +17,29 @@ const STATUS: CodexAuthStatusView = {
 }
 
 const USAGE = {
+  fiveHourRemainingPercent: 88,
+  fiveHourResetAt: '2026-08-20T09:00:00.000Z',
   planType: 'plus',
   weeklyRemainingPercent: 49,
   weeklyResetAt: '2026-08-20T12:00:00.000Z',
 }
 
 describe('dedicated codex-auth RPC', () => {
+  it('reads and saves an explicit session Fast preference through the existing account boundary', async () => {
+    const fastMode = vi.fn(async () => ({ enabled: true, source: 'session' as const }))
+    const service = { status: vi.fn(), usage: vi.fn(), login: vi.fn() }
+    expect(await handleCodexAuthRpc(service, 'fast-mode', { sessionId: 'session-a', enabled: true }, undefined, fastMode))
+      .toEqual({ ok: true, value: { fastMode: { enabled: true, source: 'session' } } })
+    expect(fastMode).toHaveBeenCalledWith('session-a', true)
+    expect((await handleCodexAuthRpc(service, 'fast-mode', { sessionId: 'session-a', enabled: 'yes' }, undefined, fastMode)).ok).toBe(false)
+    expect(fastMode).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([{ fiveHourRemainingPercent: -1 }, { fiveHourRemainingPercent: 101 }, { fiveHourResetAt: 123 }])('rejects malformed five-hour quota %j', async usage => {
+    const client = createCodexAuthRpcClient({ call: async () => ({ ok: true, value: { usage } }) })
+    expect((await client.usage()).ok).toBe(false)
+  })
+
   it('dispatches value-free status and login requests', async () => {
     const service = {
       status: vi.fn(() => Promise.resolve(STATUS)),

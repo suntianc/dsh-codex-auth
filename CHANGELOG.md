@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Add a per-conversation Fast switch to the composer dock. Persist explicit On/Off in an ignorable plugin record outside model history, retain it through resume/fork, inherit the profile default otherwise, and keep unrelated sessions and Codex CLI settings untouched. Explicit Off requests the `default` tier.
+
+- Show remaining five-hour and weekly Codex allowances in the public composer dock, with reset-time hints, manual/minute refresh, missing-window handling, and cancellation/reconnect cleanup. Keep the existing loopback-only account boundary and context occupancy display.
+
+- Add default-off, live per-profile Fast mode in GPT Auth settings. Request `service_tier: priority` without changing the selected model or reasoning effort, and explain the subscription usage multiplier and backend-dependent availability.
+- Apply the tier before Native replay checks and compaction payload capture for both provider stream entry points. Preserve existing payload callbacks and independent Search/Image settings.
+- Cover direct/prepared live toggling, persistence and profile isolation, UI writes, Native tier propagation and Portable fallback after a tier change.
+
 ## [0.3.4-rc.3]
 
 - Target the coherent DSH `0.2.2-rc.1` graph with Cordis `4.1.0`, Schemastery `3.19.0`, and pi-ai `1.3.0`; retain exact experimental runtime guards and reject mixed or future graphs.

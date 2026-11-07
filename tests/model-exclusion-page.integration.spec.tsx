@@ -34,6 +34,7 @@ it('saves and clears model exclusions from the page into an isolated profile and
   }
   render(<CodexCapabilitySettings
     rpc={{
+      fastMode: async () => { throw new Error('Session operations forbidden in this test') },
       status: async () => ({ ok: true, value: { status: { available: false, configured: false, authFileExists: false, credentialRef: 'synthetic' } } }),
       usage: async () => ({ ok: true, value: { usage: {} } }),
       login: async () => { throw new Error('Account operations are forbidden in this test') },

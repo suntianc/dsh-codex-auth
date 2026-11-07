@@ -89,6 +89,62 @@ Adds GPT Image 2.5 Sunburst/Flare, advanced quality, and validated custom dimens
   `127.0.0.1` Web bind; every absent, all-interface, or unknown bind receives
   the same value-free `loopback-required` denial.
 
+### Fast mode
+
+In **Settings → GPT Auth → LLM Context**, enable **Fast mode** to request
+priority processing by default for Codex LLM calls in this profile. An explicit
+conversation preference overrides this default.
+It is off by default, takes effect without restarting, and keeps the selected
+model and reasoning effort. Existing advanced payload hooks retain their final say.
+Search and image tools keep their independent settings.
+
+[OpenAI's Codex speed guide](https://learn.chatgpt.com/docs/agent-configuration/speed)
+states that Fast uses included subscription limits at **2.5×** the Standard rate
+and purchased credits at **2×**. Availability and the actual applied tier remain
+model/account dependent; enabling this switch requests Fast and does not guarantee
+that the backend grants priority or a particular latency improvement.
+
+```yaml
+- id: llm-codex-auth
+  config:
+    fastModeEnabled: true
+```
+
+In a live subscription check on DSH 0.2.2-rc.1, Astra, GPT-6.1 Sol and GPT-5.6 Sol
+accepted priority requests but reported `service_tier: default` in completed
+responses. The literal `fast` wire alias was rejected with HTTP 400 by this
+Codex backend. These checks verify request delivery, **not granted Fast processing
+or a speed improvement**. Other accounts and backend revisions may behave differently.
+
+The plugin uses `service_tier: priority` (Fast's backward-compatible wire value)
+before Native replay compatibility checks and compaction payload capture, for
+both pi-ai stream entry points. A tier change falls back to the Portable summary
+when an existing Native checkpoint no longer matches. Fast does not change the
+checkpoint format or restore history that was already compacted.
+
+### Subscription limits in the composer footer
+
+The bottom statistics dock includes a **Fast · On/Off** switch for the current
+conversation. It saves an explicit session preference without changing the
+profile default, another conversation, or Codex CLI configuration. On sends
+`priority`; explicit Off sends `default`. The preference survives resume and is
+inherited by a fork until the child changes its own setting. It uses an ignorable
+plugin record outside model-visible history; future format migrations may drop
+experimental plugin state, in which case the profile default applies.
+
+The bottom statistics dock shows **Codex · 5h …% · Week …%** as remaining
+subscription allowance. Only windows reported by the account are displayed;
+plans without a five-hour window do not show one. Hover or focus for reset times,
+and click to refresh. It refreshes every minute while the page is visible.
+Unavailable data is labeled explicitly rather than displayed as zero or retained
+as a current balance after a failed probe. This account allowance is independent
+of the existing context occupancy percentage.
+
+The footer uses the existing loopback-only account RPC and value-free usage
+probe. Pending reads are cancelled on unmount/reconnect; it does not expose
+credentials or initiate login. Remote browser connections keep account RPC and
+the quota footer disabled.
+
 ### Codex models and long context
 
 The pinned pi-ai `1.3.0` catalog includes GPT-6 Astra. The plugin fills missing
@@ -495,6 +551,7 @@ Login State coordinator available to Search/Image without owning an LLM route:
 | `refreshLeadMs` | `300000` | Refresh lead time in milliseconds |
 | `codexCommand` | `codex` | CLI command used for login and version probing |
 | `displayName` | `OpenAI Codex (chatgpt)` | Provider label in model selectors |
+| `fastModeEnabled` | `false` | Live per-profile Fast (priority) processing request for Codex LLM calls; higher subscription usage and backend-dependent availability |
 | `longContextEnabled` | `false` | Live model-specific GPT-6/6.1 / GPT-5.6 long-context policy, editable through the `llm-codex-auth` Config Form |
 | `excludedModelIds` | `[]` | Per-profile exact model IDs hidden after catalog completion and context policy; editable through GPT Auth Settings |
 | `transport` | `sse` | Streaming transport: `sse`, `websocket`, or `auto` (WebSocket first with SSE fallback). SSE is the default: the WebSocket upgrade is unreliable through common HTTP proxies, and every new conversation pays the connect timeout before `auto` falls back |

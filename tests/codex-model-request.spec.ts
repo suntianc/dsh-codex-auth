@@ -39,7 +39,7 @@ afterEach(async () => {
   fallbackCatalog.enabled = false
 })
 
-function fixture(fallback = false, settings: CodexLlmSettings = { longContextEnabled: false }) {
+function fixture(fallback = false, settings: CodexLlmSettings = { longContextEnabled: false }, fastModeForSession?: (sessionId?: string) => boolean | undefined) {
   fallbackCatalog.enabled = fallback
   context = new Context()
   const accountId = 'synthetic-model-policy-account'
@@ -81,6 +81,7 @@ function fixture(fallback = false, settings: CodexLlmSettings = { longContextEna
     fetchImpl: fetchMock,
     displayName: 'Codex model policy fixture',
     settings: () => settings,
+    ...fastModeForSession === undefined ? {} : { fastModeForSession },
     transport: 'sse',
     websocketConnectTimeoutMs: 1_000,
     timeoutMs: 1_000,
@@ -106,6 +107,37 @@ async function drain(stream: AsyncIterable<unknown>): Promise<void> {
 }
 
 describe('Codex model request policy', () => {
+  it('keeps explicit per-session Fast on/off separate from the profile and other sessions', async () => {
+    const settings = { longContextEnabled: false, fastModeEnabled: true }
+    const overrides = new Map([['fast-session', true], ['standard-session', false]])
+    const { adapter, payloads } = fixture(false, settings, id => overrides.get(id ?? ''))
+    for (const id of ['fast-session', 'standard-session', 'new-session']) {
+      await drain(adapter.stream(request({ sessionId: id as NonNullable<GenerateOptions['sessionId']> })))
+    }
+    expect(payloads.map(payload => payload.service_tier)).toEqual(['priority', 'default', 'priority'])
+    expect(settings.fastModeEnabled).toBe(true)
+  })
+
+  it.each(['direct', 'prepared'] as const)('applies live Fast mode to %s calls without changing model or reasoning', async mode => {
+    const settings = { longContextEnabled: false, fastModeEnabled: false }
+    const { adapter, payloads } = fixture(false, settings)
+    const options = request({ reasoningEffort: ReasoningEffortId('high') })
+    const call = mode === 'prepared' ? await adapter.prepareCall(options.provider, options.model) : adapter
+    await drain(call.stream(options))
+    settings.fastModeEnabled = true
+    await drain(call.stream(options))
+    settings.fastModeEnabled = false
+    await drain(call.stream(options))
+    expect(payloads.map(payload => payload.service_tier)).toEqual([undefined, 'priority', undefined])
+    for (const payload of payloads) {
+      expect(payload.model).toBe(options.model)
+      expect(payload.reasoning).toMatchObject({ effort: 'high' })
+    }
+    const { service_tier: _tier, ...fast } = payloads[1]!
+    expect(fast).toEqual(payloads[0])
+    expect(payloads[2]).toEqual(payloads[0])
+  })
+
   it('keeps the static catalog visible without resolving or refreshing Login State', async () => {
     const { adapter, credential, fetchMock } = fixture()
     credential.mockRejectedValue(new Error('Catalog access must not touch Login State'))

@@ -25,24 +25,35 @@ export interface CodexAuthStatusView {
   authFileExists: boolean
 }
 
-/** Value-free weekly quota snapshot for the settings login block. */
+/** Value-free account quota snapshot for settings and the composer dock. */
 export interface CodexUsageView {
   /** Backend-reported plan claim for the account; absent when unknown. */
   planType?: string
   /** Remaining percentage (0-100) of the seven-day usage window; absent when unknown. */
   weeklyRemainingPercent?: number
+  /** Remaining percentage of the five-hour window; absent if the plan has none. */
+  fiveHourRemainingPercent?: number
+  /** ISO timestamp of the five-hour window reset, when reported. */
+  fiveHourResetAt?: string
   /** ISO timestamp of the seven-day usage window's next reset; absent when unknown. */
   weeklyResetAt?: string
 }
 
 /** Browser-safe face consumed by the settings card. */
 export interface CodexAuthRpcClient {
+  /** Read or persist one conversation's Fast preference. Omission reads only. */
+  fastMode(sessionId: string, enabled?: boolean, signal?: AbortSignal): Promise<RpcResult<{ fastMode: CodexFastModeView }>>
   /** Read the value-free codex login state. */
   status(signal?: AbortSignal): Promise<RpcResult<{ status: CodexAuthStatusView }>>
-  /** Read the value-free weekly quota snapshot from the ChatGPT backend. */
+  /** Read the value-free five-hour and weekly quota snapshot from the ChatGPT backend. */
   usage(signal?: AbortSignal): Promise<RpcResult<{ usage: CodexUsageView }>>
   /** Start one official codex CLI login flow. */
   login(mode: CodexAuthLoginMode, signal?: AbortSignal): Promise<RpcResult<{ started: boolean }>>
+}
+
+export interface CodexFastModeView {
+  enabled: boolean
+  source: 'profile' | 'session'
 }
 
 /** Minimal generic Connection caller required by this plugin. */
@@ -58,6 +69,16 @@ export interface CodexAuthConnectionRpc {
 /** Build the browser face over Connection's plugin-owned unary channel. */
 export function createCodexAuthRpcClient(rpc: CodexAuthConnectionRpc): CodexAuthRpcClient {
   return {
+    fastMode: async (sessionId, enabled, signal) => {
+      const result = await rpc.call(CODEX_AUTH_RPC_CHANNEL, `${CODEX_AUTH_RPC_NAMESPACE}/fast-mode`, {
+        sessionId, ...enabled === undefined ? {} : { enabled },
+      }, signal)
+      if (!result.ok) return result
+      const value = isRecord(result.value) ? result.value.fastMode : undefined
+      return isRecord(value) && typeof value.enabled === 'boolean' && (value.source === 'profile' || value.source === 'session')
+        ? { ok: true, value: { fastMode: { enabled: value.enabled, source: value.source } } }
+        : invalidResponse('fast-mode')
+    },
     status: async (signal) => {
       const result = await rpc.call(CODEX_AUTH_RPC_CHANNEL, `${CODEX_AUTH_RPC_NAMESPACE}/status`, {}, signal)
       if (!result.ok) return result
@@ -110,17 +131,19 @@ function parseUsageResult(value: unknown): CodexUsageView | undefined {
   if (!isRecord(value) || !isRecord(value.usage)) return undefined
   const usage = value.usage
   if (usage.planType !== undefined && typeof usage.planType !== 'string') return undefined
-  if (usage.weeklyResetAt !== undefined && typeof usage.weeklyResetAt !== 'string') return undefined
-  if (
-    usage.weeklyRemainingPercent !== undefined
-    && (!Number.isSafeInteger(usage.weeklyRemainingPercent)
-      || (usage.weeklyRemainingPercent as number) < 0
-      || (usage.weeklyRemainingPercent as number) > 100)
-  ) return undefined
+  for (const key of ['weeklyResetAt', 'fiveHourResetAt'] as const) {
+    if (usage[key] !== undefined && typeof usage[key] !== 'string') return undefined
+  }
+  for (const key of ['weeklyRemainingPercent', 'fiveHourRemainingPercent'] as const) {
+    const percent = usage[key]
+    if (percent !== undefined && (!Number.isSafeInteger(percent) || (percent as number) < 0 || (percent as number) > 100)) return undefined
+  }
   return {
     ...typeof usage.planType === 'string' ? { planType: usage.planType } : {},
     ...typeof usage.weeklyRemainingPercent === 'number' ? { weeklyRemainingPercent: usage.weeklyRemainingPercent } : {},
     ...typeof usage.weeklyResetAt === 'string' ? { weeklyResetAt: usage.weeklyResetAt } : {},
+    ...typeof usage.fiveHourRemainingPercent === 'number' ? { fiveHourRemainingPercent: usage.fiveHourRemainingPercent } : {},
+    ...typeof usage.fiveHourResetAt === 'string' ? { fiveHourResetAt: usage.fiveHourResetAt } : {},
   }
 }
 

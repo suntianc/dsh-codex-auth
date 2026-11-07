@@ -87,6 +87,7 @@ function authStatus(overrides: Partial<CodexAuthStatusView>): CodexAuthStatusVie
 
 function rpc(status: CodexAuthStatusView, usage: CodexUsageView = {}): CodexAuthRpcClient {
   return {
+    fastMode: vi.fn(async () => ({ ok: true as const, value: { fastMode: { enabled: false, source: 'profile' as const } } })),
     status: vi.fn(async () => ({ ok: true as const, value: { status } })),
     usage: vi.fn(async () => ({ ok: true as const, value: { usage } })),
     login: vi.fn(async () => ({ ok: true as const, value: { started: true } })),
@@ -99,6 +100,20 @@ const subscribe = (): (() => void) => () => {}
 afterEach(() => cleanup())
 
 describe('Codex Capability Bundle settings', () => {
+  it('toggles Fast mode through the live LLM form with its subscription usage warning', async () => {
+    const llm = fakeScope({ ...LLM, fastModeEnabled: false })
+    render(<CodexCapabilitySettings rpc={rpc(authStatus({}))} t={t} subscribe={subscribe}
+      llmScope={llm.scope} searchScope={fakeScope(SEARCH).scope} imageScope={fakeScope(IMAGE).scope} />)
+    const toggle = screen.getByLabelText('Enable Fast mode') as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+    expect(screen.getByText(/subscription.*2\.5/i)).toBeTruthy()
+    fireEvent.click(toggle)
+    await waitFor(() => expect(llm.set).toHaveBeenCalledWith('fastModeEnabled', true))
+    expect(toggle.checked).toBe(true)
+    fireEvent.click(toggle)
+    await waitFor(() => expect(llm.set).toHaveBeenCalledWith('fastModeEnabled', false))
+  })
+
   it('blocks editing until a pending exclusion save settles, then permits clearing the saved list', async () => {
     const pending = Promise.withResolvers<void>()
     const llm = fakeScope({ ...LLM, excludedModelIds: [] as string[] }, 'ready', () => pending.promise)
@@ -342,7 +357,7 @@ describe('Codex Image Creation tool view', () => {
 })
 
 describe('client plugin registration', () => {
-  it('registers one settings row and keyed views for both image tools', () => {
+  it('registers settings, account limits in the composer dock, and both image tools', async () => {
     const registered: Array<Record<string, unknown>> = []
     const scopes = new Map<string, ConfigForm<unknown>>([
       ['llm-codex-auth', fakeScope(LLM).scope],
@@ -350,7 +365,7 @@ describe('client plugin registration', () => {
       ['codex-image', fakeScope(IMAGE).scope],
     ])
     const sessions = { binding: vi.fn() }
-    const connection = { isLoopback: true, rpc: { call: vi.fn() } }
+    const connection = { isLoopback: true, rpc: { call: vi.fn(async () => ({ ok: true, value: { usage: { weeklyRemainingPercent: 49, fiveHourRemainingPercent: 88 } } })) } }
     const ctx = {
       effect: (setup: () => unknown) => setup(),
       on: vi.fn(() => () => {}),
@@ -372,9 +387,17 @@ describe('client plugin registration', () => {
     expect(inject).toEqual(expect.arrayContaining(['remote', 'configForms', 'sessions']))
     expect(registered).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'settings.section', id: 'codex-auth' }),
+      expect.objectContaining({ name: 'conversation.composer.dock', id: 'codex-usage' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'list_images' }),
     ]))
+
+    const footer = registered.find(item => item.id === 'codex-usage')!
+    const Footer = footer.component as ComponentType<Record<string, unknown>>
+    const footerProps = (footer.inject as () => Record<string, unknown>)()
+    const mounted = render(<Footer {...footerProps} />)
+    expect(await screen.findByText(/Codex.*5h 88%.*Week 49%/)).toBeTruthy()
+    mounted.unmount()
 
     const ListImagesView = registered.find(item => item.key === 'list_images')?.component as ComponentType<{
       block: ToolCallBlock

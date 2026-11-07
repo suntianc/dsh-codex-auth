@@ -13,6 +13,7 @@ import classes from './CodexCapabilitySettings.module.css'
 
 export interface LlmSettingsView {
   longContextEnabled: boolean
+  fastModeEnabled?: boolean
   excludedModelIds?: string[]
 }
 
@@ -191,6 +192,21 @@ export function CodexCapabilitySettings({
             )}
           />
           <SettingsState snapshot={llm} t={t}>
+            <div className={classes.contextDetails}>
+              <CardHeading
+                title={t('fastModeTitle')}
+                intro={t('fastModeBehavior')}
+                action={llm.value === undefined ? null : (
+                  <Switch
+                    label={t('enableFastMode')}
+                    checked={llm.value.fastModeEnabled === true}
+                    disabled={!llm.writable}
+                    onChange={next => { void writer(llmScope, setError, t)('fastModeEnabled', next) }}
+                  />
+                )}
+              />
+              <p className={classes.contextWarning}>{t('fastModeWarning')}</p>
+            </div>
             <div className={classes.contextDetails}>
               <p>{t('contextBehavior')}</p>
               <p className={classes.contextWarning}>{t('contextWarning')}</p>

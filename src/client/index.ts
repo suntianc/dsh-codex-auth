@@ -7,6 +7,7 @@ import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -20,6 +21,7 @@ import type {
 import { CodexImageToolView } from './CodexImageToolView.tsx'
 import { en, zh, type CodexAuthKey } from './locales.ts'
 import { SessionImageUrls } from './SessionImageUrls.ts'
+import { CodexUsageFooter } from './CodexUsageFooter.tsx'
 
 export { CodexCapabilitySettings } from './CodexCapabilitySettings.tsx'
 export type {
@@ -67,6 +69,17 @@ export function apply(ctx: ClientContext): void {
     const llmScope = ctx.configForms.get<LlmSettingsView>(LLM_NAMESPACE)
     const searchScope = ctx.configForms.get<SearchSettingsView>(SEARCH_NAMESPACE)
     const imageScope = ctx.configForms.get<ImageSettingsView>(IMAGE_NAMESPACE)
+    const subscribePolicy = (listener: () => void) => {
+      const reset = subscribe(listener)
+      const settings = llmScope.subscribe(listener)
+      return () => { reset(); settings() }
+    }
+    ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+      name: 'conversation.composer.dock',
+      id: 'codex-usage',
+      order: 2,
+      inject: sessionId => ({ rpc, t, subscribe: subscribePolicy, sessionId }),
+    }, CodexUsageFooter))
     ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',
       id: 'codex-auth',

@@ -102,12 +102,15 @@ export function codexLongContextWindow(modelId: string): number | undefined {
 /** Independently live settings that affect the openai-codex model catalog. */
 export interface CodexLlmSettings {
   longContextEnabled: boolean
+  /** Request Fast (priority) processing; availability remains backend-owned. */
+  fastModeEnabled?: boolean
   /** Exact model IDs hidden from this profile's catalog; omission preserves the catalog. */
   excludedModelIds?: string[]
 }
 
 export const CodexLlmSettingsConfig: z<CodexLlmSettings> = z.object({
   longContextEnabled: z.boolean().default(false),
+  fastModeEnabled: z.boolean().default(false),
   excludedModelIds: z.array(z.string()).default([]),
 })
 

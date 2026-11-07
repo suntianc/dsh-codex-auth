@@ -104,6 +104,7 @@
         "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-ui-tool",
         "@deepseek-ai/dsh-client-locale"
@@ -122,6 +123,7 @@
     "@deepseek-ai/dsh-client-connection": "^0.2.2-rc.1",
     "@deepseek-ai/dsh-client-locale": "^0.2.2-rc.1",
     "@deepseek-ai/dsh-client-ui-chat": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.2.2-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.2.2-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.2.2-rc.1",
     "@deepseek-ai/dsh-client-ui-session": "^0.2.2-rc.1",

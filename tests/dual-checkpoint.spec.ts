@@ -262,6 +262,7 @@ interface DualHostOptions {
   readonly compactionBackend?: 'codex' | 'basic' | 'none'
   readonly credential?: CodexAuthAdapterOptions['auth']['credential']
   readonly longContextEnabled?: boolean
+  fastModeEnabled?: boolean
   readonly nativeReply?: (attempt: number, init?: RequestInit) => Response | Promise<Response>
   readonly portableReply?: (attempt: number) => Response | Promise<Response>
   readonly onPayload?: CodexAuthAdapterOptions['onPayload']
@@ -324,7 +325,7 @@ function mountDualCheckpointHost(options: DualHostOptions = {}): {
     refreshLeadMs: 5 * 60 * 1000,
     fetchImpl: fetchMock,
     displayName: 'OpenAI Codex (chatgpt)',
-    settings: () => ({ longContextEnabled: options.longContextEnabled ?? false }),
+    settings: () => ({ longContextEnabled: options.longContextEnabled ?? false, fastModeEnabled: options.fastModeEnabled ?? false }),
     transport: 'sse',
     websocketConnectTimeoutMs: 1_000,
     timeoutMs: options.timeoutMs ?? 5_000,
@@ -2537,6 +2538,25 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
     expect(session.deriveMessages().some(message => message.content.some(
       block => block.type === CODEX_NATIVE_CHECKPOINT_BLOCK_TYPE,
     ))).toBe(false)
+  })
+
+  it('keeps Fast tier in Native compaction and falls back to Portable after switching it off', async () => {
+    const settings = { fastModeEnabled: true }
+    const { ctx, requests } = mountDualCheckpointHost(settings)
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const session = closedConversation('dual-fast-tier')
+    await ctx.compaction.compactNow(idleAgent(session), new AbortController().signal)
+    expect(requests.map(request => request.kind)).toEqual(['portable', 'native'])
+    expect(requests.every(request => request.body.service_tier === 'priority')).toBe(true)
+    const messages = session.deriveMessages()
+    const call = () => ctx.llm.stream({ provider: 'openai-codex', model: MODEL, messages })
+    for await (const _chunk of call()) { /* replay with matching tier */ }
+    expect(JSON.stringify(requests.at(-1)!.body.input)).toContain('opaque-remote-checkpoint')
+    settings.fastModeEnabled = false
+    for await (const _chunk of call()) { /* the old checkpoint must become Portable */ }
+    expect(requests.at(-1)!.body.service_tier).toBeUndefined()
+    expect(JSON.stringify(requests.at(-1)!.body.input)).not.toContain('opaque-remote-checkpoint')
+    expect(JSON.stringify(requests.at(-1)!.body.input)).toContain(PORTABLE_SUMMARY)
   })
 
   it('derives v2 only from allowlisted final callback controls', async () => {

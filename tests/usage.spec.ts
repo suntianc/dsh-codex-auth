@@ -26,6 +26,16 @@ function fakeJwt(expSeconds: number, accountId = 'acct_test', planType?: string)
 const WHAM_URL = 'https://chatgpt.com/backend-api/wham/usage'
 
 describe('usageFromPayload', () => {
+  it('recognizes a reversed five-hour window and rejects malformed or missing values', () => {
+    expect(usageFromPayload({ rate_limit: { secondary_window: {
+      used_percent: 7.4, limit_window_seconds: 18_000, reset_at: 1786800000,
+    } } })).toEqual({ fiveHourRemainingPercent: 93, fiveHourResetAt: new Date(1786800000 * 1000).toISOString() })
+    expect(usageFromPayload({ rate_limit: { primary_window: {
+      used_percent: '7', limit_window_seconds: 18_000, reset_at: Number.MAX_SAFE_INTEGER,
+    } } })).toEqual({})
+    expect(usageFromPayload({ plan_type: 'pro', rate_limit: { primary_window: null } })).toEqual({ planType: 'pro' })
+  })
+
   it('identifies the weekly window by duration rather than backend position', () => {
     expect(usageFromPayload({
       plan_type: 'plus',
@@ -37,6 +47,8 @@ describe('usageFromPayload', () => {
       },
     })).toEqual({
       planType: 'plus',
+      fiveHourRemainingPercent: 88,
+      fiveHourResetAt: new Date(1786800000 * 1000).toISOString(),
       weeklyRemainingPercent: 49,
       weeklyResetAt: new Date(1787204616 * 1000).toISOString(),
     })
@@ -104,6 +116,8 @@ describe('CodexAuthService.usage()', () => {
     expect(headers?.['chatgpt-account-id']).toBe('acct-1')
     expect(usage).toEqual({
       planType: 'plus',
+      fiveHourRemainingPercent: 88,
+      fiveHourResetAt: new Date(1786800000 * 1000).toISOString(),
       weeklyRemainingPercent: 49,
       weeklyResetAt: new Date(1787204616 * 1000).toISOString(),
     })

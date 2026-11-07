@@ -83,18 +83,20 @@ describe('dsh-codex-auth client apply', () => {
     expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'configForms', 'sessions'])
   })
 
-  it('registers only settings and image views, never a native conversation renderer', async () => {
+  it('registers settings, quota dock and image views, never a native conversation renderer', async () => {
     const b = bench()
     expect(b.bindScope).toHaveBeenCalledWith('llm-codex-auth')
     expect(b.bindScope).toHaveBeenCalledWith('codex-search')
     expect(b.bindScope).toHaveBeenCalledWith('codex-image')
-    expect(b.slots).toHaveLength(3)
+    expect(b.slots).toHaveLength(4)
     expect(b.slots.map(record => record.options)).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'settings.section', id: 'codex-auth', order: 20 }),
+      expect.objectContaining({ name: 'conversation.composer.dock', id: 'codex-usage', order: 2 }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'list_images' }),
     ]))
-    expect(b.slots.some(record => String(record.options.name).includes('conversation'))).toBe(false)
+    expect(b.slots.filter(record => String(record.options.name).includes('conversation')).map(record => record.options.name))
+      .toEqual(['conversation.composer.dock'])
 
     const settings = b.slots.find(record => record.options.name === 'settings.section')
     const injected = (settings?.options.inject as (() => CodexCapabilitySettingsProps) | undefined)?.()

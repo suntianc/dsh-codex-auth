@@ -418,6 +418,7 @@ dsh plugin --profile web list
 | `refreshLeadMs` | `300000` | token 到期前的刷新提前量（毫秒） |
 | `codexCommand` | `codex` | 登录和版本探测使用的 CLI 命令 |
 | `displayName` | `OpenAI Codex (chatgpt)` | 模型选择器中的 provider 名称 |
+| `fastModeEnabled` | `false` | 每个 profile 的实时 Fast（优先处理）请求；保留模型及推理级别，订阅内额度按标准的 2.5 倍消耗，已购积分按 2 倍计费；实际可用性取决于后端 |
 | `longContextEnabled` | `false` | GPT-6/6.1 / GPT-5.6 按模型设置的实时长上下文策略，通过 `llm-codex-auth` Config Form 编辑 |
 | `excludedModelIds` | `[]` | 每个 profile 在目录补齐及上下文策略之后按精确 ID 隐藏的模型；可通过 GPT Auth 设置编辑 |
 | `transport` | `sse` | 流式传输方式：`sse`、`websocket` 或 `auto`（优先 WebSocket、失败回退 SSE）。默认 SSE：WebSocket 升级在常见 HTTP 代理下不稳定，且 `auto` 模式下每个新对话都要先付出连接超时才会回退 |
@@ -469,3 +470,26 @@ pnpm run check
 ## 友情链接
 
 - [L 站](https://linux.do/)
+
+### Fast 模式
+
+在 **Settings → GPT Auth → LLM Context** 启用 **Fast 模式**，可为当前 profile
+后续的 Codex LLM 请求申请优先处理，无需重启。配置为 `llm-codex-auth.config.fastModeEnabled`
+（默认 `false`）。保留模型及推理级别，搜索和图片工具维持各自设置。
+实际处理层级及可用性由模型和账户决定，不保证延迟改善。
+参见 [OpenAI 速度指南](https://learn.chatgpt.com/docs/agent-configuration/speed)。
+请求通过兼容的 `service_tier: priority` 在 Native 兼容性检查之前写入；
+切换后不匹配的 Native 检查点将回退到 Portable 摘要，已有检查点格式保持不变。
+
+底部统计栏显示 Codex 五小时及每周剩余额度，悬停或聚焦可查看重置时间，点击可刷新；
+页面可见时每分钟更新。不显示账户未提供的窗口，也不会把未知额度当成零。
+它通过现有的仅限回环连接的账户 RPC 获取数据，与上下文占用百分比独立。
+
+底栏还提供仅针对当前会话的 Fast 开关，选择写入模型历史之外的可忽略插件记录，
+恢复和分支保留该选择，其他会话及 Codex CLI 配置不受影响。
+显式关闭发送 `service_tier: default`，未设置的会话继承 profile 默认值。
+实验性插件记录可能在未来格式迁移中丢失，此时恢复为 profile 默认值。
+
+本次 DSH 0.2.2-rc.1 订阅实测中，Astra、GPT-6.1 Sol 和 GPT-5.6 Sol 接受了 priority 请求，
+但完成响应报告 `service_tier: default`；直接发送 fast 别名返回 HTTP 400。
+因此仅验证了参数送达，尚未证实获得 Fast 处理或速度提升。

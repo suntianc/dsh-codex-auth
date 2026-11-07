@@ -1,0 +1,23 @@
+.pill {
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pill:hover, .pill:focus-visible {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}

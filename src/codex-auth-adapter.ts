@@ -132,6 +132,8 @@ export interface CodexAuthAdapterOptions {
   displayName: string
   /** Live model-capacity settings read for each catalog access. */
   settings: () => CodexLlmSettings
+  /** Explicit conversation preference, or undefined to inherit the profile. */
+  fastModeForSession?: (sessionId?: string) => boolean | undefined
   /** Streaming transport preference (`sse` by default). */
   transport: CodexAuthTransport
   /** WebSocket connect timeout in milliseconds; only used when `transport` is not `sse`. */
@@ -166,6 +168,7 @@ function prepareCodexStreamOptions<Options extends StreamOptions | undefined>(
   transport: CodexProviderTransport,
   configuredOnPayload: CodexProviderPayloadCallback | undefined,
   replay: CodexNativeCheckpointReplay,
+  fastTier: 'priority' | 'default' | undefined,
 ): Options {
   const continued = codexTurnStateContinuity.applyProviderOptions(
     options,
@@ -173,7 +176,7 @@ function prepareCodexStreamOptions<Options extends StreamOptions | undefined>(
     model.id,
   )
   noteNativeCompactionRequest(provider, model, continued, transport)
-  return withReplayPayload(continued, configuredOnPayload, replay)
+  return withReplayPayload(continued, configuredOnPayload, replay, fastTier)
 }
 
 /**
@@ -188,7 +191,12 @@ function codexProvider(
   replay: CodexNativeCheckpointReplay,
   transport: CodexProviderTransport,
   configuredOnPayload?: CodexProviderPayloadCallback,
+  fastModeForSession?: (sessionId?: string) => boolean | undefined,
 ): Provider {
+  const tier = (options?: StreamOptions): 'priority' | 'default' | undefined => {
+    const override = fastModeForSession?.(options?.sessionId)
+    return override === false ? 'default' : (override ?? settings().fastModeEnabled) === true ? 'priority' : undefined
+  }
   const base = builtinProviders().find(candidate => candidate.id === CODEX_ROUTE)
   if (base === undefined) {
     throw new Error('llm-codex-auth: the installed pi-ai catalog ships no openai-codex provider')
@@ -204,12 +212,12 @@ function codexProvider(
     stream: (model, context, options) => base.stream(
       model,
       context,
-      prepareCodexStreamOptions(base, model, options, transport, configuredOnPayload, replay),
+      prepareCodexStreamOptions(base, model, options, transport, configuredOnPayload, replay, tier(options)),
     ),
     streamSimple: (model, context, options) => base.streamSimple(
       model,
       context,
-      prepareCodexStreamOptions(base, model, options, transport, configuredOnPayload, replay),
+      prepareCodexStreamOptions(base, model, options, transport, configuredOnPayload, replay, tier(options)),
     ),
   }
 }
@@ -240,10 +248,21 @@ function withReplayPayload<
   options: Options,
   configured: CodexProviderPayloadCallback | undefined,
   replay: CodexNativeCheckpointReplay,
+  fastTier: 'priority' | 'default' | undefined,
 ): Options {
   const previous = composePayloadCallbacks(configured, options?.onPayload)
   const restored = replay.payloadCallback(previous)
-  const onPayload = codexNativeCompactionCoordinator.payloadCallback(restored)
+  const observed = codexNativeCompactionCoordinator.payloadCallback(restored)
+  // streamSimple drops provider-specific options in pi-ai 1.3.0. Use the
+  // shared payload seam before replay compatibility and Native capture so
+  // both stream entry points see the same tier. Read once per dispatch;
+  // existing explicit payload hooks retain their final say.
+  const onPayload: CodexProviderPayloadCallback | undefined = fastTier !== undefined
+    ? (payload, model) => {
+        const fast = { ...(payload as Record<string, unknown>), service_tier: fastTier }
+        return observed === undefined ? fast : observed(fast, model)
+      }
+    : observed
   return (onPayload === undefined ? options : { ...options, onPayload }) as Options
 }
 
@@ -283,6 +302,7 @@ export class CodexAuthAdapter extends PiAiAdapter {
         streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
       },
       options.onPayload,
+      options.fastModeForSession,
     )
     const profile: ResolvedPiAiProviderProfile = {
       modelErrors: new Map(),
