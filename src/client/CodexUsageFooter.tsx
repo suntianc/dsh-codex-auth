@@ -1,7 +1,7 @@
 /** Account allowance in the public composer dock, separate from context occupancy. */
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CodexAuthRpcClient, CodexUsageView } from '../rpc-contract.ts'
 import type { CodexAuthKey } from './locales.ts'
 import classes from './CodexUsageFooter.module.css'
@@ -17,7 +17,6 @@ export interface CodexUsageFooterProps {
 export function CodexUsageFooter({ rpc, t, subscribe, sessionId }: CodexUsageFooterProps): ReactNode {
   const [usage, setUsage] = useState<CodexUsageView>()
   const [updatedAt, setUpdatedAt] = useState<number>()
-  const [busy, setBusy] = useState(true)
   const [failed, setFailed] = useState(false)
   const [open, setOpen] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -33,7 +32,6 @@ export function CodexUsageFooter({ rpc, t, subscribe, sessionId }: CodexUsageFoo
     const refresh = async () => {
       if (pending) return
       pending = true
-      setBusy(true)
       try {
         const result = await rpc.usage(controller.signal)
         if (!controller.signal.aborted) {
@@ -46,11 +44,10 @@ export function CodexUsageFooter({ rpc, t, subscribe, sessionId }: CodexUsageFoo
         if (!controller.signal.aborted) setFailed(true)
       } finally {
         pending = false
-        if (!controller.signal.aborted) setBusy(false)
       }
     }
     void refresh()
-    const timer = setInterval(() => { if (document.visibilityState !== 'hidden') void refresh() }, 60_000)
+    const timer = setInterval(() => { if (document.visibilityState !== 'hidden') void refresh() }, 300_000)
     return () => { clearInterval(timer); controller.abort() }
   }, [rpc, revision])
   const parts: string[] = []
@@ -74,10 +71,7 @@ export function CodexUsageFooter({ rpc, t, subscribe, sessionId }: CodexUsageFoo
         {text}
       </button>
       <Modal open={open} onClose={() => { setOpen(false) }} title={t('quotaDialogTitle')}
-        closeLabel={t('quotaClose')} description={t('quotaDialogHint')}
-        footer={<Button variant="outline" disabled={busy} onClick={() => { setRevision(value => value + 1) }}>
-          {busy ? t('refreshing') : t('quotaRefreshButton')}
-        </Button>}>
+        closeLabel={t('quotaClose')} description={t('quotaDialogHint')}>
         <dl className={classes.quotaFacts}>
           <div><dt>{t('plan')}</dt><dd>{usage?.planType === undefined ? t('unknownPlan') : planLabel(usage.planType)}</dd></div>
           <div><dt>{t('quotaLastChecked')}</dt><dd>{updatedAt === undefined ? t('quotaNotReported') : new Date(updatedAt).toLocaleString()}</dd></div>

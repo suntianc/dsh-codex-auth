@@ -2,11 +2,11 @@
 
 ## [Unreleased]
 
-- Open a subscription details dialog from the quota pill instead of clearing values on click. Show plan, remaining allowances, reset times and last-check timestamp, with separate refresh and explicit last-known/stale handling after failures.
+- Open a subscription details dialog from the quota pill instead of clearing values on click. Show plan, remaining allowances, reset times and last-check timestamp, with automatic five-minute refresh and explicit last-known/stale handling after failures.
 
 - Add a per-conversation Fast switch to the composer dock. Persist explicit On/Off in an ignorable plugin record outside model history, retain it through resume/fork, inherit the profile default otherwise, and keep unrelated sessions and Codex CLI settings untouched. Explicit Off requests the `default` tier.
 
-- Show remaining five-hour and weekly Codex allowances in the public composer dock, with reset-time hints, manual/minute refresh, missing-window handling, and cancellation/reconnect cleanup. Keep the existing loopback-only account boundary and context occupancy display.
+- Show remaining five-hour and weekly Codex allowances in the public composer dock, with reset-time hints, automatic five-minute refresh, missing-window handling, and cancellation/reconnect cleanup. Keep the existing loopback-only account boundary and context occupancy display.
 
 - Add default-off, live per-profile Fast mode in GPT Auth settings. Request `service_tier: priority` without changing the selected model or reasoning effort, and explain the subscription usage multiplier and backend-dependent availability.
 - Apply the tier before Native replay checks and compaction payload capture for both provider stream entry points. Preserve existing payload callbacks and independent Search/Image settings.
