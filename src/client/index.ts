@@ -80,6 +80,12 @@ export function apply(ctx: ClientContext): void {
       order: 2,
       inject: sessionId => ({ rpc, t, subscribe: subscribePolicy, sessionId }),
     }, CodexUsageFooter))
+    ctx.slots.inject('conversation.hero.options', () => ctx.slots.register({
+      name: 'conversation.hero.options',
+      id: 'codex-usage',
+      order: 2,
+      inject: sessionId => ({ rpc, t, subscribe: subscribePolicy, sessionId }),
+    }, CodexUsageFooter))
     ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',
       id: 'codex-auth',

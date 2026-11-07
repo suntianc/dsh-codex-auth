@@ -124,8 +124,10 @@ checkpoint format or restore history that was already compacted.
 
 ### Subscription limits in the composer footer
 
-The bottom statistics dock includes a **Fast · On/Off** switch for the current
-conversation. It saves an explicit session preference without changing the
+The New Session options row and the bottom statistics dock both include a
+**Fast · On/Off** switch for the current conversation. You can set Fast and inspect
+subscription limits before sending the first message; that conversation keeps its
+selection when the chat starts. It saves an explicit session preference without changing the
 profile default, another conversation, or Codex CLI configuration. On sends
 `priority`; explicit Off sends `default`. The preference survives resume and is
 inherited by a fork until the child changes its own setting. It uses an ignorable

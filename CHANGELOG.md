@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Show session-scoped Fast and subscription-limit controls in the New Session options row before the first prompt, reusing the existing composer dock controls and account boundary.
+
 - Open a subscription details dialog from the quota pill instead of clearing values on click. Show plan, remaining allowances, reset times and last-check timestamp, with automatic five-minute refresh and explicit last-known/stale handling after failures.
 
 - Add a per-conversation Fast switch to the composer dock. Persist explicit On/Off in an ignorable plugin record outside model history, retain it through resume/fork, inherit the profile default otherwise, and keep unrelated sessions and Codex CLI settings untouched. Explicit Off requests the `default` tier.

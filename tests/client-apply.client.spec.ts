@@ -88,15 +88,22 @@ describe('dsh-codex-auth client apply', () => {
     expect(b.bindScope).toHaveBeenCalledWith('llm-codex-auth')
     expect(b.bindScope).toHaveBeenCalledWith('codex-search')
     expect(b.bindScope).toHaveBeenCalledWith('codex-image')
-    expect(b.slots).toHaveLength(4)
+    expect(b.slots).toHaveLength(5)
     expect(b.slots.map(record => record.options)).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'settings.section', id: 'codex-auth', order: 20 }),
       expect.objectContaining({ name: 'conversation.composer.dock', id: 'codex-usage', order: 2 }),
+      expect.objectContaining({ name: 'conversation.hero.options', id: 'codex-usage', order: 2 }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'list_images' }),
     ]))
     expect(b.slots.filter(record => String(record.options.name).includes('conversation')).map(record => record.options.name))
-      .toEqual(['conversation.composer.dock'])
+      .toEqual(['conversation.composer.dock', 'conversation.hero.options'])
+
+    const hero = b.slots.find(record => record.options.name === 'conversation.hero.options')!
+    const dock = b.slots.find(record => record.options.name === 'conversation.composer.dock')!
+    expect(hero.component).toBe(dock.component)
+    const blank = (hero.options.inject as (id: string) => { sessionId: string })('blank-before-first-prompt')
+    expect(blank.sessionId).toBe('blank-before-first-prompt')
 
     const settings = b.slots.find(record => record.options.name === 'settings.section')
     const injected = (settings?.options.inject as (() => CodexCapabilitySettingsProps) | undefined)?.()
