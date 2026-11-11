@@ -54,8 +54,7 @@
 }
 
 .choices button,
-.primary,
-.trigger {
+.primary {
   min-height: 32px;
   padding: 6px 10px;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
@@ -76,8 +75,7 @@
   cursor: default;
 }
 
-.panel :focus-visible,
-.trigger:focus-visible {
+.panel :focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
 }
@@ -90,5 +88,5 @@
 
 @media (pointer: coarse) {
   .field :is(input, select, textarea) { font-size: 16px; }
-  .choices button, .primary, .trigger { min-height: 44px; }
+  .choices button, .primary { min-height: 44px; }
 }

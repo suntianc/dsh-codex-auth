@@ -4,7 +4,7 @@ import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ImageRequestPanel } from './ImageRequestPanel.tsx'
 import type { ImageRequestChoices } from './ImageRequestPanel.tsx'
 import type { CodexAuthKey } from './locales.ts'
-import classes from './ImageRequestPanel.module.css'
+import classes from './CodexUsageFooter.module.css'
 
 /** Open per-request image controls from the blank-session or active composer.
  * @param props Local defaults, draft action and localized copy.
@@ -17,7 +17,7 @@ export function ImageCreateAction({ prepare, initial, t }: {
 }) {
   const [open, setOpen] = useState(false)
   return <>
-    <button type="button" className={classes.trigger} aria-haspopup="dialog" aria-expanded={open}
+    <button type="button" className={classes.pill} aria-haspopup="dialog" aria-expanded={open}
       onClick={() => { setOpen(true) }}>{t('createImage')}</button>
     <Modal open={open} title={t('createImage')} closeLabel={t('imageClose')} onClose={() => { setOpen(false) }}>
       {open && <ImageRequestPanel {...initial === undefined ? {} : { initial }} prepare={prepare}
