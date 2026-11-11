@@ -158,14 +158,19 @@ export function apply(ctx: Context, config: Config): void {
     const guard = createLoopbackRpcGuard(
       webServer?.host,
       (endpoint, payload, signal) => handleCodexAuthRpc(service, endpoint, payload, signal, async (id, enabled) => {
-        const controller = ctx.get('sessionController')
-        if (controller === undefined) throw new Error('Session controller is unavailable')
-        const resolved = await controller.resolveAgent(id as SessionId)
-        if ('error' in resolved) throw new Error('Session is unavailable for Fast mode')
-        const session = resolved.agent.session
+        const sessions = ctx.get('sessions') as SessionStore | undefined
+        if (sessions === undefined) throw new Error('Session store is unavailable')
+        let session = sessions.get(id as SessionId)
+        if (session === undefined) {
+          const controller = ctx.get('sessionController')
+          if (controller === undefined) throw new Error('Session controller is unavailable')
+          const resolved = await controller.resolveAgent(id as SessionId)
+          if ('error' in resolved) throw new Error('Session is unavailable for Fast mode')
+          session = resolved.agent.session
+        }
         if (enabled !== undefined) {
           saveSessionFastMode(session, enabled)
-          if (!await (ctx.get('sessions') as unknown as SessionStore).flush(session)) throw new Error('Session Fast preference could not be persisted')
+          if (!await sessions.flush(session)) throw new Error('Session Fast preference could not be persisted')
         }
         return sessionFastModeView(session, currentSettings().fastModeEnabled === true)
       }),

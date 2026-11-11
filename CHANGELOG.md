@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Read and persist conversation Fast preferences through the existing live Session writer, including resident subagent Sessions, without claiming or replacing their Agents through ordinary Session routing.
+
 - Show session-scoped Fast and subscription-limit controls in the New Session options row before the first prompt, reusing the existing composer dock controls and account boundary.
 
 - Open a subscription details dialog from the quota pill instead of clearing values on click. Show plan, remaining allowances, reset times and last-check timestamp, with automatic five-minute refresh and explicit last-known/stale handling after failures.
