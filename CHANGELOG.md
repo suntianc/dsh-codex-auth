@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show generated images directly in completed chat turns and add Edit image to prepare a session-specific edit draft without replacing existing text or automatically sending it.
+
 - Pass the complete image reference to session-authorized attachment reads so generated images load in the current Harness client.
 
 - Distinguish image moderation and HTTP failures with localized explanations without automatic retries or raw upstream response disclosure.

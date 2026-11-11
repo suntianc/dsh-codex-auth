@@ -1,5 +1,5 @@
 /** Browser half of the Codex Capability Bundle. */
-import { createElement, useCallback } from 'react'
+import { createElement, useCallback, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -8,6 +8,10 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import { CodexTurnImages, generatedImageDefinition } from './CodexTurnImages.tsx'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -43,7 +47,7 @@ const SEARCH_NAMESPACE = 'codex-search'
 const IMAGE_NAMESPACE = 'codex-image'
 
 /** Required browser services, including session-authorized attachment reads. */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'configForms', 'sessions']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'configForms', 'sessions', 'uiConversation', 'conversation']
 
 /** Register the four-card settings section and keyed image result renderers. */
 export function apply(ctx: ClientContext): void {
@@ -95,6 +99,22 @@ export function apply(ctx: ClientContext): void {
     }, CodexCapabilitySettings))
   }
 
+  ctx.uiConversation.events.register(generatedImageDefinition)
+  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+    name: 'conversation.chat.turnTail', id: 'codex-generated-images', locale: NS,
+    inject: (sessionId: SessionId) => ({
+      loadImage: (image: ImageAttachmentRef) => imageUrls.resolve(sessionId, image),
+      editImage: (_image: ImageAttachmentRef, prompt: string) => {
+        const binding = sessions.binding(sessionId)
+        if (binding === undefined) return false
+        const result = ctx.conversation.input.requestDraftInitialization(binding, { prompt, whenDraftExists: 'append' })
+        if (result !== 'applied') return false
+        ctx.conversation.input.for(binding.ctx).focus()
+        return true
+      },
+    }),
+  }, ImageTurnTail))
+
   const ToolView = imageToolView(imageUrls)
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
     name: 'tool.call.toolview',
@@ -120,6 +140,24 @@ function imageToolView(imageUrls: SessionImageUrls): (props: LocalizedToolViewPr
       (attachment: ImageAttachmentRef) => imageUrls.resolve(props.sessionId, attachment),
       [props.sessionId, imageUrls],
     )
+    if ('kind' in props.block && !props.block.isError) return createElement(ListImagesToolView)
     return createElement(CodexImageToolView, { block: props.block, loadImage, t: props.t })
   }
+}
+
+const NO_IMAGES: readonly ImageAttachmentRef[] = []
+
+/** Completed-turn gallery and explicit image-edit draft action. */
+function ImageTurnTail(props: PropsRuntime<'conversation.chat.turnTail'> & PropsLocale<typeof NS> & {
+  loadImage: (image: ImageAttachmentRef) => Promise<string>
+  editImage: (image: ImageAttachmentRef, prompt: string) => boolean
+}): ReactElement {
+  const source = props.turn.data.source('codexImages')
+  const images = useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot) ?? NO_IMAGES
+  return createElement(CodexTurnImages, {
+    images, loadImage: props.loadImage, t: props.t,
+    editImage: image => props.editImage(image, props.t('editImagePrompt')
+      + `image:${String(image.attachmentId)}`
+      + '\n' + props.t('editImageChanges')),
+  })
 }

@@ -21,3 +21,13 @@ The existing model suggestions are now a dropdown with Sunburst, Flare and GPT I
 A subsequent real generation succeeded and persisted a PNG, but its tool card showed Retry image. The plugin passed only attachmentId to the current Session readAttachment method, which requires the complete ImageAttachmentRef. Updated the loader and its regression mock to use the complete reference. Existing session authorization, response-ID checks and Blob URL ownership remain intact.
 
 After installing the repaired client bundle and restarting Desktop, reopened the existing completed generation, expanded Called tools and observed its image thumbnail. Open original image displayed the stored full-size PNG. No regeneration was performed. The focused loader, image view and settings tests passed (15 tests), as did typecheck, lint and the packaged production build.
+
+## Chat artifacts and edit action
+
+Generated outputs are folded from successful generate_image results into the public conversation.chat.turnTail extension. Reference inputs are excluded. The gallery remains visible with process details collapsed; successful tool details no longer duplicate the image. Existing stored generations are projected on replay without changing the durable event format.
+
+Edit image appends an explicit handle to the current Session draft through the conversation input service, preserves previous draft content and focuses the composer. It does not send a request. A blocked draft initialization reports a localized error.
+
+Desktop verification showed the stored image below the assistant reply with the process collapsed. The edit action preserved existing draft text and prepared the exact image handle. Offline checks passed: 54 tests across the image transport, turn artifacts, settings, image view and attachment URL loader; Host/client typecheck, lint, packaged-artifact smoke and publint. The existing signed Desktop dark-theme layout was inspected; a separate narrow/light-theme inspection is not claimed.
+
+A subsequent real Desktop edit changed a cup to blue while retaining the selected cat image as a session reference. The durable tool result reported operation edit, isError false, and one generated image. The completed assistant turn displayed the new image directly in the chat and its original preview opened. The stored PNG was visually inspected and the cup was blue. This verifies one complete conversation edit round, in addition to the earlier direct endpoint probes.

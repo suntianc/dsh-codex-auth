@@ -366,13 +366,18 @@ describe('client plugin registration', () => {
       ['codex-search', fakeScope(SEARCH).scope],
       ['codex-image', fakeScope(IMAGE).scope],
     ])
-    const sessions = { binding: vi.fn() }
+    const binding = { ctx: {} }
+    const initializeDraft = vi.fn(() => 'applied')
+    const focusDraft = vi.fn()
+    const sessions = { binding: vi.fn(() => binding) }
     const connection = { isLoopback: true, rpc: { call: vi.fn(async () => ({ ok: true, value: { usage: { weeklyRemainingPercent: 49, fiveHourRemainingPercent: 88 } } })) } }
     const ctx = {
       effect: (setup: () => unknown) => setup(),
       on: vi.fn(() => () => {}),
       get: (name: string) => name === 'connection' ? connection : undefined,
       sessions,
+      uiConversation: { events: { register: vi.fn() } },
+      conversation: { input: { requestDraftInitialization: initializeDraft, for: () => ({ focus: focusDraft }) } },
       locale: { register: vi.fn(() => () => {}), bind: vi.fn(() => t) },
       slots: {
         inject: (_name: string, setup: () => unknown) => setup(),
@@ -391,8 +396,26 @@ describe('client plugin registration', () => {
       expect.objectContaining({ name: 'settings.section', id: 'codex-auth' }),
       expect.objectContaining({ name: 'conversation.composer.dock', id: 'codex-usage' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),
+      expect.objectContaining({ name: 'conversation.chat.turnTail', id: 'codex-generated-images' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'list_images' }),
     ]))
+
+    const tail = registered.find(item => item.id === 'codex-generated-images')!
+    const tailActions = (tail.inject as (sessionId: string) => {
+      editImage: (image: ImageAttachmentRef, prompt: string) => boolean
+    })('session-a')
+    const selectedImage: ImageAttachmentRef = {
+      attachmentId: 'sha256:selected' as ImageAttachmentRef['attachmentId'],
+      mediaType: 'image/png', bytes: 3, width: 1024, height: 1024,
+    }
+    expect(tailActions.editImage(selectedImage, 'Edit selected image')).toBe(true)
+    expect(initializeDraft).toHaveBeenCalledWith(binding, {
+      prompt: 'Edit selected image', whenDraftExists: 'append',
+    })
+    expect(focusDraft).toHaveBeenCalledTimes(1)
+    initializeDraft.mockReturnValueOnce('blocked')
+    expect(tailActions.editImage(selectedImage, 'Edit selected image')).toBe(false)
+    expect(focusDraft).toHaveBeenCalledTimes(1)
 
     const footer = registered.find(item => item.id === 'codex-usage')!
     const Footer = footer.component as ComponentType<Record<string, unknown>>

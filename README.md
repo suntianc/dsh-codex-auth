@@ -615,3 +615,5 @@ See [`docs/design.md`](docs/design.md) and the [architecture decisions](docs/adr
 - [L 站](https://linux.do/)
 
 Image failures distinguish moderation blocks, rejected requests, expired login, denied access, unavailable routes, and rate limits. Error cards use localized explanations; raw upstream response text is never copied into the conversation. Requests are never automatically retried. Choose Sunburst or Flare in the Image model dropdown under GPT Auth → Image Creation; Default size accepts WIDTHxHEIGHT and Default quality includes auto, low, medium, high, xhigh, and max. Existing custom model IDs remain selectable; new custom IDs can be configured through cordis.yml.
+
+Generated images appear directly below the completed assistant reply, even when process details are collapsed. Each image has an Edit image action that appends an exact image handle to the current conversation draft and focuses the composer. Existing draft text is preserved, and the action never sends a request automatically. Describe the requested changes and send the draft to edit the selected image. Failed generation details remain in the tool process view.
