@@ -15,3 +15,9 @@ The existing model suggestions are now a dropdown with Sunburst, Flare and GPT I
 - Through the actual Desktop UI selected Flare, Maximum quality and 1536x1024; confirmed all three in persisted profile configuration. Restored the original defaults after the check. Login remained Active.
 - A separate live Flare request at low quality returned HTTP 200 and a PNG with actual dimensions 1536x1024. Sunburst also returned one image with HTTP 200.
 - No new model round through the Desktop conversation UI was run during the settings check. The installed application, direct endpoint probes and offline tests are separate evidence. No GUI recording is included because the inspected Desktop window contained unrelated private conversation content.
+
+## Generated-image preview repair
+
+A subsequent real generation succeeded and persisted a PNG, but its tool card showed Retry image. The plugin passed only attachmentId to the current Session readAttachment method, which requires the complete ImageAttachmentRef. Updated the loader and its regression mock to use the complete reference. Existing session authorization, response-ID checks and Blob URL ownership remain intact.
+
+After installing the repaired client bundle and restarting Desktop, reopened the existing completed generation, expanded Called tools and observed its image thumbnail. Open original image displayed the stored full-size PNG. No regeneration was performed. The focused loader, image view and settings tests passed (15 tests), as did typecheck, lint and the packaged production build.

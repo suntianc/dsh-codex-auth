@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pass the complete image reference to session-authorized attachment reads so generated images load in the current Harness client.
+
 - Distinguish image moderation and HTTP failures with localized explanations without automatic retries or raw upstream response disclosure.
 - Use a model dropdown for Sunburst and Flare; preserve configured custom model IDs and existing size and quality controls.
 

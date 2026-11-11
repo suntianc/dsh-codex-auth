@@ -59,7 +59,7 @@ export class SessionImageUrls {
   private async read(sessionId: SessionId, expected: ImageAttachmentRef): Promise<string> {
     const session = this.sessions.binding(sessionId)?.session
     if (session === undefined) throw new Error('The image session is no longer available')
-    const result = await session.readAttachment(expected.attachmentId)
+    const result = await session.readAttachment(expected)
     if (!result.ok) throw new Error(result.error.message || 'The session did not authorize this image')
     if (result.value.attachment.attachmentId !== expected.attachmentId) {
       throw new Error('The authorized image response did not match the requested attachment')
