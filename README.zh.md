@@ -499,3 +499,5 @@ pnpm run check
 重新连接会清除旧快照，避免账户混用。
 
 新会话的选项行同样显示 Fast 开关及 Codex 额度，可在首条消息前设置该会话的 Fast，并查看额度详情；开始聊天后保留所选状态。
+
+图片错误区分安全审核阻止、请求拒绝、登录失效、访问拒绝、路由不可用及限额。错误卡片显示本地化说明，不会将上游原始响应写入会话，也不会自动重试。可在 GPT Auth → Image Creation 的模型下拉列表中选择 Sunburst 或 Flare；尺寸支持 WIDTHxHEIGHT，质量支持 auto、low、medium、high、xhigh、max。现有自定义模型 ID 仍可选择；新的自定义 ID 可通过 cordis.yml 配置。

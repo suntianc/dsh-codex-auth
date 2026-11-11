@@ -57,15 +57,13 @@ export const Config: z<Config> = z.object({
   enabled: z.boolean().default(true).volatile(),
   model: z.string().default('gpt-image-2.5-sunburst').volatile(),
   n: z.number().step(1).min(1).max(MAX_GENERATED_IMAGES).default(1).volatile(),
-  size: z.transform(z.string(), (value) => {
-    if (!isImageSize(value)) throw new Error('Invalid image dimensions')
-    return value
-  }).default('auto').volatile(),
+  size: z.string().pattern(/^(?:auto|[1-9]\d{0,3}x[1-9]\d{0,3})$/u).default('auto').volatile(),
   quality: z.union(IMAGE_QUALITIES.map(value => z.const(value))).default('auto').volatile(),
   background: z.union(IMAGE_BACKGROUNDS.map(value => z.const(value))).default('auto').volatile(),
 }) as z<Config>
 
 function imageSettings(config: Config): CodexImageSettings {
+  if (!isImageSize(liveValue(config.size))) throw new Error('Invalid image dimensions')
   return {
     enabled: liveValue(config.enabled),
     model: liveValue(config.model),
@@ -426,8 +424,32 @@ async function dispatchImageRequest(
     throw new ImageCapabilityError('The image request failed before a response was received', 'IMAGE_NETWORK')
   }
   if (!response.ok) {
-    try { await response.body?.cancel() } catch { /* best effort */ }
-    throw new ImageCapabilityError(`Image Creation returned HTTP ${response.status}; the request was not retried`, 'IMAGE_UPSTREAM')
+    let rejected: unknown
+    try {
+      const text = await readBoundedResponseText(response, 16 * 1024, exec.signal, {
+        tooLarge: () => new Error('Image error response exceeded the diagnostic limit'),
+      })
+      rejected = JSON.parse(text) as unknown
+    } catch (error) {
+      // Malformed or unreadable diagnostics retain the HTTP classification below.
+      if (exec.signal.aborted) {
+        throw new ImageCapabilityError('Image Creation was cancelled locally; server-side cancellation is not guaranteed', 'IMAGE_CANCELLED')
+      }
+      void error
+    }
+    if (isRecord(rejected) && isRecord(rejected.error) && rejected.error.code === 'moderation_blocked') {
+      throw new ImageCapabilityError('The image service blocked this request under its safety policy; the request was not retried', 'IMAGE_MODERATION_BLOCKED')
+    }
+    const failures: Record<number, readonly [string, string]> = {
+      400: ['IMAGE_REQUEST_REJECTED', 'The image service rejected the request; check the model, dimensions, quality, and reference images'],
+      401: ['IMAGE_AUTH_REQUIRED', 'Sign in again with codex login to restore image access'],
+      403: ['IMAGE_ACCESS_DENIED', 'The account is not permitted to perform this image request'],
+      404: ['IMAGE_ROUTE_UNAVAILABLE', 'The Codex image endpoint or selected model is unavailable'],
+      429: ['IMAGE_RATE_LIMITED', 'The image service limit was reached; check account quota and try later'],
+    }
+    const [code, message] = failures[response.status]
+      ?? ['IMAGE_UPSTREAM', 'The image service failed']
+    throw new ImageCapabilityError(`${message} (HTTP ${response.status}); the request was not retried`, code)
   }
   const maxBytes = imageEnvelopeLimit(options.attachments.imageLimits.maxImageBytes)
   const text = await readBoundedResponseText(response, maxBytes, exec.signal, {
@@ -857,6 +879,7 @@ export const inject = ['tools', 'llm', 'agents', 'attachments', 'fs', 'codexAuth
  * snapshots; every Tool body repeats the exact guard as the authorization edge.
  */
 export function apply(ctx: Context, config: Config): void {
+  imageSettings(config)
   const auth = ctx.get('codexAuth') as CodexAuthService | undefined
   if (auth === undefined) throw new Error('codex-image: shared codexAuth service is unavailable')
   const current = (): CodexImageSettings => imageSettings(config)

@@ -21,7 +21,7 @@ export function CodexImageToolView({ block, loadImage, t = english }: CodexImage
     return (
       <div className={classes.failure} role="alert">
         <strong>{t('toolFailed')}</strong>
-        <span>{block.error?.code === 'IMAGE_CANCELLED' ? t('toolCancelled') : block.error?.code ?? t('toolFailed')}</span>
+        <span>{imageFailureMessage(block.error?.code, t)}</span>
       </div>
     )
   }
@@ -47,4 +47,19 @@ function labels(t: (key: CodexAuthKey) => string): CodexImageLabels {
 
 function english(key: CodexAuthKey): string {
   return en[key]
+}
+
+/** Localized explanations for image failures without upstream response text. */
+function imageFailureMessage(code: string | undefined, t: (key: CodexAuthKey) => string): string {
+  const keys: Record<string, CodexAuthKey> = {
+    IMAGE_CANCELLED: 'toolCancelled',
+    IMAGE_MODERATION_BLOCKED: 'imageModerationBlocked',
+    IMAGE_AUTH_REQUIRED: 'imageAuthRequired',
+    IMAGE_ACCESS_DENIED: 'imageAccessDenied',
+    IMAGE_REQUEST_REJECTED: 'imageRequestRejected',
+    IMAGE_ROUTE_UNAVAILABLE: 'imageRouteUnavailable',
+    IMAGE_RATE_LIMITED: 'imageRateLimited',
+  }
+  const key = code === undefined ? undefined : keys[code]
+  return key === undefined ? code ?? t('toolFailed') : t(key)
 }

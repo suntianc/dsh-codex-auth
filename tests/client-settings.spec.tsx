@@ -176,8 +176,10 @@ describe('Codex Capability Bundle settings', () => {
       llmScope={fakeScope(LLM).scope} searchScope={fakeScope(SEARCH).scope} imageScope={image.scope} />)
     await screen.findByText('Active')
     fireEvent.click(screen.getByRole('button', { name: 'Expand Image Creation settings' }))
-    const modelOptions = (screen.getByLabelText('Image model') as HTMLInputElement).list?.options
+    const modelOptions = (screen.getByRole('combobox', { name: 'Image model' }) as HTMLSelectElement).options
     expect(Array.from(modelOptions ?? [], option => option.value)).toContain('gpt-image-2.5-flare')
+    fireEvent.change(screen.getByLabelText('Image model'), { target: { value: 'gpt-image-2.5-flare' } })
+    await waitFor(() => expect(image.set).toHaveBeenCalledWith('model', 'gpt-image-2.5-flare'))
     fireEvent.change(screen.getByLabelText('Default quality'), { target: { value: 'max' } })
     await waitFor(() => expect(image.set).toHaveBeenCalledWith('quality', 'max'))
     const size = screen.getByLabelText('Default size')

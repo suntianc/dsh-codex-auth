@@ -644,7 +644,6 @@ function ImageControls({
   const value = snapshot.value as ImageSettingsView
   const disabled = !snapshot.writable || unavailable || !value.enabled
   const write = writer(scope, onError, t)
-  const modelsId = useId()
   const sizesId = useId()
   const sizeHintId = useId()
   const [sizeDraft, setSizeDraft] = useState<string>(value.size)
@@ -661,8 +660,10 @@ function ImageControls({
   return (
     <div className={classes.formRows} data-dimmed={!value.enabled || unavailable}>
       <Control label={t('imageModel')}>
-        <input aria-label={t('imageModel')} list={modelsId} value={value.model} disabled={disabled} onChange={event => { void write('model', event.target.value) }} />
-        <datalist id={modelsId}>{IMAGE_MODELS.map(model => <option key={model} value={model} />)}</datalist>
+        <select aria-label={t('imageModel')} value={value.model} disabled={disabled} onChange={event => { void write('model', event.target.value) }}>
+          {!IMAGE_MODELS.some(model => model === value.model) && <option value={value.model}>{value.model}</option>}
+          {IMAGE_MODELS.map(model => <option key={model} value={model}>{model}</option>)}
+        </select>
       </Control>
       <Control label={t('defaultImageCount')}>
         <select aria-label={t('defaultImageCount')} value={value.n} disabled={disabled} onChange={event => { void write('n', Number(event.target.value)) }}>

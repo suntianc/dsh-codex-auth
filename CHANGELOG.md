@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Distinguish image moderation and HTTP failures with localized explanations without automatic retries or raw upstream response disclosure.
+- Use a model dropdown for Sunburst and Flare; preserve configured custom model IDs and existing size and quality controls.
+
 ## [Unreleased]
 
 - Show session-scoped Fast and subscription-limit controls in the New Session options row before the first prompt, reusing the existing composer dock controls and account boundary.

@@ -31,6 +31,13 @@ const SETTINGS: CodexImageSettings = {
 }
 
 describe('Image row lifecycle', () => {
+  it('allows settings clients to rehydrate the image schema', () => {
+    const serialized = JSON.parse(JSON.stringify(Config))
+    expect(JSON.stringify(serialized)).not.toContain('callback')
+    const schema = new z(serialized)
+    expect(() => z.resolve({ enabled: true, model: 'gpt-image-2.5-flare', n: 1, size: '1536x864', quality: 'max', background: 'auto' }, schema, {})).not.toThrow()
+  })
+
   function fixture() {
     const ctx = new Context()
     onTestFinished(() => ctx.fiber.dispose())
@@ -204,7 +211,7 @@ describe('generate_image', () => {
     const explicit = z.resolve({ model: 'gpt-image-2.5-flare', quality: 'max', size: '1536x864' }, Config, {})[0]
     expect(explicit.quality.get()).toBe('max')
     expect(explicit.size.get()).toBe('1536x864')
-    expect(() => z.resolve({ size: '256x256' }, Config, {})).toThrow()
+    expect(() => ImagePlugin.apply(new Context(), z.resolve({ size: '256x256' }, Config, {})[0])).toThrow('Invalid image dimensions')
   })
 
   it.each(['1536x864', '640x1024', '3840x2160', '768x2304'])('accepts a bounded custom size %s from tool arguments and saved settings', async (size) => {
@@ -447,6 +454,32 @@ describe('generate_image', () => {
     expect(result.content).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'text', text: expect.stringContaining('server-side cancellation is not guaranteed') }),
     ]))
+  })
+
+  it('identifies moderation blocks without copying private upstream details', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      error: { code: 'moderation_blocked', message: 'private upstream detail' },
+    }), { status: 400 }))
+    const upstream = bench({ fetchImpl })
+    const result = await execute(upstream.tools, 'generate_image', { prompt: 'once' })
+    expect(result).toMatchObject({ isError: true, error: { info: { code: 'IMAGE_MODERATION_BLOCKED' } } })
+    expect(JSON.stringify(result)).not.toContain('private upstream detail')
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    [400, 'IMAGE_REQUEST_REJECTED'],
+    [401, 'IMAGE_AUTH_REQUIRED'],
+    [403, 'IMAGE_ACCESS_DENIED'],
+    [404, 'IMAGE_ROUTE_UNAVAILABLE'],
+    [429, 'IMAGE_RATE_LIMITED'],
+  ])('reports HTTP %s without exposing the upstream body or retrying', async (status, code) => {
+    const fetchImpl = vi.fn(async () => new Response('private upstream detail', { status }))
+    const upstream = bench({ fetchImpl })
+    const result = await execute(upstream.tools, 'generate_image', { prompt: 'once' })
+    expect(result).toMatchObject({ isError: true, error: { info: { code } } })
+    expect(JSON.stringify(result)).not.toContain('private upstream detail')
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
   it('does not retry dispatched image requests and rejects known unavailable routes locally', async () => {

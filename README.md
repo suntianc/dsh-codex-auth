@@ -613,3 +613,5 @@ See [`docs/design.md`](docs/design.md) and the [architecture decisions](docs/adr
 ## Friendship links
 
 - [L 站](https://linux.do/)
+
+Image failures distinguish moderation blocks, rejected requests, expired login, denied access, unavailable routes, and rate limits. Error cards use localized explanations; raw upstream response text is never copied into the conversation. Requests are never automatically retried. Choose Sunburst or Flare in the Image model dropdown under GPT Auth → Image Creation; Default size accepts WIDTHxHEIGHT and Default quality includes auto, low, medium, high, xhigh, and max. Existing custom model IDs remain selectable; new custom IDs can be configured through cordis.yml.
