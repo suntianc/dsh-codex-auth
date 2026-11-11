@@ -14,12 +14,19 @@ describe('generated image turn artifacts', () => {
     render(<CodexTurnImages images={[image]} loadImage={async () => 'blob:cat'} editImage={edit} t={key => en[key]} />)
     expect(await screen.findByRole('img', { name: 'cat.png' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Edit image' }))
-    expect(edit).toHaveBeenCalledWith(image)
+    expect(edit).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('Describe the changes'), { target: { value: 'Blue cup' } })
+    fireEvent.click(screen.getByRole('button', { name: '1536×1024' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add to message' }))
+    expect(edit).toHaveBeenCalledWith(image, expect.stringContaining('image:sha256:cat'))
+    expect(edit).toHaveBeenCalledWith(image, expect.stringContaining('1536x1024'))
   })
 
   it('reports refusal to prepare a draft', () => {
     render(<CodexTurnImages images={[image]} loadImage={async () => 'blob:cat'} editImage={() => false} t={key => en[key]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Edit image' }))
+    fireEvent.change(screen.getByLabelText('Describe the changes'), { target: { value: 'Blue cup' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add to message' }))
     expect(screen.getByRole('alert').textContent).toContain('draft')
   })
 

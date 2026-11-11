@@ -4,6 +4,8 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { CodexImageGallery } from './CodexImageGallery.tsx'
 import type { ImageLoader } from './CodexImageGallery.tsx'
+import { ImageRequestPanel } from './ImageRequestPanel.tsx'
+import type { ImageRequestChoices } from './ImageRequestPanel.tsx'
 import type { CodexAuthKey } from './locales.ts'
 import classes from './CodexImageGallery.module.css'
 
@@ -71,24 +73,32 @@ function isImageReference(value: unknown): value is ImageAttachmentRef {
  * @param props Generated outputs, authorized loader, draft action and localized copy.
  * @returns Gallery with one edit action per image, or null for an empty turn.
  */
-export function CodexTurnImages({ images, loadImage, editImage, t }: {
+export function CodexTurnImages({ images, loadImage, editImage, initial, t }: {
   images: readonly ImageAttachmentRef[]
   loadImage: ImageLoader
-  editImage: (image: ImageAttachmentRef) => boolean
+  editImage: (image: ImageAttachmentRef, prompt: string) => boolean
+  initial?: ImageRequestChoices
   t: (key: CodexAuthKey) => string
 }) {
-  const [failed, setFailed] = useState(false)
+  const [editing, setEditing] = useState<string>()
   if (images.length === 0) return null
   return <div className={classes.artifacts}>
     {images.map(image => <div key={String(image.attachmentId)} className={classes.artifact}>
+      <div className={classes.previewActions}>
       <CodexImageGallery images={[{ attachment: image }]} load={loadImage} labels={{
         image: t('toolGeneratedImage'), open: t('toolOpenImage'),
         openNamed: label => `${t('toolOpenImage')}: ${label}`,
         loading: t('toolLoadingImage'), loadFailed: t('toolRetryImage'),
         lightbox: { dialog: t('toolImageDialog'), close: t('toolCloseImage') },
       }} />
-      <button type="button" className={classes.edit} onClick={() => { setFailed(!editImage(image)) }}>{t('editImage')}</button>
+      <span className={classes.dimensions}>{t('imageActualSize')}: {image.width}×{image.height}</span>
+      <button type="button" className={classes.edit} aria-expanded={editing === String(image.attachmentId)}
+        onClick={() => { setEditing(editing === String(image.attachmentId) ? undefined : String(image.attachmentId)) }}>{t('editImage')}</button>
+      </div>
+      {editing === String(image.attachmentId) && <div className={classes.editControls}>
+        <ImageRequestPanel image={image} {...initial === undefined ? {} : { initial }}
+          prepare={prompt => editImage(image, prompt)} onPrepared={() => { setEditing(undefined) }} t={t} />
+      </div>}
     </div>)}
-    {failed && <p role="alert">{t('editImageFailed')}</p>}
   </div>
 }

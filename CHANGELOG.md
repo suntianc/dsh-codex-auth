@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add per-request model, resolution and quality controls beside edited images and through Create image on the main screen and chat composer; show actual output dimensions.
+
 - Show generated images directly in completed chat turns and add Edit image to prepare a session-specific edit draft without replacing existing text or automatically sending it.
 
 - Pass the complete image reference to session-authorized attachment reads so generated images load in the current Harness client.

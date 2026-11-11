@@ -11,6 +11,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import { ImageCreateAction } from './ImageCreateAction.tsx'
+import type { ImageRequestChoices } from './ImageRequestPanel.tsx'
 import { CodexTurnImages, generatedImageDefinition } from './CodexTurnImages.tsx'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -60,6 +62,15 @@ export function apply(ctx: ClientContext): void {
   }
   const sessions = (ctx as unknown as { sessions: ISessions }).sessions
   const imageUrls = new SessionImageUrls(sessions)
+  const imageScope = ctx.configForms.get<ImageSettingsView>(IMAGE_NAMESPACE)
+  const prepareImageDraft = (sessionId: SessionId, prompt: string): boolean => {
+    const binding = sessions.binding(sessionId)
+    if (binding === undefined) return false
+    const result = ctx.conversation.input.requestDraftInitialization(binding, { prompt, whenDraftExists: 'append' })
+    if (result !== 'applied') return false
+    ctx.conversation.input.for(binding.ctx).focus()
+    return true
+  }
   ctx.effect(() => () => { imageUrls.clear() }, 'codex-capabilities: image URL cleanup')
   const reset = (): void => {
     imageUrls.clear()
@@ -72,7 +83,6 @@ export function apply(ctx: ClientContext): void {
     const t = ctx.locale.bind(NS) as CodexCapabilitySettingsProps['t']
     const llmScope = ctx.configForms.get<LlmSettingsView>(LLM_NAMESPACE)
     const searchScope = ctx.configForms.get<SearchSettingsView>(SEARCH_NAMESPACE)
-    const imageScope = ctx.configForms.get<ImageSettingsView>(IMAGE_NAMESPACE)
     const subscribePolicy = (listener: () => void) => {
       const reset = subscribe(listener)
       const settings = llmScope.subscribe(listener)
@@ -99,19 +109,23 @@ export function apply(ctx: ClientContext): void {
     }, CodexCapabilitySettings))
   }
 
+  for (const name of ['conversation.composer.dock', 'conversation.hero.options'] as const) {
+    ctx.slots.inject(name, () => ctx.slots.register({
+      name, id: 'codex-create-image', locale: NS, order: 1,
+      inject: (sessionId: SessionId) => ({
+        prepare: (prompt: string) => prepareImageDraft(sessionId, prompt),
+        initial: imageScope.getSnapshot().value ?? undefined,
+      }),
+    }, ImageCreateAction))
+  }
+
   ctx.uiConversation.events.register(generatedImageDefinition)
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail', id: 'codex-generated-images', locale: NS,
     inject: (sessionId: SessionId) => ({
       loadImage: (image: ImageAttachmentRef) => imageUrls.resolve(sessionId, image),
-      editImage: (_image: ImageAttachmentRef, prompt: string) => {
-        const binding = sessions.binding(sessionId)
-        if (binding === undefined) return false
-        const result = ctx.conversation.input.requestDraftInitialization(binding, { prompt, whenDraftExists: 'append' })
-        if (result !== 'applied') return false
-        ctx.conversation.input.for(binding.ctx).focus()
-        return true
-      },
+      initial: imageScope.getSnapshot().value ?? undefined,
+      editImage: (_image: ImageAttachmentRef, prompt: string) => prepareImageDraft(sessionId, prompt),
     }),
   }, ImageTurnTail))
 
@@ -151,13 +165,13 @@ const NO_IMAGES: readonly ImageAttachmentRef[] = []
 function ImageTurnTail(props: PropsRuntime<'conversation.chat.turnTail'> & PropsLocale<typeof NS> & {
   loadImage: (image: ImageAttachmentRef) => Promise<string>
   editImage: (image: ImageAttachmentRef, prompt: string) => boolean
+  initial?: ImageRequestChoices
 }): ReactElement {
   const source = props.turn.data.source('codexImages')
   const images = useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot) ?? NO_IMAGES
   return createElement(CodexTurnImages, {
     images, loadImage: props.loadImage, t: props.t,
-    editImage: image => props.editImage(image, props.t('editImagePrompt')
-      + `image:${String(image.attachmentId)}`
-      + '\n' + props.t('editImageChanges')),
+    ...props.initial === undefined ? {} : { initial: props.initial },
+    editImage: props.editImage,
   })
 }

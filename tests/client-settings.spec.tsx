@@ -397,6 +397,8 @@ describe('client plugin registration', () => {
       expect.objectContaining({ name: 'conversation.composer.dock', id: 'codex-usage' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),
       expect.objectContaining({ name: 'conversation.chat.turnTail', id: 'codex-generated-images' }),
+      expect.objectContaining({ name: 'conversation.composer.dock', id: 'codex-create-image' }),
+      expect.objectContaining({ name: 'conversation.hero.options', id: 'codex-create-image' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'list_images' }),
     ]))
 
