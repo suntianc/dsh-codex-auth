@@ -159,9 +159,9 @@ The pinned pi-ai `1.3.0` catalog includes GPT-6 Astra. The plugin fills missing
 GPT-6 Sol (`gpt-6-sol`), Luna (`gpt-6-luna`), and GPT-6.1 Sol (`gpt-6.1-sol`)
 entries from matching GPT-5.6 templates and preserves installed descriptors.
 Fallback descriptors use a 272,000-token context window. The default-off
-**Long Context** switch reports a model-specific budget: **872,000 tokens for
-GPT-6/6.1**, and the existing 1,000,000-token policy for supported GPT-5.6 models.
-The GPT-6 budget follows Codex OAuth metadata, not the public API context limit.
+**Long Context** switch reports an opt-in budget: **872,000 tokens for
+all supported GPT-5.6/6/6.1 models**.
+The budget follows Codex OAuth metadata, not the public API context limit.
 DSH uses this for token pressure and compaction; it does not negotiate backend
 capacity or establish account entitlement. Enabling it cannot restore history
 already compacted, and long requests may consume account quota faster.

@@ -22,8 +22,8 @@ capacity must not be inferred from a public API model's total-context number.
 
 Missing GPT-6 descriptors use the matching GPT-5.6 transport template. The
 plugin changes explicit model fields only and keeps every existing provider
-descriptor. The long-context opt-in changes only contextWindow: GPT-6/6.1 uses
-872K, while the pre-existing GPT-5.6 1M policy remains unchanged. Turning the
+descriptor. The long-context opt-in changes only contextWindow to 872K for every
+supported GPT-5.6/6/6.1 model, matching the current Codex OAuth catalog maximum. Turning the
 setting off returns the original provider capacity; source objects are never
 mutated. The setting is a local compaction budget, not a backend entitlement.
 
@@ -71,3 +71,11 @@ Editor and Loader path: edits remain isolated, persist, restore on restart and
 notify the live model catalog without remounting the plugin. Client tests cover
 save/clear, profile switching and write failure. Real user profiles and live
 requests are outside this verification boundary.
+
+## Context capacity and automatic compaction
+
+The local Codex model catalog fetched on 2026-11-12 reports `max_context_window: 872000` and `effective_context_window_percent: 95` for all seven enabled GPT-5.6/6/6.1 models. The default window is 272000 except GPT-6.1 Sol, whose catalog default is 500000. The plugin preserves provider capacities when Long Context is disabled and uses the 872000 maximum when enabled; it does not copy the Codex CLI's separate compaction percentage into DSH.
+
+The stock DSH Basic engine owns automatic compaction. Its default pressure threshold is the smaller of 80% of the advertised context and context minus the request's reserved output and 65536 tokens of headroom. The default retained tail is 16% of context minus reserved output. For an 872000 window with no explicit output reservation, this gives a 697600-token threshold and 139520-token retained tail. Exact model policies or an explicit request output cap can change those numbers. The earlier GPT-5.6 1000000 declaration allowed an 800000-token threshold and overstated the observed Codex maximum; the corrected budget triggers compaction earlier. No persisted Session or user profile threshold is rewritten.
+
+The live [model and compaction matrix](codex-transport-verification-2026-11-12.json) covers both settings for all seven enabled Codex models. With Long Context disabled, the installed catalog reports 272000 for six models and 500000 for GPT-6.1 Sol; their stock Basic thresholds with no explicit output reservation are 206464 and 400000 respectively. All enabled models use 872000 and a 697600 threshold with Long Context enabled. Live summaries used an isolated reduced pressure threshold; production-window saturation is not claimed.

@@ -108,8 +108,8 @@ async function drain(stream: AsyncIterable<unknown>): Promise<void> {
 }
 
 describe('Codex model request policy', () => {
-  it.each(['direct', 'prepared'] as const)('sends %s Codex SSE requests as uncompressed JSON', async mode => {
-    const { adapter, fetchMock, payloads } = fixture()
+  it.each([['direct', false], ['prepared', false], ['direct', true], ['prepared', true]] as const)('sends %s Codex SSE requests as uncompressed JSON with long context %s', async (mode, longContextEnabled) => {
+    const { adapter, fetchMock, payloads } = fixture(false, { longContextEnabled })
     const options = request({ reasoningEffort: ReasoningEffortId('high') })
     const call = mode === 'prepared' ? await adapter.prepareCall(options.provider, options.model) : adapter
     await drain(call.stream(options))

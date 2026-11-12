@@ -78,6 +78,7 @@
     "docs/codex-model-policy.md",
     "docs/gpt-image-2.5-compatibility.md",
     "docs/codex-sse-transport.md",
+    "docs/codex-transport-verification-2026-11-12.json",
     "docs/dsh-0.2.2-upgrade.md"
   ],
   "scripts": {

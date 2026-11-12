@@ -6,10 +6,10 @@ import z from '@deepseek-ai/schemastery'
 export const CODEX_LLM_SETTINGS_NAMESPACE = 'codex-llm'
 /** Conservative Codex default that avoids automatic long-context usage. */
 export const CODEX_STANDARD_CONTEXT_WINDOW = 272_000
-/** Legacy opt-in budget for the supported GPT-5.6 family. */
-export const CODEX_LONG_CONTEXT_WINDOW = 1_000_000
+/** Shared Codex OAuth opt-in maximum for the supported GPT-5.6/6/6.1 models. */
+export const CODEX_LONG_CONTEXT_WINDOW = 872_000
 /** GPT-6 Codex OAuth maximum, distinct from public API total-context limits. */
-export const CODEX_GPT_6_LONG_CONTEXT_WINDOW = 872_000
+export const CODEX_GPT_6_LONG_CONTEXT_WINDOW = CODEX_LONG_CONTEXT_WINDOW
 /** GPT-6 model ids exposed on the Codex route. */
 export const CODEX_GPT_6_ASTRA_MODEL_ID = 'gpt-6-astra'
 export const CODEX_GPT_6_SOL_MODEL_ID = 'gpt-6-sol'
@@ -91,12 +91,9 @@ const GPT_6_MODELS = [
   },
 ] as const
 
-const GPT_6_MODEL_IDS = new Set<string>(GPT_6_MODELS.map(model => model.id))
-
 /** Codex catalog source and API estimate provenance: docs/codex-model-policy.md. */
 export function codexLongContextWindow(modelId: string): number | undefined {
-  if (!LONG_CONTEXT_MODEL_IDS.has(modelId)) return undefined
-  return GPT_6_MODEL_IDS.has(modelId) ? CODEX_GPT_6_LONG_CONTEXT_WINDOW : CODEX_LONG_CONTEXT_WINDOW
+  return LONG_CONTEXT_MODEL_IDS.has(modelId) ? CODEX_LONG_CONTEXT_WINDOW : undefined
 }
 
 /** Independently live settings that affect the openai-codex model catalog. */
