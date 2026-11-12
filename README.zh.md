@@ -1,6 +1,6 @@
 # dsh-codex-auth
 
-> **DSH 兼容性：** 此候选版本适配完整一致的 DSH **0.2.2-rc.1** 依赖图及 pi-ai **1.3.0**。实验性 peer 与运行时检查仍拒绝旧版、混合及未来版本，不添加兼容性豁免。旧 Harness 请保留相应旧插件。见[升级指南](docs/dsh-0.2.2-upgrade.md)。
+> **DSH 兼容性：** 此候选版本适配完整一致的 DSH **0.2.2-rc.1 / rc.2** 依赖图及 pi-ai **1.3.0**。实验性 peer 与运行时检查仍拒绝旧版、混合及未来版本，不添加兼容性豁免。旧 Harness 请保留相应旧插件。见[升级指南](docs/dsh-0.2.2-upgrade.md)。
 
 [![npm rc version](https://img.shields.io/npm/v/dsh-codex-auth/rc.svg?label=npm%20rc)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
@@ -385,7 +385,7 @@ DSH alpha.5 会把持久化 `tool/call` 与 `tool/result` 事件分别投影为 
 
 - DeepSeek Harness `0.2.2-rc.1`（统一依赖图）；不要与旧 rc 包族混装。
 - Node.js `^22.19.0` 或 `>=24.0.0`。
-- `PATH` 中可用 `pnpm`（本项目测试版本为 `11.7.0`）。
+- `PATH` 中可用 `pnpm`（本项目测试版本为 `11.28.5`）。
 - `codex` CLI 已加入 `PATH`。
 - 可提前执行 `codex login`，也可在 GPT Auth 卡片中启动登录。
 

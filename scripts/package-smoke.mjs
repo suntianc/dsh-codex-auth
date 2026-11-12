@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import semver from 'semver'
-import { DSH_BASELINE, DSH_SOURCE_VERSION, DSH_VERIFY_VERSION, DSH_EXPERIMENTAL_PEER_RANGE, resolvedDshPackages } from './dsh-compatibility.mjs'
+import { DSH_MIN_SUPPORTED_VERSION, DSH_SOURCE_VERSION, DSH_VERIFY_VERSION, DSH_EXPERIMENTAL_PEER_RANGE, resolvedDshPackages } from './dsh-compatibility.mjs'
 
 const CODEX_COMPACTION_DSH_RANGE = DSH_EXPERIMENTAL_PEER_RANGE
 const EXPERIMENTAL_DSH_PEERS = [
@@ -93,7 +93,7 @@ try {
 
   for (const section of ['peerDependencies', 'devDependencies']) {
     const required = section === 'peerDependencies'
-      ? DSH_BASELINE
+      ? DSH_MIN_SUPPORTED_VERSION
       : DSH_VERIFY_VERSION
     const entries = Object.entries(manifest[section] ?? {})
       .filter(([name]) => name.startsWith('@deepseek-ai/dsh-')

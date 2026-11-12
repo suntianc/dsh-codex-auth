@@ -1,6 +1,6 @@
 # dsh-codex-auth
 
-> **DSH compatibility:** This candidate targets the coherent DSH **0.2.2-rc.1** graph with pi-ai **1.3.0**. Exact experimental peers reject older, mixed, and future graphs. Older Harness installations should retain a compatible older plugin release. See the [upgrade guide](docs/dsh-0.2.2-upgrade.md).
+> **DSH compatibility:** This candidate targets the coherent DSH **0.2.2-rc.1 / rc.2** graph with pi-ai **1.3.0**. Exact experimental peers reject older, mixed, and future graphs. Older Harness installations should retain a compatible older plugin release. See the [upgrade guide](docs/dsh-0.2.2-upgrade.md).
 
 [![npm rc version](https://img.shields.io/npm/v/dsh-codex-auth/rc.svg?label=npm%20rc)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
@@ -522,7 +522,7 @@ assistant ImageBlock.
 
 - DeepSeek Harness `0.2.2-rc.1` (tested coherent dependency graph); do not mix it with an older rc package family.
 - Node.js `^22.19.0` or `>=24.0.0`.
-- `pnpm` available on `PATH` (`11.7.0` is the tested project package manager).
+- `pnpm` available on `PATH` (`11.28.5` is the tested project package manager).
 - The `codex` CLI available on `PATH`.
 - Run `codex login` before use, or start login from the GPT Auth card.
 

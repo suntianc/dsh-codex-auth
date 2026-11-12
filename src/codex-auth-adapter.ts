@@ -32,7 +32,7 @@ import type {
 } from '@earendil-works/pi-ai'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { LlmError, ReasoningEffortId, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import { HarnessError, LlmError, ReasoningEffortId, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
@@ -103,7 +103,7 @@ export function codexAuthInjection(): { credentials: CredentialStore; authContex
     read: async () => undefined,
     list: async () => [],
     modify: async () => {
-      throw new LlmError(
+      throw new HarnessError(
         'llm-codex-auth: pi-ai credential persistence is disabled; use the Codex auth coordinator',
         'AUTH_PERSISTENCE_DISABLED',
       )

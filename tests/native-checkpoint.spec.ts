@@ -163,7 +163,7 @@ describe('Codex Native Checkpoint codec', () => {
 
   it('pins replay to the observed DSH and pi-ai conversion pair', () => {
     expect(CODEX_NATIVE_REPLAY_COMPATIBILITY).toEqual({
-      dsh: '0.2.2-rc.1',
+      dsh: '0.2.2-rc.1 || 0.2.2-rc.2',
       piAi: '1.3.0',
     })
     expect(isCodexNativeReplayRuntimeCompatible()).toBe(true)
@@ -705,10 +705,11 @@ describe('Codex Native Checkpoint replay', () => {
       source: { kind: 'user' }, content: [{ type: 'tool-addition', toolName: tool.name }],
     })
     const baseline = replayOptions()
-    const history = { tools: [], updates: [{ messageId: added.id, additions: [tool] }] }
+    const bootstrapTool = { ...tool, name: 'bootstrap_fixture' }
+    const history = { tools: [bootstrapTool], updates: [{ messageId: added.id, additions: [tool] }] }
     await drain(ctx.llm.stream({
       ...baseline, model, messages: [baseline.messages[0]!, added, baseline.messages[2]!],
-      tools: [tool], toolHistory: history,
+      tools: [bootstrapTool, tool], toolHistory: history,
     }))
     const captured = payloads[0] as Record<string, JsonValue>
     expect(captured).toBeDefined()
@@ -724,7 +725,7 @@ describe('Codex Native Checkpoint replay', () => {
       }),
     }
     const options = deepFreeze({
-      ...replayOptions(checkpoint), model, tools: [tool], toolHistory: history,
+      ...replayOptions(checkpoint), model, tools: [bootstrapTool, tool], toolHistory: history,
       messages: [baseline.messages[0]!, checkpointMessage(checkpoint), added, baseline.messages[2]!],
     })
     const before = JSON.stringify(options)

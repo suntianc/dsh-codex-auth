@@ -22,7 +22,7 @@ import LlmRuntime, {
   isAgentLoopRequest,
   markAgentLoopRequest,
 } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, Message, ToolSchema } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
   Session,
   SessionId,
@@ -357,6 +357,7 @@ function closedConversation(
   id = 'dual-checkpoint',
   reasoningEffort?: string,
   system?: string,
+  tools?: ToolSchema[],
 ): Session {
   const session = Session.create(SessionId(id))
   if (system !== undefined) session.append('system/message', {
@@ -379,6 +380,7 @@ function closedConversation(
               ? {}
               : { reasoningEffort: ReasoningEffortId(reasoningEffort) }),
           },
+          ...(tools === undefined ? {} : { tools }),
         },
         reason: 'initial',
       })
@@ -2488,12 +2490,13 @@ describe('Codex Dual Checkpoint manual tracer bullet', () => {
   ])('keeps actual $model developer tool-addition history Portable during compaction', async ({ model, wireTypes }) => {
     const { ctx, requests } = mountDualCheckpointHost({ accountId: `acct_projected_${model}_fixture` })
     vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
-    const session = closedConversation(`dual-projected-tools-${model}`)
     const tool = { name: 'deferred_fixture', description: 'Deferred test tool', parameters: { type: 'object', properties: {} } }
+    const bootstrapTool = { ...tool, name: 'bootstrap_fixture' }
+    const session = closedConversation(`dual-projected-tools-${model}`, undefined, undefined, [bootstrapTool])
     session.append('turn/start', { turn: 3 })
     session.append('step/start', { turn: 3, step: 1 })
     const header = session.append('request/header', {
-      header: { config: { provider: 'openai-codex', model }, tools: [tool] }, reason: 'change',
+      header: { config: { provider: 'openai-codex', model }, tools: [bootstrapTool, tool] }, reason: 'change',
     })
     const message = createDeveloperMessage({
       source: { kind: 'user' }, content: [{ type: 'tool-addition', toolName: tool.name }],

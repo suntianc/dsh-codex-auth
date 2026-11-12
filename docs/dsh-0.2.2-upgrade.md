@@ -139,3 +139,11 @@ quality/size combination, or every user-authored saved preset's compatibility.
 The complete tagged-source artifact gate has a separate reproducible recipe in
 [source verification](dsh-source-verification.md). Registry tests and the
 packaged Desktop smoke are not a claim that this optional rebuild was run.
+
+## DSH 0.2.2-rc.2 qualification
+
+The candidate admits coherent 0.2.2-rc.1 and 0.2.2-rc.2 graphs, each with pi-ai 1.3.0. Experimental peers use the exact union; mixed graphs, a future RC and stable releases remain rejected. Development dependencies and the source verification baseline now use rc.2 and pnpm 11.28.5, matching the signed Desktop toolchain.
+
+DSH rc.2 limits `LlmError` to its declared failure codes. The plugin's disabled credential-persistence operation uses the shared `HarnessError` with its existing code. DSH rc.2 also rebuilds addition-only tool declarations after an empty initial set or removals; deferred-history tests use a nonempty initial tool set to keep testing genuine in-history additions. This does not loosen Native checkpoint eligibility or rewrite saved conversations.
+
+The rc.2 qualification passed 508 unit tests, package smoke checks, both TypeScript programs and lint. The [rc.2 live report](codex-transport-verification-rc2-2026-11-12.json) repeats all seven enabled models with Long Context off and on: 14 cases and 70 successful HTTP requests, including tool-result replay, continuation and automatic Basic compaction. Compaction uses reduced isolated thresholds; this does not certify saturation at the advertised production window or rule out unrelated backend failures.

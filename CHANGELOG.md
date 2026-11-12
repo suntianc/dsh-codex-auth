@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Qualify coherent DSH 0.2.2-rc.2 with pi-ai 1.3.0 while retaining verified rc.1 admission and rejection of mixed/future graphs. Update the development/source baseline and pnpm toolchain, use the shared HarnessError for the custom credential-persistence failure, and retain genuine deferred-tool-history coverage under rc.2 declaration rebasing.
+
 - Correct the enabled GPT-5.6 long-context budget from 1,000,000 to the verified Codex OAuth maximum of 872,000 tokens. Stock Basic compaction can now trigger before the advertised backend maximum; GPT-6/6.1 budgets and user compaction policies are unchanged.
 
 - Send Codex SSE requests as uncompressed JSON to avoid backend `400 {"detail":"Bad Request"}` rejection of zstd bodies. Preserve encrypted reasoning and tool history, request credentials and cancellation; do not retry rejected requests or change WebSocket frames.
