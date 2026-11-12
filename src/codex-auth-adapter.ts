@@ -25,6 +25,7 @@
  * @module dsh-codex-auth/codex-auth-adapter
  */
 
+import { codexJsonFetch } from './codex-transport.ts'
 import { builtinProviders } from '@earendil-works/pi-ai/providers/all'
 import type {
   Api, ApiKeyAuth, AuthContext, CredentialStore, Model, Provider, StreamOptions,
@@ -176,7 +177,10 @@ function prepareCodexStreamOptions<Options extends StreamOptions | undefined>(
     model.id,
   )
   noteNativeCompactionRequest(provider, model, continued, transport)
-  return withReplayPayload(continued, configuredOnPayload, replay, fastTier)
+  return {
+    ...withReplayPayload(continued, configuredOnPayload, replay, fastTier),
+    fetch: codexJsonFetch(continued?.fetch ?? transport.fetchImpl),
+  } as Options
 }
 
 /**

@@ -24,6 +24,10 @@
 > `chatgpt.com/backend-api` 未获官方支持、可随时撤销，也可能在没有通知的情况下被限流
 > 或变更。请勿依赖它承载生产任务。
 
+## Codex SSE 请求
+
+Codex LLM 的 SSE 请求使用未压缩 JSON。适配器在 HTTP 发送前将 pi-ai 的 zstd 请求字节还原为相同 JSON，因为 Codex 后端可能以 `400 {"detail":"Bad Request"}` 拒绝压缩请求。模型、推理级别、加密回放数据、认证、取消和响应处理保持不变；不会重试被拒绝的请求，也不会修改 WebSocket 帧。
+
 ## 0.3.4-rc.3：DSH 0.2.2-rc.1
 
 更新完整依赖图及必需的图片数量限制，适配工具批处理、modelSelection、客户端资源加载与 replayState v2。保留 V4 会话及 Native codec，不添加版本豁免。见[升级指南与验证边界](docs/dsh-0.2.2-upgrade.md)。

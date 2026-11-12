@@ -89,6 +89,10 @@ Adds GPT Image 2.5 Sunburst/Flare, advanced quality, and validated custom dimens
   `127.0.0.1` Web bind; every absent, all-interface, or unknown bind receives
   the same value-free `loopback-required` denial.
 
+### Codex SSE requests
+
+Codex LLM requests use uncompressed JSON over SSE. The adapter converts pi-ai's zstd request bytes back to the same JSON before HTTP dispatch because the Codex backend can reject compressed bodies with `400 {"detail":"Bad Request"}`. Model, reasoning, encrypted replay data, authentication, cancellation and response handling are preserved. The transport does not retry rejected requests or change WebSocket frames. See [verification and transport details](docs/codex-sse-transport.md).
+
 ### Fast mode
 
 In **Settings → GPT Auth → LLM Context**, enable **Fast mode** to request

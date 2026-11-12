@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Send Codex SSE requests as uncompressed JSON to avoid backend `400 {"detail":"Bad Request"}` rejection of zstd bodies. Preserve encrypted reasoning and tool history, request credentials and cancellation; do not retry rejected requests or change WebSocket frames.
+
 - Add per-request model, resolution and quality controls beside edited images and through Create image on the main screen and chat composer; show actual output dimensions.
 
 - Show generated images directly in completed chat turns and add Edit image to prepare a session-specific edit draft without replacing existing text or automatically sending it.
