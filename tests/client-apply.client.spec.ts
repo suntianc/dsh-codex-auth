@@ -25,6 +25,7 @@ function bench(isLoopback = true) {
   const disposers: Array<() => void> = []
   const dictionaries = new Map<string, { zh: Dictionary; en: Dictionary }>()
   const slots: SlotRecord[] = []
+  const eventDefinitions: unknown[] = []
   const listeners = new Set<() => void>()
   const bindScope = vi.fn((namespace: string) => ({ namespace }))
 
@@ -40,6 +41,10 @@ function bench(isLoopback = true) {
     },
     configForms: { get: bindScope },
     sessions: { binding: vi.fn() },
+    uiConversation: { events: { register(definition: unknown) {
+      eventDefinitions.push(definition)
+      disposers.push(() => { eventDefinitions.splice(eventDefinitions.indexOf(definition), 1) })
+    } } },
     slots: {
       inject(_name: string, register: () => () => void) { disposers.push(register()) },
       register(options: Record<string, unknown>, component: unknown) {
@@ -70,6 +75,7 @@ function bench(isLoopback = true) {
   apply(ctx as unknown as ClientContext)
   return {
     bindScope,
+    eventDefinitions,
     call,
     dictionaries,
     listeners,
@@ -80,21 +86,31 @@ function bench(isLoopback = true) {
 
 describe('dsh-codex-auth client apply', () => {
   it('declares every stock service it consumes', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'configForms', 'sessions'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'configForms', 'sessions', 'uiConversation', 'conversation'])
   })
 
-  it('registers only settings and image views, never a native conversation renderer', async () => {
+  it('registers settings, composer actions, image views and their conversation event', async () => {
     const b = bench()
     expect(b.bindScope).toHaveBeenCalledWith('llm-codex-auth')
     expect(b.bindScope).toHaveBeenCalledWith('codex-search')
     expect(b.bindScope).toHaveBeenCalledWith('codex-image')
-    expect(b.slots).toHaveLength(3)
+    expect(b.slots).toHaveLength(8)
     expect(b.slots.map(record => record.options)).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'settings.section', id: 'codex-auth', order: 20 }),
+      expect.objectContaining({ name: 'conversation.composer.dock', id: 'codex-usage', order: 2 }),
+      expect.objectContaining({ name: 'conversation.hero.options', id: 'codex-usage', order: 2 }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'list_images' }),
     ]))
-    expect(b.slots.some(record => String(record.options.name).includes('conversation'))).toBe(false)
+    expect(b.slots.filter(record => String(record.options.name).includes('conversation')).map(record => record.options.name))
+      .toEqual(['conversation.composer.dock', 'conversation.hero.options', 'conversation.composer.dock', 'conversation.hero.options', 'conversation.chat.turnTail'])
+    expect(b.eventDefinitions).toHaveLength(1)
+
+    const hero = b.slots.find(record => record.options.name === 'conversation.hero.options')!
+    const dock = b.slots.find(record => record.options.name === 'conversation.composer.dock')!
+    expect(hero.component).toBe(dock.component)
+    const blank = (hero.options.inject as (id: string) => { sessionId: string })('blank-before-first-prompt')
+    expect(blank.sessionId).toBe('blank-before-first-prompt')
 
     const settings = b.slots.find(record => record.options.name === 'settings.section')
     const injected = (settings?.options.inject as (() => CodexCapabilitySettingsProps) | undefined)?.()
@@ -104,6 +120,7 @@ describe('dsh-codex-auth client apply', () => {
 
     b.dispose()
     expect(b.slots).toHaveLength(0)
+    expect(b.eventDefinitions).toHaveLength(0)
     expect(b.listeners.size).toBe(0)
     expect(b.dictionaries.size).toBe(0)
   })
@@ -111,8 +128,8 @@ describe('dsh-codex-auth client apply', () => {
   it('keeps image result views but omits privileged settings off loopback', () => {
     const b = bench(false)
 
-    expect(b.bindScope).not.toHaveBeenCalled()
-    expect(b.slots).toHaveLength(2)
+    expect(b.bindScope.mock.calls).toEqual([['codex-image']])
+    expect(b.slots).toHaveLength(5)
     expect(b.slots.map(record => record.options)).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'list_images' }),

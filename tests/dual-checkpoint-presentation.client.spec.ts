@@ -107,7 +107,10 @@ async function loadStockClients(): Promise<{
   pendingQueue.splice(registrationIndex, 1)
   const requireBootstrap = Object.assign(
     (specifier: string): never => { throw new Error(`unexpected bootstrap dependency: ${specifier}`) },
-    { async: async (specifier: string): Promise<never> => { throw new Error(`unexpected bootstrap chunk: ${specifier}`) } },
+    {
+      async: async (specifier: string): Promise<never> => { throw new Error(`unexpected bootstrap chunk: ${specifier}`) },
+      asset: (specifier: string): never => { throw new Error(`unexpected bootstrap asset: ${specifier}`) },
+    },
   )
   const bootstrapExports = registration.factory(requireBootstrap)
   const createClientModuleSystem = bootstrapExports.createClientModuleSystem

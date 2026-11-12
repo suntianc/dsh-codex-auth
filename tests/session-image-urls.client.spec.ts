@@ -22,9 +22,9 @@ describe('SessionImageUrls', () => {
     let url = 0
     const create = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:${String(++url)}`)
     const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
-    const readAttachment = vi.fn(async (id: ImageAttachmentRef['attachmentId']) => ({
+    const readAttachment = vi.fn(async (ref: ImageAttachmentRef) => ({
       ok: true as const,
-      value: { attachment: attachment(String(id)), data: new Uint8Array([1, 2, 3]) },
+      value: { attachment: ref, data: new Uint8Array([1, 2, 3]) },
     }))
     const sessions = {
       binding: vi.fn(() => ({ session: { readAttachment } })),
@@ -36,6 +36,7 @@ describe('SessionImageUrls', () => {
       images.resolve(sessionId('session-a'), attachment('one')),
     ])).resolves.toEqual(['blob:1', 'blob:1'])
     expect(readAttachment).toHaveBeenCalledTimes(1)
+    expect(readAttachment).toHaveBeenCalledWith(attachment('one'))
     expect(create).toHaveBeenCalledTimes(1)
 
     await expect(images.resolve(sessionId('session-b'), attachment('one'))).resolves.toBe('blob:2')

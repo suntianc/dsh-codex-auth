@@ -1,5 +1,5 @@
 /** Browser half of the Codex Capability Bundle. */
-import { createElement, useCallback } from 'react'
+import { createElement, useCallback, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -7,6 +7,13 @@ import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import { ImageCreateAction } from './ImageCreateAction.tsx'
+import type { ImageRequestChoices } from './ImageRequestPanel.tsx'
+import { CodexTurnImages, generatedImageDefinition } from './CodexTurnImages.tsx'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -20,6 +27,7 @@ import type {
 import { CodexImageToolView } from './CodexImageToolView.tsx'
 import { en, zh, type CodexAuthKey } from './locales.ts'
 import { SessionImageUrls } from './SessionImageUrls.ts'
+import { CodexUsageFooter } from './CodexUsageFooter.tsx'
 
 export { CodexCapabilitySettings } from './CodexCapabilitySettings.tsx'
 export type {
@@ -41,7 +49,7 @@ const SEARCH_NAMESPACE = 'codex-search'
 const IMAGE_NAMESPACE = 'codex-image'
 
 /** Required browser services, including session-authorized attachment reads. */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'configForms', 'sessions']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'configForms', 'sessions', 'uiConversation', 'conversation']
 
 /** Register the four-card settings section and keyed image result renderers. */
 export function apply(ctx: ClientContext): void {
@@ -54,6 +62,15 @@ export function apply(ctx: ClientContext): void {
   }
   const sessions = (ctx as unknown as { sessions: ISessions }).sessions
   const imageUrls = new SessionImageUrls(sessions)
+  const imageScope = ctx.configForms.get<ImageSettingsView>(IMAGE_NAMESPACE)
+  const prepareImageDraft = (sessionId: SessionId, prompt: string): boolean => {
+    const binding = sessions.binding(sessionId)
+    if (binding === undefined) return false
+    const result = ctx.conversation.input.requestDraftInitialization(binding, { prompt, whenDraftExists: 'append' })
+    if (result !== 'applied') return false
+    ctx.conversation.input.for(binding.ctx).focus()
+    return true
+  }
   ctx.effect(() => () => { imageUrls.clear() }, 'codex-capabilities: image URL cleanup')
   const reset = (): void => {
     imageUrls.clear()
@@ -66,7 +83,23 @@ export function apply(ctx: ClientContext): void {
     const t = ctx.locale.bind(NS) as CodexCapabilitySettingsProps['t']
     const llmScope = ctx.configForms.get<LlmSettingsView>(LLM_NAMESPACE)
     const searchScope = ctx.configForms.get<SearchSettingsView>(SEARCH_NAMESPACE)
-    const imageScope = ctx.configForms.get<ImageSettingsView>(IMAGE_NAMESPACE)
+    const subscribePolicy = (listener: () => void) => {
+      const reset = subscribe(listener)
+      const settings = llmScope.subscribe(listener)
+      return () => { reset(); settings() }
+    }
+    ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+      name: 'conversation.composer.dock',
+      id: 'codex-usage',
+      order: 2,
+      inject: sessionId => ({ rpc, t, subscribe: subscribePolicy, sessionId }),
+    }, CodexUsageFooter))
+    ctx.slots.inject('conversation.hero.options', () => ctx.slots.register({
+      name: 'conversation.hero.options',
+      id: 'codex-usage',
+      order: 2,
+      inject: sessionId => ({ rpc, t, subscribe: subscribePolicy, sessionId }),
+    }, CodexUsageFooter))
     ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',
       id: 'codex-auth',
@@ -75,6 +108,26 @@ export function apply(ctx: ClientContext): void {
       inject: (): CodexCapabilitySettingsProps => ({ rpc, t, subscribe, llmScope, searchScope, imageScope }),
     }, CodexCapabilitySettings))
   }
+
+  for (const name of ['conversation.composer.dock', 'conversation.hero.options'] as const) {
+    ctx.slots.inject(name, () => ctx.slots.register({
+      name, id: 'codex-create-image', locale: NS, order: 1,
+      inject: (sessionId: SessionId) => ({
+        prepare: (prompt: string) => prepareImageDraft(sessionId, prompt),
+        initial: imageScope.getSnapshot().value ?? undefined,
+      }),
+    }, ImageCreateAction))
+  }
+
+  ctx.uiConversation.events.register(generatedImageDefinition)
+  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+    name: 'conversation.chat.turnTail', id: 'codex-generated-images', locale: NS,
+    inject: (sessionId: SessionId) => ({
+      loadImage: (image: ImageAttachmentRef) => imageUrls.resolve(sessionId, image),
+      initial: imageScope.getSnapshot().value ?? undefined,
+      editImage: (_image: ImageAttachmentRef, prompt: string) => prepareImageDraft(sessionId, prompt),
+    }),
+  }, ImageTurnTail))
 
   const ToolView = imageToolView(imageUrls)
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
@@ -101,6 +154,24 @@ function imageToolView(imageUrls: SessionImageUrls): (props: LocalizedToolViewPr
       (attachment: ImageAttachmentRef) => imageUrls.resolve(props.sessionId, attachment),
       [props.sessionId, imageUrls],
     )
+    if ('kind' in props.block && !props.block.isError) return createElement(ListImagesToolView)
     return createElement(CodexImageToolView, { block: props.block, loadImage, t: props.t })
   }
+}
+
+const NO_IMAGES: readonly ImageAttachmentRef[] = []
+
+/** Completed-turn gallery and explicit image-edit draft action. */
+function ImageTurnTail(props: PropsRuntime<'conversation.chat.turnTail'> & PropsLocale<typeof NS> & {
+  loadImage: (image: ImageAttachmentRef) => Promise<string>
+  editImage: (image: ImageAttachmentRef, prompt: string) => boolean
+  initial?: ImageRequestChoices
+}): ReactElement {
+  const source = props.turn.data.source('codexImages')
+  const images = useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot) ?? NO_IMAGES
+  return createElement(CodexTurnImages, {
+    images, loadImage: props.loadImage, t: props.t,
+    ...props.initial === undefined ? {} : { initial: props.initial },
+    editImage: props.editImage,
+  })
 }

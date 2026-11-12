@@ -1,0 +1,1066 @@
+{
+  "date": "2026-11-12",
+  "provider": "openai-codex",
+  "scope": "All seven enabled Codex models in both Long Context modes; full replay metadata and live stock Basic pre-step compaction with isolated reduced thresholds; deliberately excluded models unchanged",
+  "excluded": [
+    "gpt-5.3-codex-spark",
+    "gpt-5.5"
+  ],
+  "results": [
+    {
+      "model": "gpt-5.6-luna",
+      "longContextEnabled": true,
+      "defaultPolicy": {
+        "contextWindow": 872000,
+        "thresholdTokens": 697600,
+        "retainTokens": 139520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": true,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 943
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1236
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1567
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76406
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1641
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 314,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "longContextEnabled": false,
+      "defaultPolicy": {
+        "contextWindow": 272000,
+        "thresholdTokens": 206464,
+        "retainTokens": 43520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": true,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 944
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1237
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1568
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76407
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1522
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 286,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "longContextEnabled": false,
+      "defaultPolicy": {
+        "contextWindow": 272000,
+        "thresholdTokens": 206464,
+        "retainTokens": 43520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 942
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1235
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1566
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76405
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1416
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 260,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "longContextEnabled": true,
+      "defaultPolicy": {
+        "contextWindow": 872000,
+        "thresholdTokens": 697600,
+        "retainTokens": 139520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 941
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1234
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1565
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76404
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1347
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 243,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "longContextEnabled": false,
+      "defaultPolicy": {
+        "contextWindow": 272000,
+        "thresholdTokens": 206464,
+        "retainTokens": 43520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": true,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 946
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 3218
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 3549
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76409
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1457
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 269,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "longContextEnabled": true,
+      "defaultPolicy": {
+        "contextWindow": 872000,
+        "thresholdTokens": 697600,
+        "retainTokens": 139520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": true,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 945
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 3173
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 3504
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76408
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1476
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 272,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-6-astra",
+      "longContextEnabled": true,
+      "defaultPolicy": {
+        "contextWindow": 872000,
+        "thresholdTokens": 697600,
+        "retainTokens": 139520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 941
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1234
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1565
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76374
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1383
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 252,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-6-astra",
+      "longContextEnabled": false,
+      "defaultPolicy": {
+        "contextWindow": 272000,
+        "thresholdTokens": 206464,
+        "retainTokens": 43520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 942
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1235
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1566
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76375
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1447
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 268,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-6-luna",
+      "longContextEnabled": false,
+      "defaultPolicy": {
+        "contextWindow": 272000,
+        "thresholdTokens": 206464,
+        "retainTokens": 43520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": true,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": true,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 940
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1233
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 3543
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76403
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1405
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 258,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-6-luna",
+      "longContextEnabled": true,
+      "defaultPolicy": {
+        "contextWindow": 872000,
+        "thresholdTokens": 697600,
+        "retainTokens": 139520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": true,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": true,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 939
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1232
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 3478
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76402
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1389
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 253,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-6-sol",
+      "longContextEnabled": false,
+      "defaultPolicy": {
+        "contextWindow": 272000,
+        "thresholdTokens": 206464,
+        "retainTokens": 43520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 938
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1231
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1562
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76401
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1367
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 248,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-6-sol",
+      "longContextEnabled": true,
+      "defaultPolicy": {
+        "contextWindow": 872000,
+        "thresholdTokens": 697600,
+        "retainTokens": 139520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 937
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1230
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1561
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76400
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1404
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 257,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "longContextEnabled": false,
+      "defaultPolicy": {
+        "contextWindow": 500000,
+        "thresholdTokens": 400000,
+        "retainTokens": 80000
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 942
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1235
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1566
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76421
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1447
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 268,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "longContextEnabled": true,
+      "defaultPolicy": {
+        "contextWindow": 872000,
+        "thresholdTokens": 697600,
+        "retainTokens": 139520
+      },
+      "steps": [
+        {
+          "step": 1,
+          "finish": "tool-calls",
+          "reasoning": false,
+          "toolCalls": 1
+        },
+        {
+          "step": 2,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "ROUNDTRIP_OK"
+        },
+        {
+          "step": 3,
+          "finish": "stop",
+          "reasoning": false,
+          "toolCalls": 0,
+          "text": "CONTINUATION_OK"
+        }
+      ],
+      "observations": [
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 941
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1234
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1565
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 76420
+        },
+        {
+          "status": 200,
+          "encoding": null,
+          "bytes": 1442
+        }
+      ],
+      "compaction": {
+        "kind": "stock Basic automatic pre-step listener; isolated reduced threshold",
+        "before": 18513,
+        "after": 267,
+        "events": [
+          "compaction/start",
+          "compaction/summary",
+          "compaction/end"
+        ],
+        "postFinish": "stop",
+        "postText": "CONTEXT_OK"
+      },
+      "fixed": "PASS",
+      "zstdControl": {
+        "status": 200,
+        "result": "accepted; response cancelled after headers"
+      }
+    }
+  ],
+  "runtime": {
+    "dsh": "0.2.2-rc.2",
+    "piAi": "1.3.0",
+    "node": "24.22.2"
+  }
+}

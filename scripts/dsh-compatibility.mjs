@@ -1,12 +1,13 @@
 /** The supported npm baseline and matching official source tag. */
-export const DSH_BASELINE = '0.2.1-rc.1'
-export const DSH_SOURCE_VERSION = '0.2.1-rc.2'
+export const DSH_BASELINE = '0.2.2-rc.2'
+export const DSH_MIN_SUPPORTED_VERSION = '0.2.2-rc.1'
+export const DSH_SOURCE_VERSION = '0.2.2-rc.2'
 export const DSH_SOURCE_COMMITS = Object.freeze({
-  '0.2.1-rc.1': '1600d8a1e140dcde43a1a0941940a0480712c011',
-  '0.2.1-rc.2': '687f282e8625c6b8d11ff58211a90524be2e4317',
+  '0.2.2-rc.1': '66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db',
+  '0.2.2-rc.2': 'ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c',
 })
-export const DSH_PEER_RANGE = '^0.2.1-rc.1'
-export const DSH_EXPERIMENTAL_PEER_RANGE = '0.2.1-rc.1 || 0.2.1-rc.2'
+export const DSH_PEER_RANGE = '^0.2.2-rc.1'
+export const DSH_EXPERIMENTAL_PEER_RANGE = '0.2.2-rc.1 || 0.2.2-rc.2'
 export const DSH_VERIFY_VERSION = process.env.DSH_VERIFY_VERSION ?? DSH_BASELINE
 if (!Object.hasOwn(DSH_SOURCE_COMMITS, DSH_VERIFY_VERSION)) {
   throw new Error('Unsupported DSH verification version')

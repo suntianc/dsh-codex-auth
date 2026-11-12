@@ -17,7 +17,7 @@ it('persists per-profile exclusions, updates the live catalog without remounting
   expect(all.some(model => model.id === 'gpt-6-luna')).toBe(true)
   const otherBefore = readFileSync(second.profile.patchPath, 'utf8')
   expect(ctx.settings.describe().find(row => row.ns === 'llm-codex-auth')?.value).toEqual({
-    longContextEnabled: false, excludedModelIds: [],
+    longContextEnabled: false, fastModeEnabled: false, excludedModelIds: [],
   })
   const changed = vi.fn()
   ctx.on('llm/adapters-updated', changed)
@@ -46,4 +46,24 @@ it('persists per-profile exclusions, updates the live catalog without remounting
   expect(await restored.llm.listModels('openai-codex')).toEqual(all)
   expect((await restored.llm.resolveModelInfo('openai-codex', 'gpt-6-luna')).context?.contextWindow).toBe(872_000)
   expect(await other.llm.listModels('openai-codex')).toEqual(all)
+}, 15_000)
+
+it('persists Fast mode per profile without remounting the adapter or changing the model catalog', async () => {
+  const first = profileFixture('fast-first')
+  const second = profileFixture('fast-second')
+  const ctx = await first.start()
+  const other = await second.start()
+  const entry = [...ctx.loader.entries()].find(entry => entry.options.id === 'llm-codex-auth')!
+  const fiber = entry.fiber
+  const catalog = await ctx.llm.listModels('openai-codex')
+  await ctx.settings.update('llm-codex-auth', { fastModeEnabled: true })
+  expect(entry.fiber).toBe(fiber)
+  expect(readFileSync(first.profile.patchPath, 'utf8')).toContain('fastModeEnabled: true')
+  expect(await ctx.llm.listModels('openai-codex')).toEqual(catalog)
+  expect(other.settings.describe().find(row => row.ns === 'llm-codex-auth')?.value).toMatchObject({ fastModeEnabled: false })
+  await ctx.fiber.dispose()
+  const restored = await first.start()
+  expect(restored.settings.describe().find(row => row.ns === 'llm-codex-auth')?.value).toMatchObject({ fastModeEnabled: true })
+  await restored.settings.update('llm-codex-auth', { fastModeEnabled: false })
+  expect(readFileSync(first.profile.patchPath, 'utf8')).toContain('fastModeEnabled: false')
 }, 15_000)

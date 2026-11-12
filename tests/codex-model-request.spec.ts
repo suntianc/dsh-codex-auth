@@ -1,11 +1,12 @@
 /** Exercise model policy through the real DSH/pi-ai adapter with offline transport. */
-import { zstdDecompressSync } from 'node:zlib'
+import { zstdCompressSync, zstdDecompressSync } from 'node:zlib'
 import { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { builtinProviders } from '@earendil-works/pi-ai/providers/all'
+import { codexJsonFetch } from '../src/codex-transport.ts'
 import { CodexAuthAdapter } from '../src/codex-auth-adapter.ts'
 import {
   CODEX_GPT_6_ASTRA_MODEL_ID,
@@ -39,7 +40,7 @@ afterEach(async () => {
   fallbackCatalog.enabled = false
 })
 
-function fixture(fallback = false, settings: CodexLlmSettings = { longContextEnabled: false }) {
+function fixture(fallback = false, settings: CodexLlmSettings = { longContextEnabled: false }, fastModeForSession?: (sessionId?: string) => boolean | undefined) {
   fallbackCatalog.enabled = fallback
   context = new Context()
   const accountId = 'synthetic-model-policy-account'
@@ -81,6 +82,7 @@ function fixture(fallback = false, settings: CodexLlmSettings = { longContextEna
     fetchImpl: fetchMock,
     displayName: 'Codex model policy fixture',
     settings: () => settings,
+    ...fastModeForSession === undefined ? {} : { fastModeForSession },
     transport: 'sse',
     websocketConnectTimeoutMs: 1_000,
     timeoutMs: 1_000,
@@ -106,6 +108,52 @@ async function drain(stream: AsyncIterable<unknown>): Promise<void> {
 }
 
 describe('Codex model request policy', () => {
+  it.each([['direct', false], ['prepared', false], ['direct', true], ['prepared', true]] as const)('sends %s Codex SSE requests as uncompressed JSON with long context %s', async (mode, longContextEnabled) => {
+    const { adapter, fetchMock, payloads } = fixture(false, { longContextEnabled })
+    const options = request({ reasoningEffort: ReasoningEffortId('high') })
+    const call = mode === 'prepared' ? await adapter.prepareCall(options.provider, options.model) : adapter
+    await drain(call.stream(options))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const init = fetchMock.mock.calls[0]![1]!
+    expect(new Headers(init.headers).has('content-encoding')).toBe(false)
+    expect(typeof init.body).toBe('string')
+    expect(payloads[0]).toMatchObject({
+      model: CODEX_GPT_6_ASTRA_MODEL_ID,
+      reasoning: { effort: 'high' },
+    })
+  })
+
+  it('keeps explicit per-session Fast on/off separate from the profile and other sessions', async () => {
+    const settings = { longContextEnabled: false, fastModeEnabled: true }
+    const overrides = new Map([['fast-session', true], ['standard-session', false]])
+    const { adapter, payloads } = fixture(false, settings, id => overrides.get(id ?? ''))
+    for (const id of ['fast-session', 'standard-session', 'new-session']) {
+      await drain(adapter.stream(request({ sessionId: id as NonNullable<GenerateOptions['sessionId']> })))
+    }
+    expect(payloads.map(payload => payload.service_tier)).toEqual(['priority', 'default', 'priority'])
+    expect(settings.fastModeEnabled).toBe(true)
+  })
+
+  it.each(['direct', 'prepared'] as const)('applies live Fast mode to %s calls without changing model or reasoning', async mode => {
+    const settings = { longContextEnabled: false, fastModeEnabled: false }
+    const { adapter, payloads } = fixture(false, settings)
+    const options = request({ reasoningEffort: ReasoningEffortId('high') })
+    const call = mode === 'prepared' ? await adapter.prepareCall(options.provider, options.model) : adapter
+    await drain(call.stream(options))
+    settings.fastModeEnabled = true
+    await drain(call.stream(options))
+    settings.fastModeEnabled = false
+    await drain(call.stream(options))
+    expect(payloads.map(payload => payload.service_tier)).toEqual([undefined, 'priority', undefined])
+    for (const payload of payloads) {
+      expect(payload.model).toBe(options.model)
+      expect(payload.reasoning).toMatchObject({ effort: 'high' })
+    }
+    const { service_tier: _tier, ...fast } = payloads[1]!
+    expect(fast).toEqual(payloads[0])
+    expect(payloads[2]).toEqual(payloads[0])
+  })
+
   it('keeps the static catalog visible without resolving or refreshing Login State', async () => {
     const { adapter, credential, fetchMock } = fixture()
     credential.mockRejectedValue(new Error('Catalog access must not touch Login State'))
@@ -297,5 +345,43 @@ describe('Codex model request policy', () => {
 
     expect(payloads).toHaveLength(1)
     expect(payloads[0]).toMatchObject({ model: 'gpt-5.6-sol', temperature: 0.7 })
+  })
+})
+
+describe('Codex JSON transport', () => {
+  it('preserves payload bytes, credentials, cancellation and response without retrying a rejection', async () => {
+    const payload = JSON.stringify({ model: 'gpt-6-astra', input: [{ type: 'reasoning', encrypted_content: 'synthetic-opaque-reasoning' }], instructions: 'Проверка' })
+    const response = new Response('{"detail":"Bad Request"}', { status: 400 })
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(response)
+    const signal = new AbortController().signal
+    const headers = new Headers({ 'content-encoding': 'zstd', 'content-length': '123', authorization: 'Bearer synthetic-token', 'content-type': 'application/json' })
+    const init: RequestInit = { method: 'POST', headers, signal, body: new Uint8Array(zstdCompressSync(payload)) }
+    expect(await codexJsonFetch(transport)('https://chatgpt.com/backend-api/codex/responses', init)).toBe(response)
+    expect(transport).toHaveBeenCalledTimes(1)
+    const sent = transport.mock.calls[0]![1]!
+    expect(sent.body).toBe(payload)
+    expect(sent.signal).toBe(signal)
+    expect(sent.method).toBe('POST')
+    expect(new Headers(sent.headers).get('authorization')).toBe('Bearer synthetic-token')
+    expect(new Headers(sent.headers).get('content-type')).toBe('application/json')
+    expect(new Headers(sent.headers).has('content-encoding')).toBe(false)
+    expect(new Headers(sent.headers).has('content-length')).toBe(false)
+    expect(headers.get('content-encoding')).toBe('zstd')
+    expect(init.body).toBeInstanceOf(Uint8Array)
+  })
+
+  it('passes an uncompressed request through without modifying its arguments', async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response('ok'))
+    const init = { method: 'POST', body: '{"input":"hello"}' }
+    await codexJsonFetch(transport)('https://chatgpt.com/backend-api/codex/responses', init)
+    expect(transport.mock.calls[0]![1]).toBe(init)
+  })
+
+  it('rejects an invalid compressed body before sending an HTTP request', () => {
+    const transport = vi.fn<typeof fetch>()
+    expect(() => codexJsonFetch(transport)('https://chatgpt.com/backend-api/codex/responses', {
+      headers: { 'content-encoding': 'zstd' }, body: 'not compressed bytes',
+    })).toThrow('Codex zstd request requires a byte buffer')
+    expect(transport).not.toHaveBeenCalled()
   })
 })

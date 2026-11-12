@@ -803,24 +803,28 @@ export function usageFromPayload(value: unknown): CodexUsageView {
   if (!isRecord(value)) return {}
   const planType = nonBlank(typeof value.plan_type === 'string' ? value.plan_type : undefined)
   const rateLimit = isRecord(value.rate_limit) ? value.rate_limit : undefined
-  const weekly = rateLimit === undefined
-    ? undefined
-    : [rateLimit.primary_window, rateLimit.secondary_window].find(candidate => (
-        isRecord(candidate) && candidate.limit_window_seconds === WEEKLY_USAGE_WINDOW_SECONDS
-      ))
-  let weeklyRemainingPercent: number | undefined
-  let weeklyResetAt: string | undefined
-  if (isRecord(weekly) && typeof weekly.used_percent === 'number' && Number.isFinite(weekly.used_percent)) {
-    weeklyRemainingPercent = Math.min(100, Math.max(0, Math.round(100 - weekly.used_percent)))
-  }
-  if (isRecord(weekly) && Number.isSafeInteger(weekly.reset_at) && (weekly.reset_at as number) > 0) {
-    const reset = new Date((weekly.reset_at as number) * 1000)
-    if (Number.isFinite(reset.getTime())) weeklyResetAt = reset.toISOString()
-  }
+  const windows = rateLimit === undefined ? [] : [rateLimit.primary_window, rateLimit.secondary_window]
+  const weekly = usageWindow(windows, WEEKLY_USAGE_WINDOW_SECONDS)
+  const fiveHour = usageWindow(windows, 18_000)
   return {
     ...planType === undefined ? {} : { planType },
-    ...weeklyRemainingPercent === undefined ? {} : { weeklyRemainingPercent },
-    ...weeklyResetAt === undefined ? {} : { weeklyResetAt },
+    ...weekly.remaining === undefined ? {} : { weeklyRemainingPercent: weekly.remaining },
+    ...weekly.resetAt === undefined ? {} : { weeklyResetAt: weekly.resetAt },
+    ...fiveHour.remaining === undefined ? {} : { fiveHourRemainingPercent: fiveHour.remaining },
+    ...fiveHour.resetAt === undefined ? {} : { fiveHourResetAt: fiveHour.resetAt },
+  }
+}
+
+function usageWindow(windows: unknown[], duration: number): { remaining?: number; resetAt?: string } {
+  const window = windows.find(candidate => isRecord(candidate) && candidate.limit_window_seconds === duration)
+  if (!isRecord(window)) return {}
+  const remaining = typeof window.used_percent === 'number' && Number.isFinite(window.used_percent)
+    ? Math.min(100, Math.max(0, Math.round(100 - window.used_percent))) : undefined
+  const reset = Number.isSafeInteger(window.reset_at) && (window.reset_at as number) > 0
+    ? new Date((window.reset_at as number) * 1000) : undefined
+  return {
+    ...remaining === undefined ? {} : { remaining },
+    ...reset === undefined || !Number.isFinite(reset.getTime()) ? {} : { resetAt: reset.toISOString() },
   }
 }
 

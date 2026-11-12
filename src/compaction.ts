@@ -69,7 +69,7 @@ const BASIC_FRAME_TOKEN_RESERVE = 256
 /** Verified coherent DSH graphs sharing the observed pi-ai conversion contract. */
 export const CODEX_COMPACTION_COMPATIBILITY = Object.freeze({
   dsh: SUPPORTED_DSH_PEER_RANGE,
-  piAi: '1.1.0',
+  piAi: '1.3.0',
 })
 
 /** Runtime facts accepted by the compatibility assertion. */
@@ -246,7 +246,9 @@ function dualSummaryClearlyShrinks(
   estimateMessage: (message: Message) => number,
 ): boolean {
   const shadowedEstimate = input.messages.reduce(
-    (total, message) => total + estimateMessage(message),
+    // Basic retains the leading system message outside the replaced history span.
+    (total, message, index) => index === 0 && message.role === 'system'
+      ? total : total + estimateMessage(message),
     0,
   )
   const unframedEstimate = estimateMessage(createUserMessage({

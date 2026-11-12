@@ -87,6 +87,7 @@ function authStatus(overrides: Partial<CodexAuthStatusView>): CodexAuthStatusVie
 
 function rpc(status: CodexAuthStatusView, usage: CodexUsageView = {}): CodexAuthRpcClient {
   return {
+    fastMode: vi.fn(async () => ({ ok: true as const, value: { fastMode: { enabled: false, source: 'profile' as const } } })),
     status: vi.fn(async () => ({ ok: true as const, value: { status } })),
     usage: vi.fn(async () => ({ ok: true as const, value: { usage } })),
     login: vi.fn(async () => ({ ok: true as const, value: { started: true } })),
@@ -99,6 +100,20 @@ const subscribe = (): (() => void) => () => {}
 afterEach(() => cleanup())
 
 describe('Codex Capability Bundle settings', () => {
+  it('toggles Fast mode through the live LLM form with its subscription usage warning', async () => {
+    const llm = fakeScope({ ...LLM, fastModeEnabled: false })
+    render(<CodexCapabilitySettings rpc={rpc(authStatus({}))} t={t} subscribe={subscribe}
+      llmScope={llm.scope} searchScope={fakeScope(SEARCH).scope} imageScope={fakeScope(IMAGE).scope} />)
+    const toggle = screen.getByLabelText('Enable Fast mode') as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+    expect(screen.getByText(/subscription.*2\.5/i)).toBeTruthy()
+    fireEvent.click(toggle)
+    await waitFor(() => expect(llm.set).toHaveBeenCalledWith('fastModeEnabled', true))
+    expect(toggle.checked).toBe(true)
+    fireEvent.click(toggle)
+    await waitFor(() => expect(llm.set).toHaveBeenCalledWith('fastModeEnabled', false))
+  })
+
   it('blocks editing until a pending exclusion save settles, then permits clearing the saved list', async () => {
     const pending = Promise.withResolvers<void>()
     const llm = fakeScope({ ...LLM, excludedModelIds: [] as string[] }, 'ready', () => pending.promise)
@@ -161,8 +176,10 @@ describe('Codex Capability Bundle settings', () => {
       llmScope={fakeScope(LLM).scope} searchScope={fakeScope(SEARCH).scope} imageScope={image.scope} />)
     await screen.findByText('Active')
     fireEvent.click(screen.getByRole('button', { name: 'Expand Image Creation settings' }))
-    const modelOptions = (screen.getByLabelText('Image model') as HTMLInputElement).list?.options
+    const modelOptions = (screen.getByRole('combobox', { name: 'Image model' }) as HTMLSelectElement).options
     expect(Array.from(modelOptions ?? [], option => option.value)).toContain('gpt-image-2.5-flare')
+    fireEvent.change(screen.getByLabelText('Image model'), { target: { value: 'gpt-image-2.5-flare' } })
+    await waitFor(() => expect(image.set).toHaveBeenCalledWith('model', 'gpt-image-2.5-flare'))
     fireEvent.change(screen.getByLabelText('Default quality'), { target: { value: 'max' } })
     await waitFor(() => expect(image.set).toHaveBeenCalledWith('quality', 'max'))
     const size = screen.getByLabelText('Default size')
@@ -342,20 +359,25 @@ describe('Codex Image Creation tool view', () => {
 })
 
 describe('client plugin registration', () => {
-  it('registers one settings row and keyed views for both image tools', () => {
+  it('registers settings, account limits in the composer dock, and both image tools', async () => {
     const registered: Array<Record<string, unknown>> = []
     const scopes = new Map<string, ConfigForm<unknown>>([
       ['llm-codex-auth', fakeScope(LLM).scope],
       ['codex-search', fakeScope(SEARCH).scope],
       ['codex-image', fakeScope(IMAGE).scope],
     ])
-    const sessions = { binding: vi.fn() }
-    const connection = { isLoopback: true, rpc: { call: vi.fn() } }
+    const binding = { ctx: {} }
+    const initializeDraft = vi.fn(() => 'applied')
+    const focusDraft = vi.fn()
+    const sessions = { binding: vi.fn(() => binding) }
+    const connection = { isLoopback: true, rpc: { call: vi.fn(async () => ({ ok: true, value: { usage: { weeklyRemainingPercent: 49, fiveHourRemainingPercent: 88 } } })) } }
     const ctx = {
       effect: (setup: () => unknown) => setup(),
       on: vi.fn(() => () => {}),
       get: (name: string) => name === 'connection' ? connection : undefined,
       sessions,
+      uiConversation: { events: { register: vi.fn() } },
+      conversation: { input: { requestDraftInitialization: initializeDraft, for: () => ({ focus: focusDraft }) } },
       locale: { register: vi.fn(() => () => {}), bind: vi.fn(() => t) },
       slots: {
         inject: (_name: string, setup: () => unknown) => setup(),
@@ -372,9 +394,37 @@ describe('client plugin registration', () => {
     expect(inject).toEqual(expect.arrayContaining(['remote', 'configForms', 'sessions']))
     expect(registered).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'settings.section', id: 'codex-auth' }),
+      expect.objectContaining({ name: 'conversation.composer.dock', id: 'codex-usage' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'generate_image' }),
+      expect.objectContaining({ name: 'conversation.chat.turnTail', id: 'codex-generated-images' }),
+      expect.objectContaining({ name: 'conversation.composer.dock', id: 'codex-create-image' }),
+      expect.objectContaining({ name: 'conversation.hero.options', id: 'codex-create-image' }),
       expect.objectContaining({ name: 'tool.call.toolview', key: 'list_images' }),
     ]))
+
+    const tail = registered.find(item => item.id === 'codex-generated-images')!
+    const tailActions = (tail.inject as (sessionId: string) => {
+      editImage: (image: ImageAttachmentRef, prompt: string) => boolean
+    })('session-a')
+    const selectedImage: ImageAttachmentRef = {
+      attachmentId: 'sha256:selected' as ImageAttachmentRef['attachmentId'],
+      mediaType: 'image/png', bytes: 3, width: 1024, height: 1024,
+    }
+    expect(tailActions.editImage(selectedImage, 'Edit selected image')).toBe(true)
+    expect(initializeDraft).toHaveBeenCalledWith(binding, {
+      prompt: 'Edit selected image', whenDraftExists: 'append',
+    })
+    expect(focusDraft).toHaveBeenCalledTimes(1)
+    initializeDraft.mockReturnValueOnce('blocked')
+    expect(tailActions.editImage(selectedImage, 'Edit selected image')).toBe(false)
+    expect(focusDraft).toHaveBeenCalledTimes(1)
+
+    const footer = registered.find(item => item.id === 'codex-usage')!
+    const Footer = footer.component as ComponentType<Record<string, unknown>>
+    const footerProps = (footer.inject as () => Record<string, unknown>)()
+    const mounted = render(<Footer {...footerProps} />)
+    expect(await screen.findByText(/Codex.*5h 88%.*Week 49%/)).toBeTruthy()
+    mounted.unmount()
 
     const ListImagesView = registered.find(item => item.key === 'list_images')?.component as ComponentType<{
       block: ToolCallBlock

@@ -271,6 +271,7 @@ describe('Auth / LLM row configuration', () => {
     const parse = PluginConfig as unknown as (input: Partial<PluginConfigView>) => PluginConfigView
     expect(parse({}).llmEnabled).toBe(true)
     expect((parse({}).longContextEnabled as { get(): boolean }).get()).toBe(false)
+    expect((parse({}).fastModeEnabled as { get(): boolean }).get()).toBe(false)
     expect((parse({}).excludedModelIds as { get(): string[] }).get()).toEqual([])
     const disabled = parse({ llmEnabled: false, longContextEnabled: true })
     expect(disabled.llmEnabled).toBe(false)
@@ -279,10 +280,10 @@ describe('Auth / LLM row configuration', () => {
 
   it('keeps the independent live LLM context policy default-off', () => {
     const parse = CodexLlmSettingsConfig as unknown as (input: Record<string, unknown>) => { longContextEnabled: boolean }
-    expect(parse({})).toEqual({ longContextEnabled: false, excludedModelIds: [] })
-    expect(parse({ longContextEnabled: true })).toEqual({ longContextEnabled: true, excludedModelIds: [] })
+    expect(parse({})).toEqual({ longContextEnabled: false, fastModeEnabled: false, excludedModelIds: [] })
+    expect(parse({ longContextEnabled: true })).toEqual({ longContextEnabled: true, fastModeEnabled: false, excludedModelIds: [] })
     expect(parse({ excludedModelIds: ['gpt-5.3-codex-spark'] })).toEqual({
-      longContextEnabled: false, excludedModelIds: ['gpt-5.3-codex-spark'],
+      longContextEnabled: false, fastModeEnabled: false, excludedModelIds: ['gpt-5.3-codex-spark'],
     })
     expect(() => parse({ excludedModelIds: 'gpt-5.4' })).toThrow()
   })
@@ -336,6 +337,8 @@ describe('CodexAuthAdapter route profile', () => {
       websocketConnectTimeoutMs: 3_000,
       timeoutMs: 60_000,
       maxRequestImageBytes: MAX_REQUEST_IMAGE_BYTES,
+      maxRequestImages: 50,
+      imageOffloadCountQuantum: 10,
       requestImagePixelBudget: REQUEST_IMAGE_PIXEL_BUDGET,
       requestImageMaxBytes: REQUEST_IMAGE_MAX_BYTES,
     })
@@ -384,7 +387,9 @@ describe('CodexAuthAdapter route profile', () => {
     const standard = getModels()
     expect(standard.some(model => model.id === CODEX_GPT_6_ASTRA_MODEL_ID)).toBe(true)
     for (const id of CODEX_LONG_CONTEXT_MODEL_IDS) {
-      expect(standard.find(model => model.id === id)?.contextWindow).toBe(CODEX_STANDARD_CONTEXT_WINDOW)
+      expect(standard.find(model => model.id === id)?.contextWindow).toBe(
+        id === 'gpt-6.1-sol' ? 500_000 : CODEX_STANDARD_CONTEXT_WINDOW,
+      )
     }
     const unchanged = standard.find(model => model.id === 'gpt-5.4')
 

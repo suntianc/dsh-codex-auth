@@ -1,13 +1,13 @@
 # dsh-codex-auth
 
-> **DSH compatibility:** Version `0.3.4-rc.2` supports the verified coherent DSH `0.2.1-rc.1` and `0.2.1-rc.2` graphs with pi-ai `1.1.0`. Its finite experimental peer range `0.2.1-rc.1 || 0.2.1-rc.2` excludes future RCs and stable releases; mixed graphs remain refused. Version `0.3.4-rc.1` remains rc.1-only, and `0.3.3-rc.4` targets DSH `0.2.0-rc.2`. See [verification](docs/dsh-source-verification.md).
+> **DSH compatibility:** This candidate targets the coherent DSH **0.2.2-rc.1 / rc.2** graph with pi-ai **1.3.0**. Exact experimental peers reject older, mixed, and future graphs. Older Harness installations should retain a compatible older plugin release. See the [upgrade guide](docs/dsh-0.2.2-upgrade.md).
 
 [![npm rc version](https://img.shields.io/npm/v/dsh-codex-auth/rc.svg?label=npm%20rc)](https://www.npmjs.com/package/dsh-codex-auth)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 English | [中文](README.zh.md)
 
-Release: **v0.3.4-rc.2** (npm tag: `rc`).
+Release candidate: **v0.3.4-rc.3** (proposed; not published by this change).
 
 A self-contained [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 **Codex Capability Bundle**. It reuses the ChatGPT login maintained by the
@@ -25,6 +25,10 @@ official **Codex CLI** (`~/.codex/auth.json`, or `$CODEX_HOME/auth.json`) for:
 > account-gated `chatgpt.com/backend-api` surface is unsupported, revocable, and
 > may be rate-limited or changed without notice. Do not rely on it for
 > production workloads.
+
+## 0.3.4-rc.3: DSH 0.2.2-rc.1
+
+Updates the complete dependency graph and required image budgets, adapts the public tool-batch and replay contracts, and preserves V4 conversation and Native codec state. Exact compatibility checks remain enabled; no profile exemption is required. See the [upgrade guide and validation limits](docs/dsh-0.2.2-upgrade.md).
 
 ## 0.3.4-rc.2: DSH 0.2.1-rc.1 / rc.2
 
@@ -85,15 +89,79 @@ Adds GPT Image 2.5 Sunburst/Flare, advanced quality, and validated custom dimens
   `127.0.0.1` Web bind; every absent, all-interface, or unknown bind receives
   the same value-free `loopback-required` denial.
 
+### Codex SSE requests
+
+Codex LLM requests use uncompressed JSON over SSE. The adapter converts pi-ai's zstd request bytes back to the same JSON before HTTP dispatch because the Codex backend can reject compressed bodies with `400 {"detail":"Bad Request"}`. Model, reasoning, encrypted replay data, authentication, cancellation and response handling are preserved. The transport does not retry rejected requests or change WebSocket frames. See [verification and transport details](docs/codex-sse-transport.md).
+
+### Fast mode
+
+In **Settings → GPT Auth → LLM Context**, enable **Fast mode** to request
+priority processing by default for Codex LLM calls in this profile. An explicit
+conversation preference overrides this default.
+It is off by default, takes effect without restarting, and keeps the selected
+model and reasoning effort. Existing advanced payload hooks retain their final say.
+Search and image tools keep their independent settings.
+
+[OpenAI's Codex speed guide](https://learn.chatgpt.com/docs/agent-configuration/speed)
+states that Fast uses included subscription limits at **2.5×** the Standard rate
+and purchased credits at **2×**. Availability and the actual applied tier remain
+model/account dependent; enabling this switch requests Fast and does not guarantee
+that the backend grants priority or a particular latency improvement.
+
+```yaml
+- id: llm-codex-auth
+  config:
+    fastModeEnabled: true
+```
+
+In a live subscription check on DSH 0.2.2-rc.1, Astra, GPT-6.1 Sol and GPT-5.6 Sol
+accepted priority requests but reported `service_tier: default` in completed
+responses. The literal `fast` wire alias was rejected with HTTP 400 by this
+Codex backend. These checks verify request delivery, **not granted Fast processing
+or a speed improvement**. Other accounts and backend revisions may behave differently.
+
+The plugin uses `service_tier: priority` (Fast's backward-compatible wire value)
+before Native replay compatibility checks and compaction payload capture, for
+both pi-ai stream entry points. A tier change falls back to the Portable summary
+when an existing Native checkpoint no longer matches. Fast does not change the
+checkpoint format or restore history that was already compacted.
+
+### Subscription limits in the composer footer
+
+The New Session options row and the bottom statistics dock both include a
+**Fast · On/Off** switch for the current conversation. You can set Fast and inspect
+subscription limits before sending the first message; that conversation keeps its
+selection when the chat starts. It saves an explicit session preference without changing the
+profile default, another conversation, or Codex CLI configuration. On sends
+`priority`; explicit Off sends `default`. The preference survives resume and is
+inherited by a fork until the child changes its own setting. It uses an ignorable
+plugin record outside model-visible history; future format migrations may drop
+experimental plugin state, in which case the profile default applies.
+
+The bottom statistics dock shows **Codex · 5h …% · Week …%** as remaining
+subscription allowance. Only windows reported by the account are displayed;
+plans without a five-hour window do not show one. Hover or focus for reset times,
+and click to open a subscription details dialog with the plan, remaining allowance,
+reset times and last-check timestamp. Data refreshes automatically every five
+minutes while the page is visible, without clearing the current snapshot. A failed refresh keeps the last-known values with an explicit
+stale marker; a reconnect clears them to avoid mixing accounts. Unreported windows
+and unavailable data are labeled rather than displayed as zero. This account allowance is independent
+of the existing context occupancy percentage.
+
+The footer uses the existing loopback-only account RPC and value-free usage
+probe. Pending reads are cancelled on unmount/reconnect; it does not expose
+credentials or initiate login. Remote browser connections keep account RPC and
+the quota footer disabled.
+
 ### Codex models and long context
 
-The pinned pi-ai `1.1.0` catalog includes GPT-6 Astra. The plugin fills missing
+The pinned pi-ai `1.3.0` catalog includes GPT-6 Astra. The plugin fills missing
 GPT-6 Sol (`gpt-6-sol`), Luna (`gpt-6-luna`), and GPT-6.1 Sol (`gpt-6.1-sol`)
 entries from matching GPT-5.6 templates and preserves installed descriptors.
 Fallback descriptors use a 272,000-token context window. The default-off
-**Long Context** switch reports a model-specific budget: **872,000 tokens for
-GPT-6/6.1**, and the existing 1,000,000-token policy for supported GPT-5.6 models.
-The GPT-6 budget follows Codex OAuth metadata, not the public API context limit.
+**Long Context** switch reports an opt-in budget: **872,000 tokens for
+all supported GPT-5.6/6/6.1 models**.
+The budget follows Codex OAuth metadata, not the public API context limit.
 DSH uses this for token pressure and compaction; it does not negotiate backend
 capacity or establish account entitlement. Enabling it cannot restore history
 already compacted, and long requests may consume account quota faster.
@@ -249,7 +317,7 @@ keeps the valid Portable Checkpoint. Stock conversation views intentionally show
 the Portable text even when the next compatible provider request replays Native.
 
 This experimental export supports homogeneous DSH / Basic compaction graphs at
-`0.2.1-rc.1`, with pi-ai `1.1.0`; a mixed or unverified pair fails with an
+`0.2.2-rc.1`, with pi-ai `1.3.0`; a mixed or unverified pair fails with an
 actionable compatibility error. Long Context Mode may change when pressure
 compaction runs, but does not change native activation, codec, retention, v2
 payload, replay compatibility, or the one-shot turn-continuation contract.
@@ -295,7 +363,7 @@ failure.
 Native replay requires the checkpoint's schema/codec/retention generations,
 provider, exact model, hashed Codex account identity, instructions, tools,
 parallel/tool-choice controls, reasoning, text configuration, and service tier
-to match the **final effective** Responses request. Pi-ai `1.1.0` may encode
+to match the **final effective** Responses request. Pi-ai `1.3.0` may encode
 deferred tools as `additional_tools`, `tool_search_call`, or `tool_search_output` input items. Those items and in-history system/developer messages are outside this codec's compatibility digest, so such a payload
 conservatively uses Portable text for both replay and new Native creation. A
 composed payload callback may change the modeled controls: replay is re-evaluated
@@ -305,7 +373,7 @@ malformed, oversized (over 2 MiB), secret-bearing, mixed, or incompatible state
 degrades to Portable text. Generated markers are Host-only and any missing,
 duplicate, embedded, leaked, or unconsumed marker fails before network I/O. The
 replay converter accepts matching DSH LLM / pi-ai Adapter versions at
-`0.2.1-rc.1`, with pi-ai `1.1.0`; mixed or unverified runtime pairs use Portable text instead. Adapter generation
+`0.2.2-rc.1`, with pi-ai `1.3.0`; mixed or unverified runtime pairs use Portable text instead. Adapter generation
 replacement or HMR invalidates process-local replay and turn-continuation state,
 while the durable Dual Checkpoint remains unchanged for a later request.
 
@@ -452,19 +520,19 @@ assistant ImageBlock.
 
 ## Requirements
 
-- DeepSeek Harness `0.2.1-rc.1` (tested coherent dependency graph); do not mix it with an older rc package family.
+- DeepSeek Harness `0.2.2-rc.1` (tested coherent dependency graph); do not mix it with an older rc package family.
 - Node.js `^22.19.0` or `>=24.0.0`.
-- `pnpm` available on `PATH` (`11.7.0` is the tested project package manager).
+- `pnpm` available on `PATH` (`11.28.5` is the tested project package manager).
 - The `codex` CLI available on `PATH`.
 - Run `codex login` before use, or start login from the GPT Auth card.
 
 ## Install
 
-See the [upgrade evidence and test recipe](docs/dsh-source-verification.md#upgrade-from-dsh-020-rc2). Stop `dsh web`, ensure the target Host uses a coherent DSH `0.2.1-rc.1` graph, then install this exact prerelease into the intended profile:
+See the [upgrade evidence and test recipe](docs/dsh-0.2.2-upgrade.md). Stop `dsh web`, ensure the target Host uses a coherent DSH `0.2.2-rc.1` graph, then install this exact prerelease into the intended profile:
 
 ```sh
 dsh --version
-dsh plugin --profile web add dsh-codex-auth@0.3.4-rc.2
+dsh plugin --profile web add dsh-codex-auth@0.3.4-rc.3
 dsh plugin --profile web list
 ```
 
@@ -491,6 +559,7 @@ Login State coordinator available to Search/Image without owning an LLM route:
 | `refreshLeadMs` | `300000` | Refresh lead time in milliseconds |
 | `codexCommand` | `codex` | CLI command used for login and version probing |
 | `displayName` | `OpenAI Codex (chatgpt)` | Provider label in model selectors |
+| `fastModeEnabled` | `false` | Live per-profile Fast (priority) processing request for Codex LLM calls; higher subscription usage and backend-dependent availability |
 | `longContextEnabled` | `false` | Live model-specific GPT-6/6.1 / GPT-5.6 long-context policy, editable through the `llm-codex-auth` Config Form |
 | `excludedModelIds` | `[]` | Per-profile exact model IDs hidden after catalog completion and context policy; editable through GPT Auth Settings |
 | `transport` | `sse` | Streaming transport: `sse`, `websocket`, or `auto` (WebSocket first with SSE fallback). SSE is the default: the WebSocket upgrade is unreliable through common HTTP proxies, and every new conversation pays the connect timeout before `auto` falls back |
@@ -548,3 +617,7 @@ See [`docs/design.md`](docs/design.md) and the [architecture decisions](docs/adr
 ## Friendship links
 
 - [L 站](https://linux.do/)
+
+Image failures distinguish moderation blocks, rejected requests, expired login, denied access, unavailable routes, and rate limits. Error cards use localized explanations; raw upstream response text is never copied into the conversation. Requests are never automatically retried. Choose Sunburst or Flare in the Image model dropdown under GPT Auth → Image Creation; Default size accepts WIDTHxHEIGHT and Default quality includes auto, low, medium, high, xhigh, and max. Existing custom model IDs remain selectable; new custom IDs can be configured through cordis.yml.
+
+Generated images appear directly below the completed assistant reply, even when process details are collapsed. Edit image opens controls beside the selected image: model, resolution presets or custom dimensions, quality, and a description of the changes. Create image is available on the New Session screen and beside the active composer for generation from scratch. Add to message prepares the exact image reference and selected parameters in the visible conversation draft, preserving existing text. Review and send the message to start. These choices apply to one request without changing profile defaults. Actual output dimensions are shown below each image; failed generation details remain in the tool process view.

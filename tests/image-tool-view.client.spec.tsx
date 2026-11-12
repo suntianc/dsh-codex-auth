@@ -41,6 +41,11 @@ afterEach(() => {
 })
 
 describe('CodexImageToolView', () => {
+  it('explains a moderation block in the tool card', () => {
+    render(<CodexImageToolView block={{ ...block, isError: true, content: [], error: { name: 'ImageCapabilityError', code: 'IMAGE_MODERATION_BLOCKED' } }} loadImage={vi.fn()} />)
+    expect(screen.getByRole('alert').textContent).toContain('blocked this request under its safety policy')
+  })
+
   it('renders the durable image carried by a captured successful tool result', async () => {
     const loadImage = vi.fn(async () => 'blob:captured-image')
 

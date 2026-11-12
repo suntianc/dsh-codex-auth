@@ -1,6 +1,45 @@
 # Changelog
 
+## Unreleased
+
+- Qualify coherent DSH 0.2.2-rc.2 with pi-ai 1.3.0 while retaining verified rc.1 admission and rejection of mixed/future graphs. Update the development/source baseline and pnpm toolchain, use the shared HarnessError for the custom credential-persistence failure, and retain genuine deferred-tool-history coverage under rc.2 declaration rebasing.
+
+- Correct the enabled GPT-5.6 long-context budget from 1,000,000 to the verified Codex OAuth maximum of 872,000 tokens. Stock Basic compaction can now trigger before the advertised backend maximum; GPT-6/6.1 budgets and user compaction policies are unchanged.
+
+- Send Codex SSE requests as uncompressed JSON to avoid backend `400 {"detail":"Bad Request"}` rejection of zstd bodies. Preserve encrypted reasoning and tool history, request credentials and cancellation; do not retry rejected requests or change WebSocket frames.
+
+- Add per-request model, resolution and quality controls beside edited images and through Create image on the main screen and chat composer; show actual output dimensions.
+
+- Show generated images directly in completed chat turns and add Edit image to prepare a session-specific edit draft without replacing existing text or automatically sending it.
+
+- Pass the complete image reference to session-authorized attachment reads so generated images load in the current Harness client.
+
+- Distinguish image moderation and HTTP failures with localized explanations without automatic retries or raw upstream response disclosure.
+- Use a model dropdown for Sunburst and Flare; preserve configured custom model IDs and existing size and quality controls.
+
 ## [Unreleased]
+
+- Read and persist conversation Fast preferences through the existing live Session writer, including resident subagent Sessions, without claiming or replacing their Agents through ordinary Session routing.
+
+- Show session-scoped Fast and subscription-limit controls in the New Session options row before the first prompt, reusing the existing composer dock controls and account boundary.
+
+- Open a subscription details dialog from the quota pill instead of clearing values on click. Show plan, remaining allowances, reset times and last-check timestamp, with automatic five-minute refresh and explicit last-known/stale handling after failures.
+
+- Add a per-conversation Fast switch to the composer dock. Persist explicit On/Off in an ignorable plugin record outside model history, retain it through resume/fork, inherit the profile default otherwise, and keep unrelated sessions and Codex CLI settings untouched. Explicit Off requests the `default` tier.
+
+- Show remaining five-hour and weekly Codex allowances in the public composer dock, with reset-time hints, automatic five-minute refresh, missing-window handling, and cancellation/reconnect cleanup. Keep the existing loopback-only account boundary and context occupancy display.
+
+- Add default-off, live per-profile Fast mode in GPT Auth settings. Request `service_tier: priority` without changing the selected model or reasoning effort, and explain the subscription usage multiplier and backend-dependent availability.
+- Apply the tier before Native replay checks and compaction payload capture for both provider stream entry points. Preserve existing payload callbacks and independent Search/Image settings.
+- Cover direct/prepared live toggling, persistence and profile isolation, UI writes, Native tier propagation and Portable fallback after a tier change.
+
+## [0.3.4-rc.3]
+
+- Target the coherent DSH `0.2.2-rc.1` graph with Cordis `4.1.0`, Schemastery `3.19.0`, and pi-ai `1.3.0`; retain exact experimental runtime guards and reject mixed or future graphs.
+- Supply the new pi-ai image-count/offload limits and update tool-batch, pre-step model-selection, client asset-loader, and response replay fixtures to the new public contracts.
+- Exclude the retained system head from Native summary shrink accounting, so an oversized Native result falls back to the valid Portable summary instead of failing Basic's transaction.
+- Cover released-plugin admission rejection, adapted admission, old V4 restore/fork/replay, model catalog preservation, and retained-system shrink fallback. Document removal of an obsolete duplicate `llm-pi-ai.providers.openai-codex` registration.
+- Record live image generation/edit/catalog persistence, search and Native compaction checks; document migration of retired saved-preset rows and model-selection flags, and account-specific model exclusions.
 
 ## [0.3.4-rc.2] - 2026-10-17
 

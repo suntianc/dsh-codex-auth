@@ -276,6 +276,7 @@ describe('credential-gated Codex Native compaction live boundary', () => {
     const agent = idleAgent(session)
 
     await agentEvents(first.ctx, agent).waterfall('agent/pre-step', {
+      modelSelection: { provider: 'openai-codex', model: MODEL },
       messages: [],
       turn: 3,
       step: 1,

@@ -29,7 +29,7 @@ export const MAX_CODEX_NATIVE_CHECKPOINT_BYTES = 2 * 1024 * 1024
 /** Verified coherent DSH graphs sharing the observed pi-ai conversion contract. */
 export const CODEX_NATIVE_REPLAY_COMPATIBILITY = Object.freeze({
   dsh: SUPPORTED_DSH_PEER_RANGE,
-  piAi: '1.1.0',
+  piAi: '1.3.0',
 })
 
 /** Installed package facts that decide whether marker replay is safe. */

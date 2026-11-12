@@ -13,7 +13,7 @@ const t: CodexAuthCardInjected['t'] = key => en[key]
 /** Mount the card around one scripted status call. */
 function mountWithStatus(status: CodexAuthCardInjected['rpc']['status']): void {
   render(<CodexAuthCard
-    rpc={{ status, usage: vi.fn(async () => ({ ok: true as const, value: { usage: {} } })), login: vi.fn() }}
+    rpc={{ fastMode: vi.fn(async () => ({ ok: true as const, value: { fastMode: { enabled: false, source: 'profile' as const } } })), status, usage: vi.fn(async () => ({ ok: true as const, value: { usage: {} } })), login: vi.fn() }}
     t={t}
     subscribe={() => () => {}}
   />)

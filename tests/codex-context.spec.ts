@@ -32,6 +32,13 @@ function fakeModel(id: string, extra: Partial<Model<Api>> = {}): Model<Api> {
 }
 
 describe('applyCodexContextPolicy', () => {
+  it.each(CODEX_LONG_CONTEXT_MODEL_IDS)('caps %s long context at the verified Codex maximum', modelId => {
+    const models = [fakeModel(modelId)]
+    const catalog = applyCodexContextPolicy(models, { longContextEnabled: true })
+    expect(catalog.find(model => model.id === modelId)?.contextWindow).toBe(872_000)
+    expect(models[0]?.contextWindow).toBe(272_000)
+  })
+
   it('keeps empty and omitted exclusions identical and ignores unknown exact IDs', () => {
     const models = Object.freeze([fakeModel('gpt-5.4'), fakeModel('gpt-5.3-codex-spark')])
     const settings = { longContextEnabled: false }

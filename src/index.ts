@@ -25,6 +25,9 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-api-session-controller'
+import type { SessionId, SessionStore } from '@deepseek-ai/dsh-session'
+import { sessionFastMode, sessionFastModeView, saveSessionFastMode } from './codex-session-fast-mode.ts'
 import { DEFAULT_REFRESH_LEAD_MS, defaultAuthJsonPath } from './codex-auth.ts'
 import {
   CODEX_ROUTE, CodexAuthAdapter, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_TRANSPORT,
@@ -62,6 +65,8 @@ export interface Config {
   displayName: string
   /** Opt into model-specific long-context budgets for supported GPT-5.6 and GPT-6/6.1 models. */
   longContextEnabled: LiveValue<boolean>
+  /** Opt into Fast processing for Codex LLM requests, with higher subscription usage. */
+  fastModeEnabled?: LiveValue<boolean>
   /** Exact model IDs hidden from this profile's Codex catalog; empty preserves the catalog. */
   excludedModelIds?: LiveValue<string[]>
   /** Streaming transport for the route; SSE by default because the WebSocket upgrade is unreliable through common HTTP proxies. */
@@ -80,6 +85,7 @@ export const Config: z<Config> = z.object({
   codexCommand: z.string().default('codex'),
   displayName: z.string().default('OpenAI Codex (chatgpt)'),
   longContextEnabled: z.boolean().default(false).volatile(),
+  fastModeEnabled: z.boolean().default(false).volatile(),
   excludedModelIds: z.array(z.string()).default([]).volatile(),
   transport: z.union([z.const('auto'), z.const('sse'), z.const('websocket')]).default(DEFAULT_TRANSPORT),
   websocketConnectTimeoutMs: z.natural().default(DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS),
@@ -112,6 +118,7 @@ export function apply(ctx: Context, config: Config): void {
   })
   const currentSettings = (): CodexLlmSettings => ({
     longContextEnabled: liveValue(config.longContextEnabled),
+    fastModeEnabled: liveValue(config.fastModeEnabled ?? false),
     excludedModelIds: liveValue(config.excludedModelIds ?? []),
   })
   let announceModelPolicyChange = (): void => {}
@@ -130,6 +137,7 @@ export function apply(ctx: Context, config: Config): void {
       fetchImpl: fetch,
       displayName: config.displayName,
       settings: () => currentSettings(),
+      fastModeForSession: id => id === undefined ? undefined : sessionFastMode((ctx.get('sessions') as unknown as SessionStore | undefined)?.get(id as SessionId)),
       transport: config.transport,
       websocketConnectTimeoutMs: config.websocketConnectTimeoutMs,
       timeoutMs: config.timeoutMs,
@@ -149,12 +157,28 @@ export function apply(ctx: Context, config: Config): void {
     accountMode = commandAccountMode(webServer)
     const guard = createLoopbackRpcGuard(
       webServer?.host,
-      (endpoint, payload, signal) => handleCodexAuthRpc(service, endpoint, payload, signal),
+      (endpoint, payload, signal) => handleCodexAuthRpc(service, endpoint, payload, signal, async (id, enabled) => {
+        const sessions = ctx.get('sessions') as SessionStore | undefined
+        if (sessions === undefined) throw new Error('Session store is unavailable')
+        let session = sessions.get(id as SessionId)
+        if (session === undefined) {
+          const controller = ctx.get('sessionController')
+          if (controller === undefined) throw new Error('Session controller is unavailable')
+          const resolved = await controller.resolveAgent(id as SessionId)
+          if ('error' in resolved) throw new Error('Session is unavailable for Fast mode')
+          session = resolved.agent.session
+        }
+        if (enabled !== undefined) {
+          saveSessionFastMode(session, enabled)
+          if (!await sessions.flush(session)) throw new Error('Session Fast preference could not be persisted')
+        }
+        return sessionFastModeView(session, currentSettings().fastModeEnabled === true)
+      }),
     )
     if (guard.mode === 'blocked') {
       connectionCtx.logger.warn('llm-codex-auth: account RPC is disabled because the WebServer is not loopback-bound')
     }
-    return registerAccountRoutes(connectionCtx.connection, CODEX_AUTH_RPC_NAMESPACE, ['status', 'usage', 'login'], guard.handler)
+    return registerAccountRoutes(connectionCtx.connection, CODEX_AUTH_RPC_NAMESPACE, ['status', 'usage', 'login', 'fast-mode'], guard.handler)
   })
   if (config.llmEnabled) {
     ctx.logger.info(

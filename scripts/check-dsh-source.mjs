@@ -11,13 +11,13 @@ const sourceRoot = resolve(import.meta.dirname, '..')
 const sourceVersion = process.env.DSH_VERIFY_VERSION ?? DSH_SOURCE_VERSION
 const args = process.argv.slice(2).filter(value => value !== '--')
 if (args.length !== 2) {
-  throw new Error('Usage: pnpm run check:dsh-source -- /path/to/packed-dsh-packages /path/to/@earendil-works__pi-ai@1.1.0.patch (see docs/dsh-source-verification.md)')
+  throw new Error('Usage: pnpm run check:dsh-source -- /path/to/packed-dsh-packages /path/to/@earendil-works__pi-ai@1.3.0.patch (see docs/dsh-source-verification.md)')
 }
 const packageDirectory = resolve(args[0])
 const piAiPatch = await readFile(resolve(args[1]))
 const piAiPatchSha256 = createHash('sha256').update(piAiPatch).digest('hex')
-if (piAiPatchSha256 !== '66eaf960054f10441b93ac3857114e96c1901f6d183713e2f21437b007111644') {
-  throw new Error('Expected the pi-ai 1.1.0 runtime patch from the pinned DSH source tag')
+if (piAiPatchSha256 !== '4e1c90fd00aea42989664504668633033c1962e53c07860901edb4f72d843765') {
+  throw new Error('Expected the pi-ai 1.3.0 runtime patch from the pinned DSH source tag')
 }
 const packages = new Map()
 for (const filename of (await readdir(packageDirectory)).filter(name => name.endsWith('.tgz'))) {
@@ -80,13 +80,13 @@ const patchDirectory = join(checkout, 'patches')
 await mkdir(patchDirectory)
 await writeFile(join(patchDirectory, 'pi-ai.patch'), piAiPatch)
 await writeFile(workspacePath, workspace + '\nautoInstallPeers: true\noverrides:\n'
-  + Object.entries(overrides).map(([name, value]) => '  ' + JSON.stringify(name) + ': ' + JSON.stringify(value)).join('\n') + '\npatchedDependencies:\n  "@earendil-works/pi-ai@1.1.0": patches/pi-ai.patch\n')
+  + Object.entries(overrides).map(([name, value]) => '  ' + JSON.stringify(name) + ': ' + JSON.stringify(value)).join('\n') + '\npatchedDependencies:\n  "@earendil-works/pi-ai@1.3.0": patches/pi-ai.patch\n')
 await writeFile(join(stage, 'artifacts.json'), JSON.stringify({
   target: sourceVersion,
   expectedSourceCommit: DSH_SOURCE_COMMITS[sourceVersion],
   // The build recipe establishes provenance. These checksums identify the supplied bytes.
   packages: receipt,
-  piAiPatch: { version: '1.1.0', sha256: piAiPatchSha256 },
+  piAiPatch: { version: '1.3.0', sha256: piAiPatchSha256 },
 }, null, 2) + '\n')
 const env = { ...process.env, DSH_VERIFY_VERSION: sourceVersion }
 function run(args) {
